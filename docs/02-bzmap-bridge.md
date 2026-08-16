@@ -1,0 +1,444 @@
+# 02 — The `bzmap` bridge contract
+
+This is the interface between the two halves of the project. Both sides are
+built against this document. Change it deliberately and in one commit across
+both repos.
+
+**Where the work lives:** the `bzmap editor` subcommand group is implemented in
+the **generator repo** (`skippy-battlezone-map-generator`), as
+`bzmap/editor/*.py` wired into `bzmap/cli.py`. The driver (`Backend.gd`) lives
+in **this** repo. Neither side reaches past this contract.
+
+---
+
+## 1. The session directory
+
+All exchange happens through a **session directory** the editor owns:
+
+```
+<user_data>/sessions/<uuid>/
+  manifest.json        # what this map is; written by backend, read by both
+  terrain.r16          # heights, raw little-endian uint16, ROW-MAJOR
+  materials.u16        # material grid, raw little-endian uint16, ROW-MAJOR
+  objects.json         # placed objects, all variants
+  meta.json            # editable metadata fields
+  residue/             # opaque backend-owned data — the editor NEVER touches this
+  report.json          # last validation result
+```
+
+### Row-major is the law of this interface
+
+`bzmap` converts to and from the game's zone-major layouts on both sides. The
+editor sees a plain row-major array, indexed `[z * grid_x + x]`, origin at
+`(0, 0)`, `+x` east and `+z` north. **The editor must never contain zone
+logic.** Three separate game files are zone-major and the generator repo's
+history shows that layout bugs stay invisible on single-zone (1280 m) maps and
+only surface when the first multi-zone map reaches the game — exactly the class
+of bug this boundary exists to prevent.
+
+### North-up
+
+`+z` is north and renders at the **top** of every map image. The game's minimap
+uses our per-map `.png`, and the generator repo shipped mirrored renders once
+before catching it. The editor's overview panel follows the same convention.
+
+### `residue/` is opaque
+
+Everything the editor does not expose — unparsed `.trn` sections, per-object
+fields outside the editable set, AI paths, `.vxt` contents, the mission record,
+the original binary form of a stock BZN — lives here in whatever form the
+backend finds convenient. The editor treats it as a black box it copies around
+but never reads or writes. This is what makes DoD #2 (byte-identical on
+untouched data) achievable.
+
+---
+
+## 2. Invocation
+
+Every call is a one-shot subprocess:
+
+```
+python -m bzmap.cli editor <verb> [args...] --json
+```
+
+- **stdout** carries exactly one JSON object, and nothing else.
+- **stderr** carries human-readable progress and diagnostics, streamed.
+- **exit code** 0 on success, non-zero on failure (the JSON still parses; see
+  §5).
+
+The editor runs these on a worker thread and shows stderr live in the console
+panel for long operations.
+
+---
+
+## 3. The verbs
+
+### `probe`
+Find and describe the environment. Called at startup and from the settings
+panel.
+
+```
+bzmap editor probe --json
+```
+```json
+{
+  "ok": true,
+  "bzmap_version": "0.4.1",
+  "contract_version": 1,
+  "python": "3.11.9",
+  "installs": [
+    {
+      "kind": "game",
+      "path": "/home/x/.steam/.../Battlezone 98 Redux",
+      "version": "2.2.301",
+      "platform_hint": "proton"
+    },
+    {
+      "kind": "workshop_item",
+      "path": "/home/x/.steam/.../workshop/content/301650/3406347034",
+      "name": "BZP",
+      "id": "3406347034"
+    }
+  ],
+  "warnings": ["no game install found at any default path"]
+}
+```
+
+Install discovery must cover, in order: an explicit user override; native Steam
+on Windows (`libraryfolders.vdf` walk from the registry or default paths);
+native Steam on Linux (`~/.steam/steam`, `~/.local/share/Steam`); Flatpak Steam
+on Linux (`~/.var/app/com.valvesoftware.Steam/...`). The generator repo's
+`_GAME_ROOTS` in `bzmap/cli.py` is the Linux starting point and is incomplete
+for Windows — extend it.
+
+### `worlds`
+Enumerate the stock terrain templates available for the new-map wizard.
+
+```
+bzmap editor worlds --game-root <path> --json
+```
+```json
+{
+  "ok": true,
+  "worlds": [
+    {
+      "id": "mars",
+      "label": "Mars",
+      "trn_template": "Edit/trn/mars.trn",
+      "atlas": "mars_detail_atlas",
+      "sky": "...",
+      "texture_types": [
+        {"index": 0, "flat_color": [140, 90, 60], "label": "..."},
+        ...
+      ]
+    }
+  ]
+}
+```
+
+Nine stock worlds ship in `Edit/trn/`: achilles, elysium, europa, ganymede, io,
+mars, moon, titan, venus. `texture_types` feeds the material painting palette
+(`docs/04` §6) — the editor needs to know how many materials a world has and
+roughly what colour each is, even before atlas textures are resolved.
+
+### `assets`
+Build (or refresh) the asset cache: enumerate every placeable class from the
+install, and convert what can be converted into Godot-loadable form.
+
+```
+bzmap editor assets --game-root <path> [--pack <workshop-path> ...] \
+                    --cache <dir> [--refresh] --json
+```
+```json
+{
+  "ok": true,
+  "cache_dir": "/home/x/.local/share/bzeditor/cache/assets",
+  "generated_at": "2026-08-16T12:00:00Z",
+  "source_fingerprint": "sha256:...",
+  "classes": [
+    {
+      "prjid": "eggeizr1",
+      "odf": "eggeizr1.odf",
+      "source": "game",
+      "category": "prop",
+      "label": "Geyser",
+      "faction": null,
+      "radius_m": 8.0,
+      "footprint_m": [16.0, 16.0],
+      "mesh": "meshes/eggeizr1.glb",
+      "mesh_fidelity": "geo_textured",
+      "icon": "icons/eggeizr1.png",
+      "template_verified": true,
+      "placement_mode": "bzn"
+    }
+  ],
+  "unresolved": [
+    {"prjid": "xyz", "reason": "no geometry found for geometryName 'foo'"}
+  ]
+}
+```
+
+Field notes:
+- `source` — `"game"` or the workshop item id, so the editor can enforce the
+  **assets do not cross workshop items** rule (`docs/05` §5).
+- `mesh_fidelity` — one of `hd`, `geo_textured`, `geo_flat`, `proxy`. The
+  degradation chain in `docs/05` §3.
+- `template_verified` / `placement_mode` — the crash-safety gate. See §6 below;
+  this is the most consequential field in the whole contract.
+- `source_fingerprint` — lets the editor detect that the install changed (a
+  game patch, a BZP update) and offer a rebuild.
+
+Cache layout is the backend's business except that meshes are **glTF `.glb`**
+and icons/textures are **PNG**, both loadable by Godot at runtime without
+import. The cache lives outside both repos and is never committed.
+
+### `new`
+Create a fresh map session.
+
+```
+bzmap editor new --stem <name> --world <id> --width <m> --depth <m> \
+                 --base-height <raw> --session <dir> --game-root <path> --json
+```
+
+Backend responsibilities: reject a stem over 8 characters or colliding with a
+known terrain name; reject dimensions that are not multiples of 1280; copy the
+world's `.trn` template and override only `[Size]`/`[NormalView]`/`[World]`/
+`[Sky]`; fill `terrain.r16` with `base_height` (default raw 1000 = 100 m, per
+the generator repo's finding that play surfaces sit on a nonzero plateau);
+auto-paint an initial `materials.u16`; write starter `meta.json`.
+
+### `open`
+Open an existing map into a session.
+
+```
+bzmap editor open <path-to-map-file-or-dir> --session <dir> --json
+```
+
+Accepts any file of the set or the containing directory; resolves the rest of
+the basename group case-insensitively. Must handle:
+- ASCII BZNs (the normal case),
+- **binary BZNs** (stock 1998-era content) — read via WorldBuilder's
+  `BinaryBZNParser`, with `"converted_from_binary": true` in the manifest so
+  the editor can warn that saving writes ASCII,
+- missing optional files (no `_ST` variant, no `.lgt`, a broken stub) — report
+  in `warnings`, do not fail.
+
+Response includes the manifest (§4) plus `warnings`.
+
+### `save`
+Write the session back out to a map file set.
+
+```
+bzmap editor save --session <dir> --out <dir> [--stem <name>] --json
+```
+```json
+{
+  "ok": true,
+  "files": ["mymap.trn", "mymap.hg2", "mymap.mat", "mymap.lgt",
+            "mymap.bzn", "mymap_S.bzn", "mymap_SW.bzn",
+            "mymap.ini", "mymap.des", "mymap.odf", "mymap.vxt",
+            "mymap.lua", "mymap.png", "mymap.BMP"],
+  "byte_identical": ["mymap.vxt", "mymap.lua"],
+  "regenerated": ["mymap.lgt", "mymap.png", "mymap.BMP"],
+  "warnings": []
+}
+```
+
+Backend responsibilities, all of them load-bearing:
+- Re-pack row-major → zone-major for `.hg2`, `.mat`, `.lgt`.
+- **Bake the `.lgt`.** Never ship zeros; a zero lightmap renders a black radar
+  minimap in game.
+- Re-emit each **untouched** object block verbatim from residue; mutate only
+  changed fields on touched ones; clone a verified template for new ones (§6).
+- Maintain the BZN invariants `bzmap` already enforces: `size`, `seq_count`,
+  contiguous `obj_addr`, one `isUser=1` player, and the **mission record
+  (`name = Mult*Mission`, `sObject = count+1`) at the end of the last object
+  block** — objects are appended *before* it.
+- Regenerate `.des` counts from the real object counts.
+- `byte_identical` reports which output files match the source bytes exactly.
+  The editor surfaces this; it is DoD #2's evidence.
+
+### `validate`
+Run the offline validators against the session.
+
+```
+bzmap editor validate --session <dir> [--tier 1,2] --json
+```
+```json
+{
+  "ok": false,
+  "findings": [
+    {
+      "id": "C1",
+      "severity": "error",
+      "title": "geyser unreachable from base0",
+      "detail": "...",
+      "world_pos": [1240.0, 98.0, 2210.0],
+      "object_id": "obj-0042",
+      "variant": "_S"
+    }
+  ]
+}
+```
+
+`world_pos` and `object_id` are what make this a *panel* rather than a log —
+the editor flies the camera to a finding when you click it (`docs/08` §2).
+Backend must populate them wherever the underlying validator knows a location.
+
+### `render`
+Produce the thumbnail/minimap images and the debug overview.
+
+```
+bzmap editor render --session <dir> --out <dir> [--debug] --json
+```
+
+North-up, always. Returns paths; the editor displays them in the overview
+panel.
+
+### `package`
+The buttons (Q9).
+
+```
+bzmap editor package --session <dir> --mode install --game-root <path> \
+                     --test-id <id> --json
+bzmap editor package --session <dir> --mode pack --out <dir> --json
+```
+
+`install` copies into a **separate** test mod directory — never into the game
+or into BZP. `pack` wraps the existing `assemble`/`bzpt` machinery. Both are
+thin wrappers over code that already exists in the generator repo.
+
+---
+
+## 4. `manifest.json`
+
+Written by the backend on `new`/`open`, re-read by the editor, and updated by
+the backend on `save`.
+
+```json
+{
+  "contract_version": 1,
+  "stem": "mymap",
+  "source_path": "/path/to/original",
+  "converted_from_binary": false,
+  "world": "mars",
+  "width_m": 2560,
+  "depth_m": 2560,
+  "grid_x": 512,
+  "grid_z": 512,
+  "cell_m": 5.0,
+  "height_scale": 0.1,
+  "height_max_raw": 4095,
+  "mat_grid_x": 128,
+  "mat_grid_z": 128,
+  "mat_cell_m": 20.0,
+  "variants": ["", "_S", "_SW"],
+  "has_lightmap": true,
+  "pack_context": {"kind": "bzp", "workshop_id": "3406347034"}
+}
+```
+
+`pack_context` tells the editor which asset layers are legal for this map
+(`docs/05` §5) and which metadata conventions to present (`docs/07` §3):
+`{"kind": "base"}` for a plain base-game map, `{"kind": "bzp", ...}` for a BZP
+one.
+
+`height_max_raw` is **4095** (Q6). The generator repo's open question E7 found a
+stock map measuring 7630, which is unexplained; until that is resolved there,
+the editor clamps at 4095 and the backend rejects anything higher. If E7
+resolves, this field is how the ceiling changes without an editor release.
+
+---
+
+## 5. Errors
+
+Failure still returns parseable JSON:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "stem_too_long",
+    "message": "terrain stem 'xxMonke01' is 9 characters; the engine truncates script lookups above 8",
+    "hint": "use a stem of 8 characters or fewer",
+    "path": "/path/if/relevant"
+  }
+}
+```
+
+`code` is a stable machine-readable identifier the editor may branch on.
+`message` is shown verbatim to the user — do not reword it in the editor.
+
+Any non-zero exit without parseable JSON on stdout is a **backend crash**: the
+editor shows the raw stderr in the console panel and marks the session
+unsaved-but-intact. It must never discard the user's work because a subprocess
+died.
+
+---
+
+## 6. `template_verified` — the crash-safety gate
+
+**Read the generator repo's `docs/16` before implementing anything in this
+section.** It records five consecutive crash-to-lobby bugs, all one root cause:
+a `[GameObject]` block that was assembled, re-typed, or value-tweaked instead
+of cloned verbatim from a same-class block known to load.
+
+The law that came out of it: *the only safe template for a placed object is a
+same-class block that has loaded in-game, cloned verbatim, renaming only PrjID
+and label.*
+
+So the asset index carries, per class:
+
+- **`template_verified: true`** — the backend holds a corpus block for this
+  class that is known-good. `placement_mode: "bzn"`. The editor may place it
+  freely; `save` clones the verified block.
+- **`template_verified: false`** — no verified block exists. The class is
+  still shown in the palette and still placeable in the viewport, but
+  `placement_mode` is `"runtime"`: on save, the backend emits it as a
+  host-guarded `BuildObject` in the map's `MAP.lua` rather than as a BZN block.
+
+The runtime path is not a workaround; it is what the operator arrived at
+independently after the Warrens series — *"empty craft = runtime
+`BuildObject(odf, 0, pos)` + `RemovePilot(h)`, host-only"* — because it also
+avoids BZN-placed craft acquiring pilots at load and turning hostile.
+
+The editor's job is to **show this distinction in the palette and the
+inspector** (`docs/06` §5), never to override it. A user placing a howitzer
+should see that it will be spawned at runtime, and why.
+
+The known-good classes as of the generator repo's corpus work are geysers,
+scrap, spawn points, the player, depots, and environment mesh carriers. Craft
+layouts beyond wingman are explicitly unverified. Growing that set is a
+generator-repo task, and the editor picks it up for free when the index changes.
+
+---
+
+## 7. Locating and shipping the backend
+
+Discovery order for `Backend.gd`, first hit wins:
+
+1. `--bzmap` command-line argument or the setting saved in the settings panel.
+2. `BZMAP_HOME` environment variable.
+3. A bundled runtime next to the executable (`./backend/`), if the export was
+   built with one.
+4. A sibling checkout: `../skippy-battlezone-map-generator/`.
+5. `python -m bzmap` on `PATH`.
+
+The backend must run on Linux and Windows identically. Requirements: Python
+3.11+, `numpy`, `Pillow`, `scipy`. **Do not shell through a shell** — invoke the
+interpreter directly with an argument array so paths with spaces (the game
+install has one) work on both platforms without quoting.
+
+For public release, the Windows export should bundle an embeddable Python plus
+the dependencies under `./backend/`, so a user is not asked to set up a Python
+environment to run a map editor. Until that packaging exists, discovery order 4
+covers the operator's own machines. **Track this in `docs/10`, do not skip it
+silently** — it is the difference between a tool the operator can use and a
+tool the community can use.
+
+## 8. Contract versioning
+
+`contract_version` appears in `probe` and in `manifest.json`. The editor refuses
+to open a session whose contract version it does not know, and warns rather
+than guesses when the backend's version is newer. Bump it on any breaking
+change to the session directory or the verb responses.

@@ -1,0 +1,35 @@
+# Godot
+.godot/
+.import/
+export.cfg
+export_presets.cfg
+*.translation
+
+# Exported builds
+build/
+dist/
+
+# Editor runtime state (asset cache, sessions, logs) — machine-specific, large
+cache/
+sessions/
+*.log
+
+# Python backend
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# NEVER commit game or workshop content — it is Rebellion's / BZP's, and this
+# repo is going public. See AGENTS.md rule 3.
+game-assets/
+bzp-snapshot/
+*.zfs
+*.geo
+*.sdf
+*.msh
+*.dds
