@@ -164,12 +164,22 @@ bzmap editor probe --json
 }
 ```
 
-Install discovery must cover, in order: an explicit user override; native Steam
-on Windows (`libraryfolders.vdf` walk from the registry or default paths);
-native Steam on Linux (`~/.steam/steam`, `~/.local/share/Steam`); Flatpak Steam
-on Linux (`~/.var/app/com.valvesoftware.Steam/...`). The generator repo's
-`_GAME_ROOTS` in `bzmap/cli.py` is the Linux starting point and is incomplete
-for Windows — extend it.
+**Install discovery is specified in full in `docs/05` §2a and §2b** — Steam App
+ID `301650`, the per-platform Steam roots, the `libraryfolders.vdf` walk for
+secondary drives, GOG fallbacks, and the two-argument validation
+(`battlezone98redux.exe` **and** `BZ_ASSETS/common/models/`). The generator
+repo's `_GAME_ROOTS` in `bzmap/cli.py` is the Linux starting point and is
+incomplete for Windows — extend it from that spec.
+
+Two corrections to the example above, measured 2026-08-16:
+
+- **Workshop items live in two places**, and neither contains the other:
+  `<library>/steamapps/workshop/content/301650/<id>/` (subscribed) and
+  `<install>/packaged_mods/<id>/` (materialised). `probe` must report the union,
+  keyed by ID, with the source of each. `docs/05` §2b.
+- `packaged_mods/` IDs are **not all Steam workshop IDs** — internal ones such
+  as `9990001` appear there — so `kind: "workshop_item"` needs a `source` field
+  (`"workshop"` / `"packaged"` / `"both"`) rather than an assumed provenance.
 
 ### `worlds`
 Enumerate the stock terrain templates available for the new-map wizard.

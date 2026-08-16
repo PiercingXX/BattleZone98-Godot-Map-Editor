@@ -32,8 +32,11 @@ disk**; `.zfs` unpacking is not needed to reach modern content.
 
 - `BZ_ASSETS/common/models/` — base-game models (plus `models/TRO/` for Red
   Odyssey); `BZ_ASSETS/common/textures/` and `…/materials/` alongside.
-- `packaged_mods/<workshop-id>/` — one **flat** directory per workshop item.
-  BZP is one of these, and it carries the whole 128-map corpus.
+- `<install>/packaged_mods/<id>/` **and**
+  `<library>/steamapps/workshop/content/301650/<id>/` — one **flat** directory
+  per workshop item, in two places. See §2b: they hold different sets and both
+  must be scanned. BZP is one of these, and it carries the whole 128-map
+  corpus.
 - `Edit/trn/` — terrain templates.
 - `*.zfs` — legacy and localised content, including the **base-game maps**.
 
@@ -45,6 +48,142 @@ formats now has a functional spec in `docs/formats/`. **The one gap is `.zfs`** 
 no spec, and it gates reading stock (non-BZP) maps. When it is needed it becomes
 a `bzmap` format module with its own tests, like every other format there. Do
 not write an unpacker in GDScript.
+
+## 2a. Finding the install — first-run auto-import
+
+**The user should never have to type a path.** On first launch the editor finds
+the install itself, shows what it found, and asks for one confirmation. Manual
+path entry is the fallback for an install the search misses, not the front door.
+
+Both platforms are first-class (`AGENTS.md`, Environment). The discovery routine
+is **backend work** (`bzmap editor probe`, `docs/02` §3) so the path logic is
+written once in Python rather than twice in GDScript.
+
+### Steam App ID
+
+**`301650`** — Battlezone 98 Redux. Install directory name is
+`Battlezone 98 Redux`.
+
+### Search order
+
+1. **An explicit override**, if set: a CLI flag, an env var, or a previously
+   saved path in editor settings. Always wins; always re-validated (§2a
+   "Validation") before use.
+
+2. **Steam's own library index.** Locate the Steam root, then read
+   `steamapps/libraryfolders.vdf` from it and collect every `"path"` entry —
+   users routinely put games on a second drive, and assuming the default library
+   is the single most common discovery failure.
+
+   **Windows** — Steam root, in order:
+   - registry `HKEY_CURRENT_USER\Software\Valve\Steam` → `SteamPath`
+   - registry `HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Valve\Steam` →
+     `InstallPath`
+   - `%ProgramFiles(x86)%\Steam`, then `%ProgramFiles%\Steam`
+
+   **Linux** — Steam root, in order:
+   - `~/.steam/steam` (a symlink on most setups — resolve it)
+   - `~/.local/share/Steam`
+   - `~/.var/app/com.valvesoftware.Steam/.local/share/Steam` (Flatpak)
+   - `~/.steam/root`, `~/.steam/debian-installation`
+
+   For each library path found, the install is
+   `<library>/steamapps/common/Battlezone 98 Redux`, and
+   `<library>/steamapps/appmanifest_301650.acf` confirms it. **Note the Flatpak
+   and native Steam installs can both be present with the same game** — this
+   machine has exactly that. Deduplicate by resolved real path, and if two
+   genuinely distinct installs remain, ask rather than guess.
+
+3. **GOG and other non-Steam copies.** The game is sold outside Steam.
+   - Windows: registry `HKLM\SOFTWARE\WOW6432Node\GOG.com\Games\*` →
+     `path`, matched on `gameName`.
+   - Linux: no registry — check common Wine/Proton prefixes and
+     `~/GOG Games/`, then give up gracefully to step 4.
+
+4. **Ask the user**, with a directory picker, pre-seeded with the most likely
+   parent directory for the platform.
+
+### Validation — never trust a path, on either platform
+
+A directory is a BZ98R install only if it contains **`battlezone98redux.exe`**
+and a **`BZ_ASSETS/common/models/`** directory. Check both. A path that passes
+one and not the other is a broken or partial install and must be reported as
+such, not half-used.
+
+Record the resolved path plus the `source_fingerprint` (§6) so the next launch
+skips discovery entirely, and re-validate on every launch — users move drives,
+uninstall, and switch between Flatpak and native Steam.
+
+### Cross-platform hazards, all of which have bitten someone
+
+- **Never hardcode a separator.** Build every path with the platform's join.
+- **The install directory name contains spaces** (`Battlezone 98 Redux`) and so
+  do Windows program-files paths. Every subprocess invocation must pass
+  arguments as a list, never as a concatenated shell string.
+- **Case.** Windows is case-insensitive, Linux is not, and stock content mixes
+  cases freely (`MN00SA0.MAP` next to `mn00sa0.map`). Every asset lookup is
+  case-insensitive — `docs/formats/F8` §5. This is the single most likely
+  source of "works on my machine" between the operator's two boxes.
+- **Steam is not required to be running** and the game need not have been
+  launched; discovery reads files on disk only.
+- **`libraryfolders.vdf` format has changed across Steam versions.** Parse
+  defensively — pull every `"path"` value regardless of nesting — rather than
+  matching a fixed schema.
+- **Read-only, always.** `AGENTS.md` rule 1: the install is reference data.
+  Discovery opens files for reading and writes nothing, ever, including no
+  temp files inside the install tree.
+
+### What "auto-import" actually does
+
+On confirmation, the first-run flow runs the Phase 4 converter (§2) against the
+discovered install and populates the cache (§6): asset index, converted meshes,
+icons, terrain atlases. It is a **long** operation on a 2.5 GB install with
+~1500 ODFs — show real progress, make it cancellable, and make a cancelled run
+resumable rather than starting over.
+
+## 2b. Workshop items live in two places, and they disagree
+
+Measured on the operator's install, 2026-08-16. **Scanning only one of these
+finds a third of the user's content.**
+
+| Location | What it is | On this machine |
+|---|---|---|
+| `<library>/steamapps/workshop/content/301650/<id>/` | everything Steam has **subscribed and downloaded** | **9 items, ~2 GB** |
+| `<install>/packaged_mods/<id>/` | items the game has **materialised for use** | **3 items** |
+
+They are **copies, not hardlinks** — verified by inode — so an item present in
+both occupies disk twice and must be deduplicated by **workshop ID**, not by
+inode and not by content hash.
+
+The sets overlap but neither contains the other:
+
+- BZP (`3406347034`, 3608 files, 498 MB, the 128-map corpus) is in **both**,
+  with identical file counts.
+- Six subscribed items are **only** in `workshop/content/` — including a
+  599 MB item and a second BZP-flavoured pack (`3781900699`, 3387 files,
+  50 `.bzn`).
+- `packaged_mods/9990001` (a lone `net.ini`) and `packaged_mods/819834262`
+  (3.8 MB of campaign assets) are **only** in `packaged_mods/` — so that
+  directory is not simply a subset, and IDs there are not all Steam workshop
+  IDs.
+
+### Rules for the scanner
+
+1. Enumerate the **union**, keyed by workshop ID.
+2. When an ID appears in both, prefer `packaged_mods/<id>/` — that is the copy
+   the game actually loads — and record that a workshop copy exists.
+3. Never assume a workshop item is an asset pack. Sizes here run from **4 files
+   to 3608**, and one item is a single `.ini`. An item with no recognisable
+   assets is skipped silently, not reported as an error.
+4. `workshop/content/` lives under the **Steam library**, not under the install
+   — on a multi-drive setup they can be on different disks. Resolve it from the
+   same `libraryfolders.vdf` walk as §2a, not by climbing up from the install
+   path.
+
+Present the result as a checklist, with **BZP pre-selected if found**, because
+it is the layer nearly every corpus map depends on. Show each item's ID, file
+count, and size, since workshop items have no reliable human-readable name —
+several here are identifiable only by a marker file such as `[BZP.png`.
 
 ## 3. The fidelity chain
 

@@ -52,9 +52,31 @@ Two consequences:
   — BZP alone supplies a 128-map corpus — but it caps what "open ALL maps" (Q7)
   can mean until an unpacker exists.
 
-Other installed items observed: `819834262` (campaign assets, 3.8 MB) and
-`9990001` (a single `net.ini`) — so workshop items vary from one config file to
-a full asset pack, and the scanner must tolerate both.
+### Workshop content is in two places
+
+`<library>/steamapps/workshop/content/301650/<id>/` holds **9 subscribed items
+(~2 GB)**; `<install>/packaged_mods/<id>/` holds **3**. They are copies, not
+hardlinks (verified by inode), and neither set contains the other — BZP is in
+both, six items are workshop-only, and two (`819834262`, `9990001`) are
+`packaged_mods`-only with IDs that are not all Steam workshop IDs.
+
+**A scanner that looks at only one location finds a third of the user's
+content.** Rules in `docs/05` §2b; `probe`'s contract corrected in `docs/02`
+§3.
+
+Item sizes range from 4 files to 3608, and one is a single `net.ini` — so
+"workshop item" does not imply "asset pack", and the scanner must tolerate
+both without erroring.
+
+### Install discovery
+
+Specified cross-platform in `docs/05` §2a: Steam App ID **`301650`**, Windows
+registry + default paths, Linux native + Flatpak roots, `libraryfolders.vdf`
+for secondary drives, GOG fallback, then ask. Validation requires **both**
+`battlezone98redux.exe` and `BZ_ASSETS/common/models/`.
+
+**The Linux half is measured; the Windows half is written from documentation
+and is unverified.** Phase 0 item 6 checks it against a real Windows install.
 
 **Still open:** the `.zfs` container format. It is the only format in this
 pipeline with no specification behind it (`docs/formats/README.md`).

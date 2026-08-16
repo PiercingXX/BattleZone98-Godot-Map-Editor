@@ -14,17 +14,29 @@ have not passed.
 **Nothing here is editor code.** It is the discovery that stops later phases
 from being built on guesses.
 
-1. Inventory a real BZ98R install: where do ODFs, meshes, and textures actually
-   live — loose, or packed in `.zfs`? What model formats are present? Is there
-   an HD model format distinct from legacy `.geo`/`.sdf`, and is it decodable?
-2. Record the findings in the **generator repo's** format docs, in that repo's
-   house style (VERIFIED / INFERRED, with the measurement).
-3. Confirm Godot 4.7 stable is installed and exports for Linux and Windows.
-4. Confirm `bzmap` runs on both target OSes, and note what its dependency setup
+1. ~~Inventory a real BZ98R install: where do ODFs, meshes, and textures
+   actually live?~~ **DONE 2026-08-16** — `docs/10` Q-A. Assets are loose on
+   disk; `.zfs` is only needed for stock (non-BZP) maps. Layout in `docs/05`
+   §2.
+2. ~~Is there an HD model format distinct from legacy `.geo`/`.sdf`, and is it
+   decodable?~~ **DONE** — it is OGRE, fully specified in `docs/formats/F7`.
+   All other formats are specified in `docs/formats/F1`–`F8`.
+3. Carry the findings into the **generator repo's** format docs, in that repo's
+   house style (VERIFIED / INFERRED, with the measurement). `docs/formats/` is
+   the source; three corrections it makes to that repo are listed in `docs/10`
+   (E3, E7, and the VDF record stride).
+4. Confirm Godot 4.7 stable is installed and exports for Linux and Windows.
+5. Confirm `bzmap` runs on both target OSes, and note what its dependency setup
    takes on Windows.
+6. **Verify install discovery on Windows** (`docs/05` §2a). The Linux paths are
+   confirmed on the operator's machine; the Windows registry keys and the
+   `libraryfolders.vdf` parse are **written from documentation, not measured**.
+   Check them against a real Windows install before Phase 4 depends on them.
 
-**Acceptance:** a written asset-storage finding in the generator repo, and a
-"hello world" Godot 4.7 project that exports and runs on both platforms.
+**Acceptance:** the format findings carried into the generator repo, a
+"hello world" Godot 4.7 project that exports and runs on both platforms, and
+`bzmap editor probe` correctly locating the install on **both** Linux and
+Windows.
 
 **If the game is not installed on the build machine**, this phase blocks on the
 operator. Say so, and start Phase 1 against synthetic data — the bridge does not
@@ -100,14 +112,33 @@ No viewport yet. Test through a headless harness or a debug panel.
 
 `docs/05`. Needs Phase 0's findings.
 
+Build, in order:
+
+1. **`bzmap editor probe` — install auto-discovery** (`docs/05` §2a). Steam App
+   ID `301650`; Windows registry + `%ProgramFiles(x86)%`, Linux
+   `~/.steam/steam` + `~/.local/share/Steam` + Flatpak, then
+   `libraryfolders.vdf` for secondary drives, then GOG, then ask. Validates a
+   candidate by requiring **both** `battlezone98redux.exe` and
+   `BZ_ASSETS/common/models/`. Backend, not GDScript — the path logic gets
+   written once.
+2. **First-run flow in the editor**: probe, show what was found, take one
+   confirmation, enumerate workshop layers as a checklist with BZP
+   pre-selected, then run the converter with real progress, cancellable and
+   resumable.
+3. The converter and cache themselves (§2, §3, §6).
+
 **Acceptance:**
-1. `bzmap editor assets` enumerates classes from a real install, base game and
+1. **Auto-discovery finds the install with no user input on a clean profile —
+   on Linux and on Windows** — and a user who moves the install or has no game
+   gets a clear message rather than a stack trace. A machine with both Flatpak
+   and native Steam copies resolves to one install, not two.
+2. `bzmap editor assets` enumerates classes from a real install, base game and
    BZP, with layer attribution.
-2. The fidelity chain works: at least one class at each achievable level, and
+3. The fidelity chain works: at least one class at each achievable level, and
    `proxy` fallbacks carry **correct footprint and height**, measured.
-3. Unresolved classes are listed, not silently dropped.
-4. Cache rebuild works, and a changed install fingerprint prompts it.
-5. **Terrain atlas splatting renders a stock map recognisably.** Compare against
+4. Unresolved classes are listed, not silently dropped.
+5. Cache rebuild works, and a changed install fingerprint prompts it.
+6. **Terrain atlas splatting renders a stock map recognisably.** Compare against
    the same map in game and record whether the inferred MAT bit layout holds —
    this is the E3 experiment (`docs/05` §4). Either outcome is a result; write
    it into the generator repo.
