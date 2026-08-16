@@ -11,17 +11,53 @@ reference from here and move on.
 
 ## Q-A — Where do game assets physically live?
 
-**Status:** unknown. **Blocks:** Phase 4 (assets). **Does not block:** 1–3, 5.
+**Status: ANSWERED (2026-08-16).** Inventoried a real Steam install of BZ98R
+(2.5 GB). **Assets are loose on disk. `.zfs` unpacking is not needed to reach
+modern content.**
 
-The generator repo has verified `.geo` and `.sdf` parsers and knows `Edit/trn/`
-holds terrain templates, but nothing documents where ODFs, vehicle meshes, and
-textures actually sit in a BZ98R install — loose in directories, or packed in
-`.zfs` archives. The game ships a `MakeZFS.exe`, which is suggestive and not
-evidence.
+### Layout
 
-**Experiment (Phase 0):** inventory a real install. List the directory tree,
-identify every extension present, and open one of each. Write the findings into
-the generator repo's format docs.
+| Path | Holds |
+|---|---|
+| `BZ_ASSETS/common/models/` | base-game models — 377 files |
+| `BZ_ASSETS/common/models/TRO/` | Red Odyssey models — 104 files |
+| `BZ_ASSETS/common/{materials,textures}/`, `BZ_ASSETS/pc/…` | materials and textures, split common vs pc |
+| `BZ_ASSETS_CORE/` | movies, shader programs, UI, `BZ_MATERIALS` — no unit models |
+| `Edit/trn/` | 9 terrain templates, as the generator repo already knew |
+| `packaged_mods/<id>/` | one flat directory per installed workshop item |
+| `*.zfs` (10 archives, 25–63 MB each) | legacy/localised content; `bzone.zfs`, `tro_cam.zfs`, and one per language |
+
+Whole-install extension census: **1496 `.odf`, 1016 `.dds`, 706 `.png`,
+533 `.mesh`, 475 `.material`, 287 `.skeleton`, 128 `.bzn`, 100 `.des`,
+94 `.vdf`, 76 `.geo`, 46 `.trn`, 37 `.lgt`, 36 `.vxt`, 36 `.mat`, 36 `.hg2`,
+25 `.sdf`, 66 `.lua`.**
+
+Every format specified in `docs/formats/` is present as loose files, which means
+the asset converter can be built and tested without touching `.zfs` at all.
+
+### The corpus is BZP's, and that matters
+
+`packaged_mods/3406347034/` is **BZP** — 498 MB, 3608 files in one flat
+directory — and it contains **exactly** the corpus the generator repo
+round-trips: 36 `.hg2`, 36 `.mat`, 128 `.bzn`, 37 `.trn`. Base-game maps are
+*not* loose; they are presumably inside `bzone.zfs`.
+
+Two consequences:
+
+- **`pack_context` filtering (`docs/05` §5) is not theoretical.** A workshop
+  item is a flat asset directory that layers over the base game, and BZP is the
+  layer nearly every corpus map depends on. The palette's base-vs-BZP split maps
+  directly onto `BZ_ASSETS/` vs `packaged_mods/<id>/`.
+- **Reading stock (non-BZP) maps still needs `.zfs`.** Not a blocker for Phase 4
+  — BZP alone supplies a 128-map corpus — but it caps what "open ALL maps" (Q7)
+  can mean until an unpacker exists.
+
+Other installed items observed: `819834262` (campaign assets, 3.8 MB) and
+`9990001` (a single `net.ini`) — so workshop items vary from one config file to
+a full asset pack, and the scanner must tolerate both.
+
+**Still open:** the `.zfs` container format. It is the only format in this
+pipeline with no specification behind it (`docs/formats/README.md`).
 
 **Partial finding (2026-08-16):** the extension set to look for is now known —
 classic `.odf .geo .vdf .sdf .map .act` plus Redux `.mesh .skeleton .material

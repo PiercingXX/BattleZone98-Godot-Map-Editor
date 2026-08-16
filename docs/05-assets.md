@@ -27,19 +27,24 @@ Sources, in layers:
 
 Each class in the index records which layer it came from, because of §5.
 
-**Phase 0 discovery task, not a guess:** the *formats* are now specified —
-`.geo`, `.vdf`/`.sdf`, `.map`/`.act`, and the Redux HD OGRE chain all have
-functional specs in `docs/formats/` — but **where those files physically live in
-a BZ98R install is still unknown**: loose in directories, or packed in `.zfs`
-archives (a `MakeZFS.exe` ships with the game, which is suggestive but not
-evidence).
+**Install layout: answered** (`docs/10` Q-A, 2026-08-16). Assets are **loose on
+disk**; `.zfs` unpacking is not needed to reach modern content.
 
-Skippy must inventory a real install first and write the findings into the
-generator repo's format docs before building the converter. Do not guess a
-layout. The extension set to inventory is in `docs/formats/F7` §7. If `.zfs`
-unpacking turns out to be required, that is a `bzmap` format module with its own
-tests, like every other format in that repo — and it is the one format in this
-pipeline with no specification behind it.
+- `BZ_ASSETS/common/models/` — base-game models (plus `models/TRO/` for Red
+  Odyssey); `BZ_ASSETS/common/textures/` and `…/materials/` alongside.
+- `packaged_mods/<workshop-id>/` — one **flat** directory per workshop item.
+  BZP is one of these, and it carries the whole 128-map corpus.
+- `Edit/trn/` — terrain templates.
+- `*.zfs` — legacy and localised content, including the **base-game maps**.
+
+So the base-vs-BZP layering in §5 is a real directory split, not an abstraction:
+`BZ_ASSETS/` is the base layer, each `packaged_mods/<id>/` is a pack layer.
+
+The extension set to walk is in `docs/formats/F7` §7, and every one of those
+formats now has a functional spec in `docs/formats/`. **The one gap is `.zfs`** —
+no spec, and it gates reading stock (non-BZP) maps. When it is needed it becomes
+a `bzmap` format module with its own tests, like every other format there. Do
+not write an unpacker in GDScript.
 
 ## 3. The fidelity chain
 
