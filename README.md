@@ -6,9 +6,8 @@ the game reads, and save a file set the game loads.
 
 Built with **Godot 4.7**, exporting to Linux and Windows.
 
-> **Status: SPECIFIED, NOT YET BUILT.** This repo currently contains the design
-> specs in `docs/`. Implementation is next — see
-> [`docs/09-build-plan.md`](docs/09-build-plan.md).
+> **Status: standalone smoke build.** The `bzmap` backend is bundled in
+> `backend/`. Open a map and fly the terrain — no sibling repo required.
 
 ---
 
@@ -26,12 +25,15 @@ This is that tool.
 
 Two halves, one contract:
 
-- **This repo** — the Godot application. Viewport, camera, brushes, gizmos,
-  panels, undo. It holds a heightmap, a material grid, and a list of objects,
-  and it never learns what a `.hg2` is.
-- **[`bzmap`](https://github.com/PiercingXX/skippy-battlezone-map-generator)** —
-  the Python toolchain that owns every file format, invoked as a subprocess at
-  workflow boundaries (open, save, validate, package).
+- **This repo** — the Godot application **and** the bundled `bzmap` backend
+  under `backend/`. Viewport, camera, brushes, gizmos, panels, undo. The
+  GDScript side holds a heightmap, a material grid, and a list of objects, and
+  it never learns what a `.hg2` is.
+- **`backend/bzmap`** — the Python toolchain that owns every file format,
+  invoked as a subprocess at workflow boundaries (open, save, validate,
+  package). Originally developed as
+  [`battlezone98-map-generator`](https://github.com/PiercingXX/battlezone98-map-generator);
+  this editor vendors the package so it runs from a single checkout.
 
 `bzmap` round-trips all 128 corpus mission files and all 36 corpus heightmaps
 byte-identically. The editor inherits that guarantee by never going around it,
@@ -73,20 +75,28 @@ The interface between the two is [`docs/02-bzmap-bridge.md`](docs/02-bzmap-bridg
 | [`QUESTIONS-TODO.md`](QUESTIONS-TODO.md) | The design decision record. |
 | [`docs/formats/`](docs/formats/README.md) | Clean-room functional specs for every game file format (`F1`–`F8`). |
 
-## Requirements
+## Run it
 
-- **Godot 4.7 stable** (to build from source)
-- **A Battlezone 98 Redux installation** — the editor reads units, terrain
-  templates, and textures from your own copy. No game content ships with this
-  editor.
-- **The `bzmap` backend**: Python 3.11+ with `numpy`, `Pillow`, and `scipy`.
-  Windows bundling is tracked in [`docs/10`](docs/10-open-questions.md) Q-D.
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -e backend
+godot --path .
+```
+
+Then **Probe** (finds your Steam install) → **Open map…** and pick a `.trn` /
+`.bzn` / `.hg2` from BZP or a generated set. Fly with `WASD` `Q`/`E`, look
+with right mouse, `H` toggles slope tint, `F` frames the map.
+
+- **Godot 4.7 stable**
+- **Python 3.11+** (for the bundled backend)
+- **A Battlezone 98 Redux installation** to open real maps. The editor itself
+  ships no game content.
 
 ## Credit
 
-- **[`bzmap`](https://github.com/PiercingXX/skippy-battlezone-map-generator)** —
-  the format toolchain this is built on; every format spec and round-trip
-  guarantee comes from there.
+- **[`bzmap`](https://github.com/PiercingXX/battlezone98-map-generator)** —
+  the format toolchain this editor vendors under `backend/`; every format spec
+  and round-trip guarantee comes from there.
 - **[GrizzlyOne95](https://github.com/GrizzlyOne95)** —
   [WorldBuilder](https://github.com/GrizzlyOne95/Battlezone98Redux_WorldBuilder)
   (MIT) for heightmap zone packing, material auto-painting, and atlas tooling,

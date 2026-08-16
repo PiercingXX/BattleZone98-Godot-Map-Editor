@@ -15,7 +15,7 @@ build in the phase order given in `docs/09-build-plan.md`.
 
 Every read and write of `.hg2` / `.mat` / `.lgt` / `.trn` / `.bzn` / `.ini` /
 `.des` / `.odf` / `.vxt` / `.mesh` goes through the **`bzmap` Python
-toolchain** in the sibling repo `skippy-battlezone-map-generator`, invoked as a
+toolchain** bundled in this repo as `backend/bzmap`, invoked as a
 subprocess. `bzmap` round-trips all 128 corpus BZNs and all 36 corpus HG2s
 byte-identically; that guarantee is the foundation this editor is built on and
 you inherit it for free **only if you never go around it**.

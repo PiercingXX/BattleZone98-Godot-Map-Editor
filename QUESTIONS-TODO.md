@@ -4,7 +4,7 @@ Status: **RESOLVED 2026-08-16.** All answers recorded below. This file is kept
 as the decision record; the specs in `docs/` are derived from it.
 
 Context: these are the questions left open *after* reviewing
-`PiercingXX/skippy-battlezone-map-generator` (cloned and read 2026-08-14).
+`PiercingXX/battlezone98-map-generator` (cloned and read 2026-08-14).
 See "Notes" at the bottom for what that repo already settles.
 
 ---
@@ -95,7 +95,7 @@ submodule), with editor-bridge code living in THIS repo.
 
 ## Notes — what the generator repo already settles (do NOT re-ask)
 
-Reviewed from `skippy-battlezone-map-generator` (private, cloned 2026-08-14;
+Reviewed from `battlezone98-map-generator` (cloned 2026-08-14;
 docs measured from game v2.2.301 + BZP Workshop item 3406347034):
 
 - **File formats**: verified specs for HG2 (zone-major 256×256 blocks, 12-byte

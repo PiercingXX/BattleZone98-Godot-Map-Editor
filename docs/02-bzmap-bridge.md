@@ -4,10 +4,11 @@ This is the interface between the two halves of the project. Both sides are
 built against this document. Change it deliberately and in one commit across
 both repos.
 
-**Where the work lives:** the `bzmap editor` subcommand group is implemented in
-the **generator repo** (`skippy-battlezone-map-generator`), as
-`bzmap/editor/*.py` wired into `bzmap/cli.py`. The driver (`Backend.gd`) lives
-in **this** repo. Neither side reaches past this contract.
+**Where the work lives:** the `bzmap editor` subcommand group is the bundled
+backend at `backend/bzmap/editor/*.py`, wired into `backend/bzmap/cli.py`.
+The driver (`Backend.gd`) lives in the Godot tree. Neither side reaches past
+this contract. The editor checkout is standalone — it does not require another
+git repo at runtime.
 
 ---
 
@@ -559,7 +560,7 @@ Discovery order for `Backend.gd`, first hit wins:
 2. `BZMAP_HOME` environment variable.
 3. A bundled runtime next to the executable (`./backend/`), if the export was
    built with one.
-4. A sibling checkout: `../skippy-battlezone-map-generator/`.
+4. The in-repo `backend/` directory (the default for a source checkout).
 5. `python -m bzmap` on `PATH`.
 
 The backend must run on Linux and Windows identically. Requirements: Python

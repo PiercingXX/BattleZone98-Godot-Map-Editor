@@ -25,13 +25,19 @@ from being built on guesses.
    house style (VERIFIED / INFERRED, with the measurement). `docs/formats/` is
    the source; three corrections it makes to that repo are listed in `docs/10`
    (E3, E7, and the VDF record stride).
-4. Confirm Godot 4.7 stable is installed and exports for Linux and Windows.
+4. ~~Confirm Godot 4.7 stable is installed and exports for Linux and Windows.~~
+   **DONE on Linux 2026-08-16** — Godot 4.7.1.stable is on `PATH`; the
+   hello-world project in this repo imports and runs headless. Export
+   templates are not installed here, so a Windows `.exe` was not produced.
+   Tracked in `docs/10` Q-I.
 5. Confirm `bzmap` runs on both target OSes, and note what its dependency setup
-   takes on Windows.
+   takes on Windows. **Linux: yes**, via the sibling `.venv` (Python 3.14 +
+   numpy/Pillow/scipy). Windows still operator-blocked.
 6. **Verify install discovery on Windows** (`docs/05` §2a). The Linux paths are
    confirmed on the operator's machine; the Windows registry keys and the
-   `libraryfolders.vdf` parse are **written from documentation, not measured**.
-   Check them against a real Windows install before Phase 4 depends on them.
+   `libraryfolders.vdf` parse are **written and implemented**
+   (`bzmap/editor/discover.py`) **but not measured on Windows**. Check them
+   against a real Windows install before Phase 4 depends on them. `docs/10` Q-I.
 
 **Acceptance:** the format findings carried into the generator repo, a
 "hello world" Godot 4.7 project that exports and runs on both platforms, and

@@ -143,16 +143,16 @@ guarantee (`docs/00`, DoD #2) is achieved.
 ## The dependency direction
 
 ```
-battlezone-map-editor  ──depends on──▶  skippy-battlezone-map-generator (bzmap)
+battlezone-map-editor  (Godot + bundled backend/bzmap)
 ```
 
 One way, always. `bzmap` must never import from or know about the editor. The
 `bzmap editor` subcommand group is a general-purpose interchange surface that
 happens to have one consumer today.
 
-The generator repo is a **sibling checkout**, not a submodule — it is private
-today and public later, on its own schedule, and pinning it as a submodule
-would couple the two release timelines. `Backend.gd` locates it (`docs/02` §7).
+The format toolchain is **bundled** in this checkout as `backend/`.
+`Backend.gd` locates that first (`docs/02` §7). A separate generator repo is
+not required to run the editor.
 
 ## Threading
 

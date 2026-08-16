@@ -22,6 +22,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+*.egg-info/
 
 # OS
 .DS_Store
@@ -36,6 +37,22 @@ bzp-snapshot/
 *.sdf
 *.msh
 *.dds
+*.odf
+*.bzn
+*.hg2
+*.mat
+*.lgt
+*.trn
+*.mesh
+*.skeleton
+*.material
+*.vxt
+*.des
+*.vdf
+
+# In-repo backend templates (not extracted game assets).
+!backend/reference/
+!backend/reference/**
 
 # The clean-room wall. Format truth lives in docs/formats/; the third-party
 # reference addons it was derived from were deleted on purpose and must not

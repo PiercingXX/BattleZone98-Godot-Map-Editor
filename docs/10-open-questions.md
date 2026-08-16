@@ -265,18 +265,34 @@ careless, or a test fixture committed for convenience, would put licensed
 content in a public repo. Mitigation: the cache lives in user data, never in the
 repo, and `AGENTS.md` rule 3 is absolute.
 
-**Known violation, still outstanding — `git history`, not the working tree.**
-`resources/BZMapIO/BZMapIO.blend` (123 MB, committed in `a389e46`) is BZMapIO's
-`BZ_Unit_Models` library and almost certainly contains game-derived meshes. It
-was **deleted from the working tree** in the clean-room change, along with the
-rest of `resources/`.
+**History check, 2026-08-16.** The cited commit `a389e46` is not in this
+repository. Current `main` is five commits, all spec/docs, with **zero** blobs
+over 100 KB. The working tree has no `resources/`. Before a public release,
+re-run `git rev-list --objects --all` and confirm no game-content blobs have
+landed; do not treat the old hash as still reachable.
 
-**That is not sufficient.** The blob is still reachable in history, and so is
-`resources/BZMapIO/BZMapIO.py`. Before this repo goes public, history must be
-rewritten (`git filter-repo`) or the repo published fresh from a squashed
-initial commit. Deleting a file in a later commit never removes it.
+---
 
-Two reasons, not one: the `.blend` is a **game-content** violation of
-`AGENTS.md` rule 3, and both files are the **clean-room reference material** —
-leaving them recoverable from history weakens the wall described in
-`docs/formats/README.md`.
+## Q-H — Binary BZN reader (Phase 1 leftover)
+
+**Status:** open. **Blocks:** Phase 1 acceptance item 3 (open a stock binary
+BZN, save as ASCII) only.
+
+`bzmap editor open` detects binary BZNs (`NUL` in the first 256 bytes, a
+non-UTF-8 decode, or `binarySave = true`) and returns
+`binary_bzn_unsupported`. There is no binary reader in `bzmap`, and
+WorldBuilder is not vendored in git. A binary module belongs in the generator
+repo, written from a spec, not ported from WorldBuilder. ASCII BZP BZNs (the
+128-map corpus) open and save.
+
+---
+
+## Q-I — Windows install discovery / export (Phase 0 leftover)
+
+**Status:** code is written, **unverified on a Windows box**. **Blocks:**
+Phase 0 acceptance on Windows only.
+
+`bzmap/editor/discover.py` implements the registry + `libraryfolders.vdf` +
+GOG walk from `docs/05` §2a. It has not been run on Windows. Linux probe is
+measured. Godot 4.7.1 is installed here; export templates are not, so a
+Windows `.exe` was not produced on this machine.

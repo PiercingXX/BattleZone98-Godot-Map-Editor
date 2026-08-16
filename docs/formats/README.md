@@ -15,7 +15,7 @@ code copied to produce them.
 ## Where implementations go
 
 Every one of these formats is implemented in the **`bzmap` Python toolchain**
-(sibling repo `skippy-battlezone-map-generator`), never in the editor. See
+(sibling repo `battlezone98-map-generator`), never in the editor. See
 `AGENTS.md` §"the single most important thing to understand" and
 `docs/02-bzmap-bridge.md`. If a format module does not exist yet in `bzmap`,
 adding it is the correct move; parsing bytes in GDScript is not.

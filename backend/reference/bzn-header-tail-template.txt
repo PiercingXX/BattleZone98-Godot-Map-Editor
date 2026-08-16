@@ -1,0 +1,28 @@
+# Extracted verbatim from uexmap10_S.bzn (a corpus multiplayer map).
+# NOTE: this file is the _S VARIANT, yet msn_filename says 'uexmap10.bzn' and
+# TerrainName says 'uexmap10' -- with NO variant suffix. That is correct and
+# normal: both fields are vestigial editor residue that the engine ignores.
+# Round-trip them verbatim. See docs/02-bzn-spec.md section 2.
+
+### HEADER (file starts here)
+version [1] =
+2016
+binarySave [1] =
+false
+msn_filename = uexmap10.bzn
+seq_count [1] =
+330
+missionSave [1] =
+true
+TerrainName = uexmap10
+size [1] =
+299
+
+### TAIL (file ends here, after last [GameObject])
+[AiMission]
+[AOIs]
+size [1] =
+0
+[AiPaths]
+count [1] =
+0
