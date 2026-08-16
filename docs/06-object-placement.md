@@ -147,3 +147,21 @@ Offer a **"copy objects to variant"** action, since most maps share most of
 their economy across `_S`/`_ST`/`_SW`, and flag violations of the rules above in
 the validation panel (`docs/08`) rather than blocking the edit — the user may be
 mid-way through a legitimate sequence.
+
+## 8. The player object is required, singular, and undeletable
+
+Every variant BZN carries **exactly one** player object — `isUser = 1`,
+team 1, the 74-field craft layout. A missing or duplicated player, or a player
+block with the wrong field count, is a crash-to-lobby; the generator repo hit
+all three.
+
+Editor rules:
+- The new-map wizard creates one player object per variant, at map centre
+  (`docs/07` §1). Opened maps arrive with theirs identified by the backend
+  (`required: true` in `objects.json`, `docs/02` §4a).
+- The player is **movable and rotatable but not deletable**, and a second one
+  cannot be placed — the palette shows the class as "already placed" in the
+  active variant.
+- Its block internals (the craft fields, the mission record interplay) are
+  entirely the backend's business; the inspector exposes position, yaw, and
+  nothing that would let a user break the layout.

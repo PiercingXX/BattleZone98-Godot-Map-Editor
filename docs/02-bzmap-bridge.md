@@ -20,8 +20,11 @@ All exchange happens through a **session directory** the editor owns:
   manifest.json        # what this map is; written by backend, read by both
   terrain.r16          # heights, raw little-endian uint16, ROW-MAJOR
   materials.u16        # material grid, raw little-endian uint16, ROW-MAJOR
-  objects.json         # placed objects, all variants
+  objects.json         # placed objects, all variants (schema in §4a)
+  features.json        # water/plant feature parameters (schema in §4b)
+  masks/               # region masks for features, raw u8 grids, ROW-MAJOR
   meta.json            # editable metadata fields
+  dirty.json           # what the editor changed since open (see "pass-through")
   residue/             # opaque backend-owned data — the editor NEVER touches this
   report.json          # last validation result
 ```
@@ -50,6 +53,52 @@ the original binary form of a stock BZN — lives here in whatever form the
 backend finds convenient. The editor treats it as a black box it copies around
 but never reads or writes. This is what makes DoD #2 (byte-identical on
 untouched data) achievable.
+
+The backend also keeps **verbatim copies of every source file** in residue,
+because of the pass-through rule below.
+
+### The pass-through rule
+
+**A source file whose inputs the editor did not change is emitted from the
+verbatim copy, byte for byte — never re-encoded.** Re-encoding "unchanged" data
+is where byte-fidelity quietly dies, so the rule is structural, driven by
+`dirty.json`:
+
+```json
+{
+  "terrain": false,
+  "materials": false,
+  "objects": {"": [], "_S": ["obj-0042", "new-0001"], "_SW": []},
+  "features": false,
+  "meta": ["ini.missionName"]
+}
+```
+
+The editor maintains this file (it is the undo stack's summary of what has ever
+been touched this session); the backend consumes it on `save`:
+
+- `terrain` false → the original `.hg2` is copied out verbatim, `terrain.r16`
+  ignored. True → re-encode from `terrain.r16`, preserving the header's
+  `unknownA` from residue.
+- `objects` lists per variant the ids of touched objects → untouched blocks are
+  re-emitted verbatim from residue; only listed ids are mutated or cloned.
+- **Derived files regenerate only when their inputs changed**: `.lgt` and the
+  thumbnails when terrain, features, or objects changed; `.des` counts when
+  objects changed. Otherwise verbatim copies. A regenerated `.lgt` is baked,
+  never zero-filled (a zero lightmap renders a black in-game radar).
+
+This is what makes Phase 1's acceptance test — open then save with no edits,
+every file byte-identical — true *by construction* rather than by luck.
+
+### Inherited out-of-range data is preserved, never rejected
+
+The editor's sculpting ceiling is raw 4095 (Q6), but **stock maps exceed it** —
+`ulltst96` measures raw 7630 (generator repo open question E7). Opening ALL maps
+(Q7) plus byte-fidelity (DoD #2) therefore forces this rule: the 4095 ceiling
+applies to **editor writes only**. Values above it that arrive from a source
+file pass through untouched (uint16 holds them fine), survive save, and are
+reported as a manifest warning — the backend must never reject or clamp them.
+Only a **newly created** map is validated against the ceiling.
 
 ---
 
@@ -245,18 +294,18 @@ bzmap editor save --session <dir> --out <dir> [--stem <name>] --json
 ```
 
 Backend responsibilities, all of them load-bearing:
-- Re-pack row-major → zone-major for `.hg2`, `.mat`, `.lgt`.
-- **Bake the `.lgt`.** Never ship zeros; a zero lightmap renders a black radar
-  minimap in game.
-- Re-emit each **untouched** object block verbatim from residue; mutate only
-  changed fields on touched ones; clone a verified template for new ones (§6).
+- Apply the **pass-through rule** (§1): unchanged inputs → verbatim copies;
+  changed inputs → re-encode (row-major → zone-major for `.hg2`/`.mat`/`.lgt`),
+  derived files regenerated only when their inputs changed.
+- Touched objects (per `dirty.json`) are mutated field-by-field; new objects are
+  **cloned from verified templates** (§6); untouched blocks re-emit verbatim.
 - Maintain the BZN invariants `bzmap` already enforces: `size`, `seq_count`,
-  contiguous `obj_addr`, one `isUser=1` player, and the **mission record
-  (`name = Mult*Mission`, `sObject = count+1`) at the end of the last object
-  block** — objects are appended *before* it.
-- Regenerate `.des` counts from the real object counts.
+  contiguous `obj_addr`, exactly one `isUser=1` player per variant, and the
+  **mission record (`name = Mult*Mission`, `sObject = count+1`) at the end of
+  the last object block** — objects are appended *before* it.
 - `byte_identical` reports which output files match the source bytes exactly.
-  The editor surfaces this; it is DoD #2's evidence.
+  The editor surfaces this; it is DoD #2's evidence. `regenerated` lists the
+  derived files that were rebuilt and why.
 
 ### `validate`
 Run the offline validators against the session.
@@ -343,10 +392,70 @@ the backend on `save`.
 `{"kind": "base"}` for a plain base-game map, `{"kind": "bzp", ...}` for a BZP
 one.
 
-`height_max_raw` is **4095** (Q6). The generator repo's open question E7 found a
-stock map measuring 7630, which is unexplained; until that is resolved there,
-the editor clamps at 4095 and the backend rejects anything higher. If E7
-resolves, this field is how the ceiling changes without an editor release.
+`height_max_raw` is **4095** (Q6): the ceiling for **editor writes** — brushes
+clamp to it, and newly created maps are validated against it. It is *not* a
+gate on opened data; inherited values above it pass through per §1, with a
+manifest warning (`"height_over_ceiling": true`) so the UI can say so. If the
+generator repo's E7 resolves to a wider ceiling, this field is how it changes
+without an editor release.
+
+### 4a. `objects.json`
+
+One record per placed object, per variant:
+
+```json
+{
+  "": [ ... ],
+  "_S": [
+    {
+      "id": "obj-0042",
+      "origin": "source",
+      "prjid": "eggeizr1",
+      "x": 1240.5, "y": 98.0, "z": 2210.0,
+      "yaw_deg": 57.4,
+      "team": 0,
+      "label": "eggeizr10_geyser",
+      "up_convention": "upright",
+      "pinned_y": false,
+      "managed": false,
+      "required": false
+    }
+  ]
+}
+```
+
+- `id` is **stable for the life of the session** and is the key linking three
+  things: this record, its verbatim block in residue, and its entry in
+  `dirty.json`. The backend assigns ids on `open` (`origin: "source"`); the
+  editor assigns fresh ids for placements (`origin: "new"`, id `new-NNNN`).
+  Without this link there is no way to know which blocks may be re-emitted
+  verbatim — it is the hinge of the pass-through rule.
+- `managed: true` marks backend-owned objects (water/plant carriers — the
+  editor may inspect but not transform them, `docs/07` §5).
+- `required: true` marks objects that must exist (the player object,
+  `docs/06` §8) — the editor refuses to delete them.
+
+### 4b. `features.json`
+
+Water and plant authoring parameters (`docs/07` §5), consumed by the backend's
+mesh generation on save:
+
+```json
+{
+  "water": [
+    {"stem": "mywater1", "level_m": 92.0, "mask": "masks/mywater1.u8",
+     "variant_scope": "all"}
+  ],
+  "plants": [
+    {"stem": "myplnt1", "mask": "masks/myplnt1.u8", "density": 260,
+     "seed": 7}
+  ]
+}
+```
+
+Masks are row-major u8 grids at heightmap resolution, 0 = outside. The backend
+owns everything downstream: mesh generation, the carrier objects (which appear
+in `objects.json` as `managed`), and the corpus carrier basis.
 
 ---
 
@@ -401,6 +510,14 @@ The runtime path is not a workaround; it is what the operator arrived at
 independently after the Warrens series — *"empty craft = runtime
 `BuildObject(odf, 0, pos)` + `RemovePilot(h)`, host-only"* — because it also
 avoids BZN-placed craft acquiring pilots at load and turning hostile.
+
+**Pack-context caveat:** the `<stem>MAP.lua` module hook and its script plumbing
+are a **BZP convention**. For a `{"kind": "base"}` map the backend needs a
+base-game script template that the engine loads natively, with the same
+host-guarded spawn block. Verify a base-game `<stem>.lua` actually runs before
+relying on it — this is a Phase 0/1 check, tracked in `docs/10` Q-G. If runtime
+spawning turns out to be BZP-only, unverified classes on base-game maps are
+simply unavailable, stated in the palette with the reason.
 
 The editor's job is to **show this distinction in the palette and the
 inspector** (`docs/06` §5), never to override it. A user placing a howitzer

@@ -39,7 +39,10 @@ Three steps, no more:
 - **Base-game map** or **BZP map** (Q2). This sets `pack_context`, which
   controls the asset palette (`docs/05` §5) and which metadata sections the
   editor presents (§3).
-- Which variants to create: base, `_S`, `_ST`, `_SW`.
+- Which variants to create: base, `_S`, `_ST`, `_SW`. Each created variant
+  starts with its required player object at map centre and, for base/`_ST`/
+  `_SW`, a full 14-point spawn ring scaffold the user then moves into place
+  (`docs/06` §7–8) — starting from the rules rather than warning toward them.
 
 ## 2. Opening maps
 

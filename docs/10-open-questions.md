@@ -117,6 +117,26 @@ than the exception.
 
 ---
 
+## Q-G — Does runtime spawning work on base-game maps?
+
+**Status:** unknown. **Blocks:** `placement_mode: "runtime"` for
+`pack_context: base` only; BZP maps are unaffected.
+
+The `<stem>MAP.lua` hook, its module shape, and the script plumbing around it
+are **BZP conventions**. The engine loads a `<stem>.lua` for stock maps, but
+whether a plain base-game multiplayer map's script reliably gets an `Update`
+loop and `BuildObject` rights — without BZP's loader — is unverified here.
+
+**Experiment (Phase 1, cheap):** a base-game test map whose `.lua` does a
+host-guarded `BuildObject` of a scrap piece; load it in game and look for the
+scrap.
+
+**If it fails:** unverified classes are simply unavailable on base-game maps,
+stated in the palette with the reason (`docs/02` §6). The feature degrades to
+exactly what verified templates cover.
+
+---
+
 ## Standing risks
 
 ### R1 — The editor and the validators share the same readers

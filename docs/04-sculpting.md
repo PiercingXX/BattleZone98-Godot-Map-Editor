@@ -46,6 +46,10 @@ the user sees it live.
 - Hard clamp to **raw 4095** (Q6). Sculpting cannot exceed it, and the UI shows
   the ceiling being hit rather than silently flattening against it — the
   generator repo's rule is *don't silently clip*.
+- **The clamp binds brush writes, not inherited data.** Some stock maps carry
+  values above 4095 (`docs/02` §1); those cells render normally and pass
+  through save untouched. A brush that *touches* such a cell writes a clamped
+  value — that is an edit the user made, not a correction the editor invented.
 - Hard floor at **raw 1**, not 0, because **raw 0 means "undefined region"** to
   the engine, not "sea level". A brush must never manufacture undefined cells.
 - Marking cells undefined is a separate, explicit tool (`Set Undefined`), with

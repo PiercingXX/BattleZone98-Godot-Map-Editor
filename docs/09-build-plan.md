@@ -64,7 +64,10 @@ No viewport yet. Test through a headless harness or a debug panel.
 
 **Acceptance:**
 1. A stock 5120 m map loads and renders correctly — spot-check heights at known
-   grid positions against the backend's own `sample_m` values.
+   grid positions against the backend's own `sample_m` values. (No 5120 m map
+   on the build machine? `bzmap editor new` at 5120 plus a synthetic terrain
+   fill serves until one is available — the criteria are about scale, not
+   provenance.)
 2. Camera controls per `docs/03` §6, with speed scaling that makes a 5120 m map
    crossable.
 3. **60 fps at 5120 m** with the camera moving (`docs/03` §7).
@@ -126,6 +129,9 @@ No viewport yet. Test through a headless harness or a debug panel.
    `MAP.lua`. Verify by reading the saved files.
 6. Variant rules are enforced or warned: no economy in the base variant, full
    spawn ring in base/`_ST`/`_SW`, side-grouped `_SW` spawns.
+7. The player object is singular, movable, and undeletable in every variant
+   (`docs/06` §8) — attempting to delete it or place a second is refused with
+   the reason shown.
 
 ---
 
@@ -161,6 +167,28 @@ No viewport yet. Test through a headless harness or a debug panel.
 6. Hotkey reference complete and rebinding persists.
 
 ---
+
+## Testing strategy
+
+Runs through every phase, not a phase of its own:
+
+- **Bridge tests live in the generator repo**, in its house style: golden-file
+  round-trips per verb (open→save byte-identical, with and without edits;
+  multi-zone; binary-source), pass-through-rule cases driven by `dirty.json`
+  fixtures, and a broken-fixture test per error code in `docs/02` §5. These run
+  without the editor.
+- **Editor logic tests** (gdUnit4 or GUT) for the pure parts: `HeightField`
+  dirty-rect bookkeeping, `UndoStack` interleaving, brush kernels applied to
+  known arrays, `TerrainRaycast` against analytic slopes. These run headless
+  (`godot --headless`) in CI.
+- **A fake backend** — a tiny script speaking the `docs/02` contract from
+  canned responses — so editor UI flows are testable on machines with neither
+  the game nor the generator repo, and so contract violations fail loudly in
+  editor CI rather than at the operator's desk.
+- **Visual/perf evidence is captured, not asserted**: each visual acceptance
+  criterion produces a screenshot plus the numbers it was checked against, per
+  `AGENTS.md`. The perf gate (Phase 2 #3) is a measured number in the phase
+  notes, from the debug overlay.
 
 ## Ordering notes
 

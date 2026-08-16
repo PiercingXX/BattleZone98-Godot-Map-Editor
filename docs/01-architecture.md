@@ -115,15 +115,25 @@ MapState
   heights         : PackedInt32Array  # row-major, grid_z × grid_x, raw 0..4095
   materials       : PackedInt32Array  # row-major, (depth/20) × (width/20)
   variants        : Dictionary        # "" / "_S" / "_ST" / "_SW" -> [PlacedObject]
+  features        : Dictionary        # water/plant params (docs/02 §4b)
   meta            : Dictionary        # trn/ini/des/odf fields the editor exposes
   session_dir     : String            # where the backend exchange lives
-  dirty           : bool
+  dirty           : Dictionary        # mirrors dirty.json (docs/02 §1)
 ```
 
 `heights` is `int32` rather than a packed 16-bit type because GDScript has no
-`PackedUInt16Array`; the backend narrows to `uint16` on write and validates the
-0–4095 range there. The editor clamps at the brush (`docs/04` §3) so the two
-never disagree.
+`PackedUInt16Array`; the backend narrows to `uint16` on write. Brushes clamp
+their **own writes** to raw 4095 (`docs/04` §3); inherited values above the
+ceiling — some stock maps have them — are carried and preserved, never
+"corrected" (`docs/02` §1).
+
+`dirty` is not a boolean. It is the per-domain record of what this session has
+ever touched — terrain, materials, per-object ids, features, meta fields — and
+it is what the backend's pass-through rule consumes to keep untouched files
+byte-identical. The undo stack maintains it: an operation marks its domain
+dirty, and **dirtiness survives undo** (an undone edit still forces a
+re-encode; correctness over cleverness — an entry is removed only if proven
+byte-equal, which is not worth building).
 
 **Residue** — every field of the source map that the editor does not expose —
 lives in the session directory and is never loaded into `MapState`. The editor

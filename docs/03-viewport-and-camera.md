@@ -32,7 +32,11 @@ to design against.
 
 **The approach:**
 
-- The heightmap lives in a `Texture2D` (`R16` / `RF` format), uploaded once.
+- The heightmap lives in a `Texture2D`, **`Image.FORMAT_RF`** (32-bit float),
+  uploaded once. Not `FORMAT_RH`: half floats have an 11-bit mantissa, so raw
+  values above 2048 quantize to steps of 2 (0.2 m) — a silent precision loss
+  exactly in the height range where plateaus live. At 1024², RF is a 4 MB
+  texture; the precision is worth it.
 - Terrain is drawn as a grid of **chunk meshes** — flat, pre-subdivided planes,
   128×128 cells each — displaced in the **vertex shader** by sampling the height
   texture.
