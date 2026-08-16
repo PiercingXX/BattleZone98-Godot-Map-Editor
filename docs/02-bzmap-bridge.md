@@ -79,7 +79,15 @@ been touched this session); the backend consumes it on `save`:
 
 - `terrain` false → the original `.hg2` is copied out verbatim, `terrain.r16`
   ignored. True → re-encode from `terrain.r16`, preserving the header's
-  `unknownA` from residue.
+  `unknownA` from residue — **and the per-cell flag bits**: the height word is
+  `[flags:3][height:13]` (mask `0x1FFF`), verified in `docs/formats/F1` §3,
+  which also fixes `terrain.r16` as plain row-major, masked, height-only
+  (`F1` §6). The backend must carry the flag
+  bits of every cell in residue and OR them back on re-encode; zeroing them is
+  a silent edit of data the user never touched. Whether `terrain.r16` carries
+  full 16-bit words or masked 13-bit heights is the backend's call — but the
+  editor must be handed **height-only** values, or brush math on a
+  flag-carrying cell corrupts it.
 - `objects` lists per variant the ids of touched objects → untouched blocks are
   re-emitted verbatim from residue; only listed ids are mutated or cloned.
 - **Derived files regenerate only when their inputs changed**: `.lgt` and the
@@ -93,7 +101,10 @@ every file byte-identical — true *by construction* rather than by luck.
 ### Inherited out-of-range data is preserved, never rejected
 
 The editor's sculpting ceiling is raw 4095 (Q6), but **stock maps exceed it** —
-`ulltst96` measures raw 7630 (generator repo open question E7). Opening ALL maps
+`ulltst96` measures raw 7630 (generator repo open question E7; 7630 fits the
+verified 13-bit height field, so E7's answer is a raw-8191 engine ceiling with
+4095 being an *editor authoring* convention — see `docs/formats/F1` §3).
+Opening ALL maps
 (Q7) plus byte-fidelity (DoD #2) therefore forces this rule: the 4095 ceiling
 applies to **editor writes only**. Values above it that arrive from a source
 file pass through untouched (uint16 holds them fine), survive save, and are

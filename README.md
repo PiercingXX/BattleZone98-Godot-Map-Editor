@@ -71,6 +71,7 @@ The interface between the two is [`docs/02-bzmap-bridge.md`](docs/02-bzmap-bridg
 | [`docs/09-build-plan.md`](docs/09-build-plan.md) | Phased milestones with acceptance criteria. |
 | [`docs/10-open-questions.md`](docs/10-open-questions.md) | Unknowns, risks, and the experiments that resolve them. |
 | [`QUESTIONS-TODO.md`](QUESTIONS-TODO.md) | The design decision record. |
+| [`docs/formats/`](docs/formats/README.md) | Clean-room functional specs for every game file format (`F1`–`F8`). |
 
 ## Requirements
 
@@ -90,6 +91,19 @@ The interface between the two is [`docs/02-bzmap-bridge.md`](docs/02-bzmap-bridg
   [WorldBuilder](https://github.com/GrizzlyOne95/Battlezone98Redux_WorldBuilder)
   (MIT) for heightmap zone packing, material auto-painting, and atlas tooling,
   plus `bzfile` and `ExtraUtilities`.
+- **Business Lawyer & DivisionByZero** — BZMapIO, the Blender heightmap map
+  editor whose working HG2/MAT/BZN implementation settled the zone interleave,
+  the 13-bit height field, and the MAT tile word.
+- **BattlezoneScrapField, GrizzlyOne95, Commando950 & Kindrad** —
+  [Battlezone98Redux_BlenderAIO](https://github.com/BattlezoneScrapField/Battlezone98Redux_BlenderAIO)
+  (GPL-3.0), which identified the Redux OGRE model pipeline and pinned down the
+  classic GEO/VDF/SDF layouts.
+
+  Both addons were studied under a **clean-room process** and are no longer
+  present in this repository; `bzmap` is written from the functional specs in
+  [`docs/formats/`](docs/formats/README.md), not from their code. Losing the
+  code does not mean losing the acknowledgement — the facts in those specs are
+  knowable because these people did the reverse engineering first.
 - The BZP pack and its maintainer, whose corpus is the ground truth behind
   nearly every format fact these specs rely on.
 - Rebellion, for *Battlezone 98 Redux*. All game assets remain theirs; this tool

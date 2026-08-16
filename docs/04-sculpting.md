@@ -149,6 +149,26 @@ Q5: manual painting **and** auto-paint.
   normal path; manual painting is for fixing what the rules get wrong.
 - Auto-paint is one undo step over the whole affected rect.
 
+### Painting is regions; transitions are computed
+
+A MAT tile is not a bare material index. The verified decode
+(`docs/formats/F2` §2, `docs/10` Q-C) gives each 20 m tile four nibbles —
+**orientation, variant, base, transition** — where interiors are solid tiles,
+region edges are cap tiles, corners are diagonal tiles, each with one of eight
+orientations. Hand-authoring those nibbles is not a workflow; autotiling is a
+requirement, spelled out as output rules in `docs/formats/F2` §5.
+
+So the editor's paint tool writes **base material per tile** (what the user
+means by "paint sand here"), and the backend derives transition/cap/diagonal
+tiles and rotations for the dirty region on save — the same ownership split as
+auto-paint, applied to manual strokes. The viewport shader approximates
+transitions well enough to paint by (exact cap rendering can lag behind);
+the saved file gets the real autotiled result. Variant nibbles randomize
+across solids, and orientation randomization on solid tiles is available for
+the same anti-repetition reason (`docs/formats/F2` §5) — offer it, default it
+off so output stays deterministic. Tiles the user never painted keep their
+original words verbatim, per the pass-through rule.
+
 Note the resolution mismatch: one material tile is 4×4 height cells. Show the
 material grid as an overlay while the paint tool is active so the user can see
 what they are actually addressing.

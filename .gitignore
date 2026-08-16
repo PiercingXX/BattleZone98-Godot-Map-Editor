@@ -14,6 +14,9 @@ cache/
 sessions/
 *.log
 
+# Agent working state — local session data, not project content
+.skippy/
+
 # Python backend
 __pycache__/
 *.pyc
@@ -33,3 +36,8 @@ bzp-snapshot/
 *.sdf
 *.msh
 *.dds
+
+# The clean-room wall. Format truth lives in docs/formats/; the third-party
+# reference addons it was derived from were deleted on purpose and must not
+# come back. See AGENTS.md rule 8 and docs/formats/README.md.
+resources/

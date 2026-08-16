@@ -73,6 +73,21 @@ define, not a game format.
    editor nobody can safely use, and retrofitting it is worse than building it
    in.
 
+8. **Format truth comes from `docs/formats/`, and there is nothing else to
+   look at.** Two third-party Blender addons — one GPL-3.0, one with no stated
+   license — encoded most of what is known about these formats. Porting their
+   code would have made `bzmap` a derivative work, so the formats were
+   **clean-roomed**: the spec role read them and wrote `docs/formats/F1`–`F8`
+   (facts, layouts, field semantics, edge cases, test vectors — no code), and
+   the reference tree was then **deleted from this repository**.
+
+   You implement from those specs alone. Do not go looking for the originals,
+   do not re-vendor them, and do not "check the upstream repo" — the wall is
+   the whole point, and crossing it retroactively contaminates work already
+   done. If a spec is ambiguous or contradicted by reality, say so and ask for
+   the spec to be clarified. The process and its rationale are recorded in
+   `docs/formats/README.md`.
+
 ---
 
 ## Environment

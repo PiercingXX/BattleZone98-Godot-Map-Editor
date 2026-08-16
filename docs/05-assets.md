@@ -27,17 +27,19 @@ Sources, in layers:
 
 Each class in the index records which layer it came from, because of §5.
 
-**Phase 0 discovery task, not a guess:** the generator repo has verified parsers
-for `.geo` and `.sdf` and knows where `Edit/trn/` templates live, but it does
-**not** document where ODFs, vehicle meshes, and textures physically live in a
-BZ98R install — loose in directories, or packed in `.zfs` archives (a
-`MakeZFS.exe` ships with the game, which is suggestive but not evidence). Nor
-does it document the Redux **HD** model format.
+**Phase 0 discovery task, not a guess:** the *formats* are now specified —
+`.geo`, `.vdf`/`.sdf`, `.map`/`.act`, and the Redux HD OGRE chain all have
+functional specs in `docs/formats/` — but **where those files physically live in
+a BZ98R install is still unknown**: loose in directories, or packed in `.zfs`
+archives (a `MakeZFS.exe` ships with the game, which is suggestive but not
+evidence).
 
 Skippy must inventory a real install first and write the findings into the
 generator repo's format docs before building the converter. Do not guess a
-layout. If `.zfs` unpacking turns out to be required, that is a `bzmap`
-format module with its own tests, like every other format in that repo.
+layout. The extension set to inventory is in `docs/formats/F7` §7. If `.zfs`
+unpacking turns out to be required, that is a `bzmap` format module with its own
+tests, like every other format in that repo — and it is the one format in this
+pipeline with no specification behind it.
 
 ## 3. The fidelity chain
 
@@ -47,7 +49,7 @@ than an all-or-nothing gamble:
 
 | `mesh_fidelity` | What it is | When |
 |---|---|---|
-| `hd` | The Redux HD model, textured | If the HD format is decodable (unknown today — see `docs/10`) |
+| `hd` | The Redux HD model, textured | **Format identified and specified** (`docs/10` Q-B): OGRE binary `.mesh`/`.skeleton` + `.material` + `.dds` — full chunk layouts in `docs/formats/F7` |
 | `geo_textured` | Legacy `.geo`/`.sdf` geometry with its material textures applied | The expected common case for buildings |
 | `geo_flat` | Legacy geometry with per-face flat colours from the `.geo` face records | Geometry parsed, textures unresolved |
 | `proxy` | A labelled box at the class's real footprint and height | Nothing decodable |
@@ -55,6 +57,23 @@ than an all-or-nothing gamble:
 The chain is per-class and recorded in the index, so the editor can show the
 user exactly what they are looking at, and so an improvement to the converter
 lifts everything without an editor change.
+
+Three converter rules, each specified in full in `docs/formats/`:
+
+- **Skip non-render geometry nodes.** VDF/SDF geometry nodes carry class IDs,
+  and eyepoints, headlight masks, hardpoints (all five types), and
+  flame/smoke/dust emitters must not be emitted into the `.glb` — otherwise
+  every craft grows visible gizmo boxes in the viewport. Exact ID list:
+  `docs/formats/F5` §8. Keep their transforms as named attachment points.
+- **`geo_flat` is engine-faithful, not a fallback we invented.** `.geo` faces
+  carry per-face RGB, and the engine itself renders flat face colours when a
+  texture doesn't resolve (`docs/formats/F4` §6).
+- **Mind three classic-format traps** (`F4` §5, `F5` §6): `.geo` UV V is
+  flipped (`v = 1 − v_file`); UVs live on face nodes so vertices must be split
+  per unique (position, normal, uv); and **VDF geometry records are a flat
+  100-byte stride** — a 120-byte reader desyncs. (The earlier note here about a
+  "20-byte overlapping tail" was one reference implementation's artefact, now
+  resolved — see `F5` §6.)
 
 **A proxy is not a failure state to hide.** Correct footprint and height are
 what placement decisions actually depend on — spacing buildings ≥ 40 m apart,
@@ -70,15 +89,24 @@ referenced by the terrain shader (`docs/03` §3).
 
 Two things to get right:
 
-- **The MAT bit layout is still marked INFERRED** in the generator repo
-  (`docs/01` §2, open question E3): `[matA:4][matB:4][variant:4][0:4]`. The
-  viewport is the best test that has ever existed for it — load a stock map,
-  splat it, and compare against the same map in game. Agreement confirms E3;
-  disagreement is a real finding that belongs back in the generator repo's docs.
-  **Treat this as an experiment with an expected outcome, not as settled.**
+- **The MAT bit layout is now settled, and it is not what E3 guessed.** The
+  generator repo's `docs/01` §2 has `[matA:4][matB:4][variant:4][0:4]` with an
+  always-zero nibble. There is no always-zero nibble: the word is
+  `[orientation:4][variant:4]` then `[base:4][transition:4]`, verified against
+  independent read and write paths (`docs/formats/F2` §2). Fix E3 in the
+  generator repo. What remains experimental is the **orientation sign** and the
+  diagonal mirror remap — load a stock map, splat it, compare against the game.
+  Agreement promotes those to verified; disagreement is a real finding.
 - Fall back gracefully: if the atlas cannot be extracted, splat with the
   `[TextureType*]` `FlatColor` values instead. A flat-coloured map that shows
   material *boundaries* correctly is still a usable painting surface.
+- **Cross-check against the recorded atlas tables.** `docs/formats/F2` §4
+  carries known-working per-world atlas UV tables for all nine worlds (8×8 grids
+  at 0.125 steps, 4×4 at 0.25) plus the tile naming rule
+  `<planet><base><transition><S|C|D><variant>0.MAP`, which gives you the lookup
+  key straight from the tile word. They validate our extraction and are an
+  emergency fallback for UV layout — the atlas *images* still must come from the
+  user's install.
 
 ## 5. Assets do not cross workshop items
 
