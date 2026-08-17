@@ -4,7 +4,9 @@ render_mode specular_schlick_ggx, cull_back;
 uniform sampler2D height_tex : filter_linear, repeat_disable;
 uniform sampler2D mat_tex : filter_nearest, repeat_disable;
 uniform sampler2D atlas_tex : filter_linear, repeat_disable;
+uniform sampler2D tile_lut : filter_nearest, repeat_disable;
 uniform bool use_atlas = false;
+uniform bool use_tile_lut = false;
 uniform vec4 mat_uvs[16];
 uniform vec2 map_cells = vec2(256.0, 256.0);
 uniform float cell_m = 5.0;
@@ -45,11 +47,55 @@ void fragment() {
 	float slope = 1.0 - clamp(n.y, 0.0, 1.0);
 	vec3 ground = mix(vec3(0.42, 0.34, 0.24), vec3(0.58, 0.56, 0.50), clamp(slope * 2.5, 0.0, 1.0));
 	if (show_materials) {
-		float idx = texture(mat_tex, v_uv).r * 255.0;
-		int mi = clamp(int(idx + 0.5), 0, 15);
-		if (use_atlas) {
+		// Full .mat tile word (F2 §2): R = orientation<<4 | variant,
+		// G = base<<4 | transition.
+		vec2 word = texture(mat_tex, v_uv).rg * 255.0;
+		int b0 = int(word.x + 0.5);
+		int b1 = int(word.y + 0.5);
+		int orient = b0 >> 4;
+		int variant = b0 & 15;
+		int base_m = b1 >> 4;
+		int trans_m = b1 & 15;
+		int mi = base_m;
+		vec2 local = fract(vec2(v_world.x, v_world.z) / 20.0);
+		if (use_atlas && use_tile_lut) {
+			// kind: solid / cap / diagonal — decided by the word itself.
+			int kind = 0;
+			if (base_m != trans_m) {
+				kind = orient < 8 ? 1 : 2;
+			}
+			vec4 rect = texelFetch(tile_lut,
+				ivec2(base_m * 16 + trans_m, kind * 11 + min(variant, 10)), 0);
+			if (rect.z <= 0.0) {
+				rect = mat_uvs[mi];  // no such tile shipped — solid fallback
+			} else {
+				// Orientation → rotation quarter-turns + mirror (F2 §2).
+				int c = orient;
+				int rot;
+				bool mirror;
+				if (c < 8) {
+					mirror = c < 4;
+					rot = mirror ? (1 - c) & 3 : (7 - c) & 3;
+				} else {
+					mirror = c < 12;
+					rot = mirror ? (9 - c) & 3 : (14 - c) & 3;
+				}
+				vec2 p = local - 0.5;
+				for (int r = 0; r < rot; r++) {
+					p = vec2(-p.y, p.x);
+				}
+				if (mirror) {
+					p.x = -p.x;
+				}
+				local = p + 0.5;
+			}
+			// Half-texel inset against atlas bleed between adjacent tiles.
+			vec2 atlas_px = vec2(textureSize(atlas_tex, 0));
+			vec2 inset = 0.5 / atlas_px;
+			ground = texture(atlas_tex,
+				rect.xy + inset + local * (rect.zw - 2.0 * inset)).rgb;
+		} else if (use_atlas) {
 			vec4 rect = mat_uvs[mi];
-			vec2 local = fract(vec2(v_world.x, v_world.z) / 20.0);
 			ground = texture(atlas_tex, rect.xy + local * rect.zw).rgb;
 		} else {
 			ground = mix(mat_colors[mi], ground, 0.15);
@@ -60,7 +106,9 @@ void fragment() {
 		ground = mix(ground, slope_col, 0.55);
 	}
 	float h = texture(height_tex, v_uv).r;
-	if (h < 0.05) {
+	// Void cells (raw height 0) hatch only in the diagnostic flat-colour
+	// view; with the atlas active the game just draws their tiles.
+	if (h < 0.05 && !(show_materials && use_atlas)) {
 		float hatch = step(0.5, fract((v_uv.x + v_uv.y) * map_cells.x * 0.2));
 		ground = mix(vec3(0.08, 0.08, 0.10), vec3(0.22, 0.06, 0.06), hatch);
 	}

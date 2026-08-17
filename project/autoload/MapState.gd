@@ -306,11 +306,15 @@ func write_materials_rect(x0: int, z0: int, w: int, d: int, values: PackedInt32A
 func upload_materials() -> void:
 	if mat_grid_x < 1 or mat_grid_z < 1:
 		return
+	# Full tile word per cell (F2 §2): R = byte0 (orientation<<4 | variant),
+	# G = byte1 (base<<4 | transition). The shader decodes the word and draws
+	# the same atlas tile the game would.
 	var bytes := PackedByteArray()
-	bytes.resize(mat_grid_x * mat_grid_z)
+	bytes.resize(mat_grid_x * mat_grid_z * 2)
 	for i in materials.size():
-		bytes[i] = (materials[i] >> 12) & 0xF
-	mat_image = Image.create_from_data(mat_grid_x, mat_grid_z, false, Image.FORMAT_R8, bytes)
+		bytes[i * 2] = materials[i] & 0xFF
+		bytes[i * 2 + 1] = (materials[i] >> 8) & 0xFF
+	mat_image = Image.create_from_data(mat_grid_x, mat_grid_z, false, Image.FORMAT_RG8, bytes)
 	if mat_texture == null:
 		mat_texture = ImageTexture.create_from_image(mat_image)
 	else:

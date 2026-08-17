@@ -87,6 +87,7 @@ static func _describe_world(path: String, world_id: String) -> Dictionary:
 		"atlas": atlas_name,
 		"atlas_image": looked["atlas_image"],
 		"tile_uvs": looked["tile_uvs"],
+		"atlas_tiles": looked.get("atlas_tiles", {}),
 		"sky": sky.strip_edges(),
 		"texture_types": texture_types,
 	}
@@ -157,7 +158,10 @@ static func _atlas_lookup(game_root: String, atlas_name: String, world_id: Strin
 				uvs[i] = found[key]
 			elif found.has(alt):
 				uvs[i] = found[alt]
-	return {"atlas_image": image, "tile_uvs": uvs}
+		# The full tile table (solids, caps, diagonals, variants) so the
+		# viewport can draw the exact tile each .mat word names (F2 §4).
+		return {"atlas_image": image, "tile_uvs": uvs, "atlas_tiles": found}
+	return {"atlas_image": image, "tile_uvs": uvs, "atlas_tiles": {}}
 
 
 static func _texture_labels(cfg) -> Dictionary:

@@ -45,6 +45,7 @@ func refresh_materials() -> void:
 	var colors := MaterialPalette.colors()
 	var atlas := _load_atlas()
 	var uvs := MaterialPalette.atlas_uvs()
+	var lut := _build_tile_lut()
 	for child in get_children():
 		if child is MeshInstance3D:
 			var mat := (child as MeshInstance3D).material_override as ShaderMaterial
@@ -60,6 +61,62 @@ func refresh_materials() -> void:
 				mat.set_shader_parameter("mat_uvs", uvs)
 			else:
 				mat.set_shader_parameter("use_atlas", false)
+			if atlas != null and lut != null:
+				mat.set_shader_parameter("tile_lut", lut)
+				mat.set_shader_parameter("use_tile_lut", true)
+			else:
+				mat.set_shader_parameter("use_tile_lut", false)
+
+
+const _LUT_VARIANTS := 11  # variant nibble 0..10 → 'A'..'K' (F2 §2)
+
+
+## Bake the world's atlas tile table (F2 §4) into a 256×33 RGBA32F lookup:
+## x = base * 16 + transition, y = kind * 11 + variant, texel = (u, v, w, h).
+## kind: 0 solid, 1 cap, 2 diagonal. w == 0 marks "no such tile" and the
+## shader falls back to the solid tile / flat colour.
+func _build_tile_lut() -> ImageTexture:
+	var tiles: Dictionary = {}
+	for world in MapState.worlds:
+		if typeof(world) != TYPE_DICTIONARY:
+			continue
+		if str(world.get("id", "")).to_lower() == MapState.world.to_lower():
+			tiles = world.get("atlas_tiles", {})
+			break
+	if tiles.is_empty():
+		return null
+	# Parse "EL01CA0.MAP" → base 0, trans 1, kind C, variant A.
+	var table := {}  # [base, trans, kind, variant] → [u, v, w, h]
+	for key in tiles.keys():
+		var stem := str(key).get_basename()
+		if stem.length() < 6 or not stem.ends_with("0"):
+			continue
+		var core := stem.substr(stem.length() - 5, 4)
+		var base := core.substr(0, 1).hex_to_int()
+		var trans := core.substr(1, 1).hex_to_int()
+		var kind := ["S", "C", "D"].find(core.substr(2, 1))
+		var variant := core.unicode_at(3) - "A".unicode_at(0)
+		if kind < 0 or base < 0 or trans < 0 \
+				or variant < 0 or variant >= _LUT_VARIANTS:
+			continue
+		table[[base, trans, kind, variant]] = tiles[key]
+	if table.is_empty():
+		return null
+	var img := Image.create_empty(256, 3 * _LUT_VARIANTS, false, Image.FORMAT_RGBAF)
+	for base in 16:
+		for trans in 16:
+			for kind in 3:
+				for variant in _LUT_VARIANTS:
+					var rect: Variant = table.get([base, trans, kind, variant])
+					if rect == null:
+						rect = table.get([base, trans, kind, 0])  # variant A
+					if rect == null and kind == 0 and base != trans:
+						rect = table.get([base, base, 0, 0])  # solid fallback
+					var c := Color(0, 0, 0, 0)
+					if rect != null and (rect as Array).size() >= 4:
+						c = Color(rect[0], rect[1], rect[2], rect[3])
+					img.set_pixel(base * 16 + trans, kind * _LUT_VARIANTS + variant, c)
+	return ImageTexture.create_from_image(img)
 
 
 func _load_atlas() -> Texture2D:
