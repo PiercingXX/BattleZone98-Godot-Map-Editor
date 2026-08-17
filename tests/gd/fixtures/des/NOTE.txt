@@ -1,0 +1,2 @@
+Synthetic .des golden. Generated with bzmap.formats.des.write_des.
+Named .txt because *.des is gitignored. Not from a game install or corpus.

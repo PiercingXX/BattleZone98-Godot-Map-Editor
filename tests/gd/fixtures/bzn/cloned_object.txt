@@ -1,0 +1,55 @@
+[GameObject]
+PrjID [1] =
+sobject1
+seqno [1] =
+3
+pos [1] =
+  x [1] =
+11.5
+  y [1] =
+22.25
+  z [1] =
+33.75
+team [1] =
+2
+label = cloned_obj
+isUser [1] =
+0
+obj_addr = 00000004
+transform [1] =
+  right_x [1] =
+0.877583
+  right_y [1] =
+0
+  right_z [1] =
+-0.479426
+  up_x [1] =
+0
+  up_y [1] =
+1
+  up_z [1] =
+0
+  front_x [1] =
+0.479426
+  front_y [1] =
+0
+  front_z [1] =
+0.877583
+  posit_x [1] =
+11.5
+  posit_y [1] =
+22.25
+  posit_z [1] =
+33.75
+illumination [1] =
+0
+pos [1] =
+  x [1] =
+11.5
+  y [1] =
+22.25
+  z [1] =
+33.75
+seqNo [1] =
+3
+name = 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Headless GDScript suite. Godot 4.7 on this machine has been observed to
-# raise blocking GUI alerts under --headless; wrap in a timeout and fall
-# back to xvfb-run when the first attempt hangs.
+# Headless GDScript suite. Each tests/gd/test_*.gd runs in its OWN Godot
+# process with its own timeout, so one hanging test cannot take down the
+# run and the culprit is named. Pass test file names to run a subset:
+#   scripts/test-editor.sh test_bz_hg2.gd test_bz_mat.gd
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -14,36 +15,53 @@ if [ -z "${GODOT:-}" ]; then
   done
 fi
 GODOT="${GODOT:-godot}"
-TIMEOUT_SEC="${GODOT_TEST_TIMEOUT:-90}"
+PER_TEST_TIMEOUT="${GODOT_TEST_TIMEOUT:-60}"
 if ! command -v "$GODOT" >/dev/null 2>&1 && [ ! -x "$GODOT" ]; then
   echo "godot not found (set GODOT=). Editor tests skipped." >&2
   echo "Install Godot 4.7.1 and re-run scripts/test-editor.sh" >&2
   exit 2
 fi
 
-run_godot() {
-  if command -v timeout >/dev/null 2>&1; then
-    timeout --signal=TERM --kill-after=5 "$TIMEOUT_SEC" "$@"
+# Refresh the import cache + global class registry first; class_name
+# resolution in -s mode depends on it. Failures here are non-fatal.
+timeout 120 "$GODOT" --headless --path "$ROOT" --import >/dev/null 2>&1
+
+if [ "$#" -gt 0 ]; then
+  files=("$@")
+else
+  files=()
+  for f in tests/gd/test_*.gd; do
+    files+=("$(basename "$f")")
+  done
+fi
+
+pass=0
+fail=0
+failed_names=()
+for f in "${files[@]}"; do
+  out="$(timeout --signal=TERM --kill-after=5 "$PER_TEST_TIMEOUT" \
+    "$GODOT" --headless --path "$ROOT" -s res://tests/gd/run_tests.gd -- "$f" 2>&1)"
+  code=$?
+  if [ "$code" -eq 0 ]; then
+    pass=$((pass + 1))
+    echo "PASS $f"
   else
-    "$@"
+    fail=$((fail + 1))
+    if [ "$code" -eq 124 ] || [ "$code" -eq 137 ]; then
+      failed_names+=("$f (TIMEOUT ${PER_TEST_TIMEOUT}s)")
+      echo "FAIL $f — timed out after ${PER_TEST_TIMEOUT}s"
+    else
+      failed_names+=("$f (exit $code)")
+      echo "FAIL $f — exit $code"
+    fi
+    echo "$out" | sed 's/^/    /' | tail -40
   fi
-}
+done
 
-ARGS=("$GODOT" --headless --path "$ROOT" -s res://tests/gd/run_tests.gd)
-
-echo "editor tests: ${ARGS[*]}"
-run_godot "${ARGS[@]}"
-code=$?
-if [ "$code" -eq 0 ]; then
-  exit 0
+echo "----------------------------------------"
+echo "suite: $pass passed, $fail failed"
+if [ "$fail" -gt 0 ]; then
+  printf '  failed: %s\n' "${failed_names[@]}"
+  exit 1
 fi
-if [ "$code" -eq 124 ] || [ "$code" -eq 137 ]; then
-  if command -v xvfb-run >/dev/null 2>&1; then
-    echo "headless timed out; retrying under xvfb-run -a" >&2
-    run_godot xvfb-run -a "${ARGS[@]}"
-    exit $?
-  fi
-  echo "headless timed out and xvfb-run is not available" >&2
-  exit "$code"
-fi
-exit "$code"
+exit 0

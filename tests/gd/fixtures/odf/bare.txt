@@ -1,0 +1,5 @@
+[SBPMapSettings]
+
+
+[ScrapImpactZone]
+SIZ_IncludeSpawnPoints = 1

@@ -1,31 +1,29 @@
 # Operating instructions for Skippy
 
 You are building the **BattleZone 98 Godot Map Editor** — a standalone Godot
-4.7 application. The Godot tree is the editor. `backend/bzmap` is the format
-toolchain, invoked as a subprocess. The contract between them is
-`docs/02-bzmap-bridge.md`.
+4.7 application, pure GDScript, no runtime dependencies.
 
 ---
 
 ## The single most important thing to understand
 
-**This editor does not parse or write Battlezone file formats.** Not one byte.
+**All format parsing lives in `project/backend/` (GDScript), and byte-identical
+round-trips are a test requirement, not an aspiration.**
 
-Every read and write of `.hg2` / `.mat` / `.lgt` / `.trn` / `.bzn` / `.ini` /
-`.des` / `.odf` / `.vxt` / `.mesh` goes through the **`bzmap` Python
-toolchain** bundled in this repo as `backend/bzmap`. `bzmap` round-trips all
-128 corpus BZNs and all 36 corpus HG2s byte-identically; that guarantee is the
-foundation this editor is built on and you inherit it for free **only if you
-never go around it**.
+The format toolchain was originally the bundled Python package
+`backend/bzmap`, invoked as a subprocess per `docs/02-bzmap-bridge.md`. It is
+being ported to GDScript in full (minus the map generator) so the editor is
+self-contained — see `docs/03-gdscript-port.md` for the decision, layout, and
+conventions. During the port, the Python code is the **reference
+implementation**: port its behavior faithfully, and where it disagrees with a
+spec in `docs/formats/`, the Python behavior wins (flag the discrepancy).
 
-If you find yourself writing a `PackedByteArray` struct-unpack in GDScript for
-a game format, stop. The correct move is to add a subcommand to `bzmap` and
-call it. The bridge contract is `docs/02-bzmap-bridge.md`.
+The Python toolchain round-trips all 128 corpus BZNs and all 36 corpus HG2s
+byte-identically. The port inherits that bar: open→save with no edits must be
+byte-identical, enforced by tests in `tests/gd/`.
 
-The one exception, spelled out in `docs/02`: the editor reads and writes the
-**session buffers** (`terrain.r16`, `materials.u16`) which are plain row-major
-arrays that `bzmap` produces and consumes. Those are an interchange format we
-define, not a game format.
+The session-directory model of `docs/02` (row-major buffers, `residue/`,
+pass-through) is unchanged — only the process boundary is gone.
 
 ---
 
@@ -36,9 +34,10 @@ define, not a game format.
    output goes to the editor's own session/cache directories or to an explicit
    user-chosen output path.
 
-2. **Do not paper over a format bug in editor code.** Format truth lives in
-   `docs/formats/` (clean-room functional specs) and in `backend/bzmap`. If
-   reality disagrees with a spec, fix `bzmap` and the spec — not GDScript.
+2. **Do not paper over a format bug in editor UI code.** Format truth lives in
+   `docs/formats/` (clean-room functional specs) and in the format layer
+   (`project/backend/formats/`, ported from `backend/bzmap`). If reality
+   disagrees with a spec, fix the format layer and the spec — not the UI.
 
 3. **This repo is public. Game assets are not.** Never commit anything
    extracted from the game install, the BZP pack, or any workshop item — no
@@ -70,13 +69,11 @@ define, not a game format.
 ## Environment
 
 - **Godot 4.7 stable**, pinned. GDScript, not C#.
-- Tests: `scripts/test.sh` runs `pytest backend/tests` then the headless
-  GDScript suite (`scripts/test-editor.sh`). Run it after any task that
-  touches `backend/` or editor GDScript.
-- **Cross-platform: Linux and Windows, both first-class.** Every path,
-  subprocess call, and install-discovery routine must work on both. No
-  shell-isms, no hardcoded separators, no assuming Proton.
-- The Python backend must be locatable on both platforms — see `docs/02` §7.
+- Tests: the headless GDScript suite (`scripts/test-editor.sh`). Run it after
+  any task that touches editor GDScript or `project/backend/`.
+- **Cross-platform: Linux and Windows, both first-class.** Every path and
+  install-discovery routine must work on both. No shell-isms, no hardcoded
+  separators, no assuming Proton.
 - The game may not be installed on the machine where you are building.
   Anything that requires a live install needs a graceful, explicit failure
   path and must not block the rest of the editor from running.

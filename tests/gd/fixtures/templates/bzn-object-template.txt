@@ -1,0 +1,7 @@
+# annotation
+[GameObject]
+PrjID [1] =
+synobj01
+seqno [1] =
+1
+label = hello

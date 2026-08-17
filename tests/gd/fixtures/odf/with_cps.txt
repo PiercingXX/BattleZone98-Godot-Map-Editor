@@ -1,0 +1,11 @@
+[SBPMapSettings]
+
+CP1Name = alpha
+CP1X = 10
+CP1Z = 20.5
+CP2Name = beta
+CP2X = 0
+CP2Z = 0
+
+[ScrapImpactZone]
+SIZ_IncludeSpawnPoints = 0

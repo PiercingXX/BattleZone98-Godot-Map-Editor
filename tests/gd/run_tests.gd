@@ -6,6 +6,13 @@ func _init() -> void:
 
 
 func _go() -> void:
+	# Optional filter: `godot ... -s res://tests/gd/run_tests.gd -- test_foo.gd
+	# test_bar.gd` runs only the named files. scripts/test-editor.sh uses this
+	# to isolate each test file in its own process with its own timeout.
+	var only: Array[String] = []
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("test_") and arg.ends_with(".gd"):
+			only.append(arg)
 	var names: Array[String] = []
 	var dir := DirAccess.open("res://tests/gd")
 	if dir == null:
@@ -16,7 +23,8 @@ func _go() -> void:
 	var fn := dir.get_next()
 	while fn != "":
 		if fn.begins_with("test_") and fn.ends_with(".gd"):
-			names.append(fn)
+			if only.is_empty() or only.has(fn):
+				names.append(fn)
 		fn = dir.get_next()
 	names.sort()
 	if names.is_empty():

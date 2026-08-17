@@ -1,0 +1,11 @@
+version [1] =
+2016
+[GameObject]
+PrjID [1] =
+synobj02
+seqno [1] =
+2
+[AiMission]
+[AOIs]
+size [1] =
+0

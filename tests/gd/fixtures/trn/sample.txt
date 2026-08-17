@@ -1,0 +1,35 @@
+; synthetic terrain config — not from any game map
+# comment hash
+
+[Size]
+MinX=100
+MinX=999
+MinZ = 200
+Width=2560
+Depth = 3840
+Height=20
+
+[NormalView]
+FogStart= 80
+
+[Atlases]
+MaterialName	= syn_detail_atlas
+
+[World]
+MusicTrack=20
+
+[Sky]
+SkyHeight = 210
+SkyTexture=synthetic.map 
+
+[TextureType0] // Packed Dirt
+FlatColor= 201
+SolidA0        = syn00sa0.map
+
+[TextureType1] Lava Pool
+FlatColor= 10
+
+this is opaque leftover
+
+[Color]
+Palette=synthetic.act

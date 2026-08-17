@@ -1,0 +1,3 @@
+Synthetic .ini golden. Generated with:
+  PYTHONPATH=backend python3 -c "from bzmap.formats.ini import write_ini; write_ini('tests/gd/fixtures/ini/default.ini', 'Silver Pools')"
+Not derived from a game install or corpus map.

@@ -1,0 +1,4 @@
+Synthetic only. Hex goldens in tests/gd/test_bz_ogre.gd:
+- tri.mesh from formats/mesh.py write_mesh (no PIL), checked with formats/ogre.py
+- shared.mesh / idx32.mesh hand-packed per F7 and checked with formats/ogre.py
+No game, BZP, workshop, or corpus bytes.

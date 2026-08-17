@@ -1,0 +1,2 @@
+Synthetic map-settings ODF goldens (CRLF). Generated with bzmap.formats.odf.write_odf.
+Named .txt because *.odf is gitignored. Not from a game install or corpus.

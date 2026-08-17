@@ -1,0 +1,4 @@
+WORLD: Mars	SIZE: Medium
+GEYSERS: 3	SCRAP: 12
+PLAYERS: 14
+Made by Skippy
