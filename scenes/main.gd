@@ -33,7 +33,7 @@ func _ready() -> void:
 	if _camera.has_signal("speed_changed"):
 		_camera.speed_changed.connect(_on_speed_changed)
 	_refresh_map_label()
-	_log("Battlezone Map Editor — standalone. Open a .trn/.bzn/.hg2 to fly the terrain.")
+	_log("BattleZone 98 Godot Map Editor — standalone. Open a .trn/.bzn/.hg2 to fly the terrain.")
 	print("BZEDITOR: backend available=", Backend.available, " home=", Backend.bzmap_home)
 	if Backend.available:
 		_log(Backend.bzmap_home)

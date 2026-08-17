@@ -1,6 +1,6 @@
 # Operating instructions for Skippy
 
-You are building the **Battlezone 98 Redux Map Editor** — a standalone Godot
+You are building the **BattleZone 98 Godot Map Editor** — a standalone Godot
 4.7 application. The Godot tree is the editor. `backend/bzmap` is the format
 toolchain, invoked as a subprocess. The contract between them is
 `docs/02-bzmap-bridge.md`.

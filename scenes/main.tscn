@@ -54,7 +54,7 @@ theme_override_constants/separation = 12
 [node name="Title" type="Label" parent="Root/TopBar/TopInner"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 20
-text = "Battlezone Map Editor"
+text = "BattleZone 98 Godot Map Editor"
 
 [node name="MapLabel" type="Label" parent="Root/TopBar/TopInner"]
 unique_name_in_owner = true

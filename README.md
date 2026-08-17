@@ -1,10 +1,10 @@
-# Battlezone 98 Redux Map Editor
+# BattleZone 98 Godot Map Editor
 
-A standalone visual map editor for *Battlezone 98 Redux* — sculpt terrain in a
-3D viewport, place units by pointing at the ground, edit every piece of map data
-the game reads, and save a file set the game loads.
+A standalone **Godot 4.7** map editor for *Battlezone 98 Redux* — sculpt
+terrain in a 3D viewport, place units by pointing at the ground, edit every
+piece of map data the game reads, and save a file set the game loads.
 
-Built with **Godot 4.7**, exporting to Linux and Windows.
+Exports to Linux and Windows.
 
 > **Status: standalone smoke build.** The `bzmap` backend is bundled in
 > `backend/`. Open a map and fly the terrain — no sibling repo required.
