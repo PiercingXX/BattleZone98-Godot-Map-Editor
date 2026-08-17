@@ -132,6 +132,7 @@ func do_save(dir: String) -> void:
 	Settings.last_save_dir = dir
 	Settings.save()
 	MapState.persist()
+	log.call("saving %s → %s" % [MapState.stem, dir])
 	Backend.save_map(MapState.session_dir, dir, MapState.stem)
 
 

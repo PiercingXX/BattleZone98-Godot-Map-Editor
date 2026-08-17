@@ -38,6 +38,7 @@ var _pending_package: String = ""
 var _save_as: bool = false
 var _quit_after_save: bool = false
 var _smoke_path: String = ""
+var _smoke_save: String = ""
 
 
 func _ready() -> void:
@@ -376,9 +377,18 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 			for w in result.get("warnings", []):
 				_log.call("warning: %s" % w)
 			if _is_smoke():
-				get_tree().quit(0)
+				if not _smoke_save.is_empty():
+					var out := _smoke_save
+					_smoke_save = ""
+					MapState.persist()
+					Backend.save_map(MapState.session_dir, out, MapState.stem)
+				else:
+					get_tree().quit(0)
 		"save":
 			MapState.unsaved = false
+			_log.call("saved %d files to %s" % [
+				(result.get("files", []) as Array).size(), Settings.last_save_dir,
+			])
 			_log.call("byte-identical: %s" % ", ".join(PackedStringArray(result.get("byte_identical", []))))
 			var regen: Array = result.get("regenerated", [])
 			if not regen.is_empty():
@@ -389,6 +399,8 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 				_log.call("features: %s" % result["features"])
 			if _quit_after_save:
 				get_tree().quit()
+			if _is_smoke():
+				get_tree().quit(0)
 		"validate":
 			MapState.findings = result.get("findings", [])
 			MapState.findings_stale = false
@@ -522,7 +534,8 @@ func _queue_smoke_open() -> void:
 	for i in range(args.size()):
 		if args[i] == "--smoke-open" and i + 1 < args.size():
 			_smoke_path = args[i + 1]
-			return
+		if args[i] == "--smoke-save" and i + 1 < args.size():
+			_smoke_save = args[i + 1]
 
 
 func _on_file_dialog_file_selected(path: String) -> void:
