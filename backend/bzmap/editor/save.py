@@ -10,7 +10,7 @@ import shutil
 from pathlib import Path
 
 from bzmap.editor.errors import EditorError
-from bzmap.editor.objects import apply_record_to_block
+from bzmap.editor.objects import apply_record_to_block, template_text_for
 from bzmap.editor.session import (
     find_source_file,
     read_json,
@@ -18,7 +18,7 @@ from bzmap.editor.session import (
     session_paths,
     variant_bzn_suffix,
 )
-from bzmap.formats.bzn import read_bzn, write_bzn
+from bzmap.formats.bzn import GameObject, read_bzn, write_bzn
 from bzmap.formats.mat import MaterialGrid
 
 
@@ -29,6 +29,43 @@ def _objects_dirty(dirty):
     if isinstance(objects, dict):
         return any(bool(v) for v in objects.values())
     return bool(objects)
+
+
+def _append_runtime_spawns(out_dir, stem, variant, records, warnings):
+    """Append host-guarded BuildObject calls to ``<stem>MAP.lua``.
+
+    Unverified classes must not become invented BZN blocks. The BZP map
+    script hook is the documented runtime path.
+    """
+    if not records:
+        return
+    path = Path(out_dir) / f"{stem}MAP.lua"
+    existing = ""
+    if path.is_file():
+        existing = path.read_text(encoding="utf-8", errors="replace")
+    lines = [
+        "",
+        "-- bzmap editor: runtime spawns (unverified classes; host only)",
+        f"-- variant {variant!r}",
+        "if IsHosting and IsHosting() then",
+    ]
+    for rec in records:
+        prjid = rec.get("prjid") or "unknown"
+        x = float(rec.get("x", 0.0))
+        y = float(rec.get("y", 0.0))
+        z = float(rec.get("z", 0.0))
+        team = int(rec.get("team") or 0)
+        lines.append(
+            f'  do local h = BuildObject("{prjid}", {team}, SetVector({x:.3f}, {y:.3f}, {z:.3f}))'
+        )
+        lines.append("    if h and RemovePilot then RemovePilot(h) end")
+        lines.append("  end")
+    lines.append("end")
+    path.write_text(existing + "\r\n".join(lines) + "\r\n", encoding="utf-8")
+    warnings.append(
+        f"variant {variant!r}: {len(records)} unverified class(es) written "
+        f"as runtime spawns in {path.name}"
+    )
 
 
 def _copy_source(src, dest):
@@ -139,14 +176,45 @@ def save_session(session_dir, out_dir, stem=None):
                 obj_id = f"{prefix}-{i:04d}"
                 if obj_id in touched and obj_id in by_id:
                     apply_record_to_block(obj, by_id[obj_id])
-            # New objects (origin new) are not cloned here in Phase 1 —
-            # placement lands in Phase 5. Warn if any new- ids are dirty.
             new_ids = [i for i in touched if i.startswith("new-")]
-            if new_ids:
-                warnings.append(
-                    f"variant {variant!r}: {len(new_ids)} new object(s) not "
-                    "written (clone-on-save lands with placement)"
+            runtime = []
+            next_seq = max((o.seqno or 0) for o in bzn.objects) + 1 if bzn.objects else 1
+            next_addr = max((o.obj_addr or 0) for o in bzn.objects) + 1 if bzn.objects else 1
+            for obj_id in new_ids:
+                rec = by_id.get(obj_id)
+                if rec is None:
+                    continue
+                if rec.get("placement_mode") == "runtime" or rec.get("template_verified") is False:
+                    runtime.append(rec)
+                    continue
+                text = template_text_for(rec.get("prjid"), source_dir)
+                if text is None:
+                    runtime.append(rec)
+                    warnings.append(
+                        f"{rec.get('prjid')}: no verified same-class block; "
+                        "emitting as runtime spawn"
+                    )
+                    continue
+                clone = GameObject.from_template(text)
+                apply_record_to_block(clone, rec)
+                clone.set_identity(
+                    seqno=next_seq,
+                    addr=next_addr,
+                    label=rec.get("label") or f"{rec.get('prjid')}{next_seq}",
                 )
+                next_seq += 1
+                next_addr += 1
+                bzn.add_object(clone)
+            if runtime:
+                _append_runtime_spawns(out_dir, out_stem, variant, runtime, warnings)
+            try:
+                bzn.set_header("size [1]", len(bzn.objects))
+            except KeyError:
+                pass
+            try:
+                bzn.set_header("seq_count [1]", next_seq)
+            except KeyError:
+                pass
             write_bzn(dest, bzn)
             if dest.name not in written:
                 written.append(dest.name)

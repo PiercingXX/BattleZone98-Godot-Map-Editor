@@ -57,6 +57,9 @@ func _process(delta: float) -> void:
 	elif Input.is_key_pressed(KEY_CTRL):
 		mul = 0.25
 	global_position += wish.normalized() * base_speed * mul * delta
+	if Settings.walk_mode and MapState.has_session and MapState.field.grid_x > 1:
+		var ground := MapState.field.height_at(global_position.x, global_position.z)
+		global_position.y = maxf(global_position.y, ground + 4.0)
 
 
 func frame_map(width_m: float, depth_m: float, height_m: float) -> void:

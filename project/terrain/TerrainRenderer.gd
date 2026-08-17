@@ -16,11 +16,75 @@ func _ready() -> void:
 
 func set_slope_overlay(on: bool) -> void:
 	_show_slope = on
+	_set_all("show_slope", _show_slope)
+
+
+func set_brush(on: bool, center: Vector2, radius: float, falloff: float, square: bool) -> void:
+	for child in get_children():
+		if child is MeshInstance3D:
+			var mat := (child as MeshInstance3D).material_override as ShaderMaterial
+			if mat == null:
+				continue
+			mat.set_shader_parameter("brush_on", on)
+			mat.set_shader_parameter("brush_center", center)
+			mat.set_shader_parameter("brush_radius", radius)
+			mat.set_shader_parameter("brush_falloff", falloff)
+			mat.set_shader_parameter("brush_shape", 1 if square else 0)
+
+
+func set_water_level(level: float) -> void:
+	_set_all("water_level", level)
+
+
+func set_show_grid(on: bool) -> void:
+	_set_all("show_grid", on)
+
+
+func refresh_materials() -> void:
+	var colors := _palette_colors()
+	for child in get_children():
+		if child is MeshInstance3D:
+			var mat := (child as MeshInstance3D).material_override as ShaderMaterial
+			if mat == null:
+				continue
+			if MapState.mat_texture:
+				mat.set_shader_parameter("mat_tex", MapState.mat_texture)
+			mat.set_shader_parameter("mat_colors", colors)
+			mat.set_shader_parameter("show_materials", MapState.mat_grid_x > 0)
+
+
+func _set_all(name: String, value: Variant) -> void:
 	for child in get_children():
 		if child is MeshInstance3D:
 			var mat := (child as MeshInstance3D).material_override as ShaderMaterial
 			if mat:
-				mat.set_shader_parameter("show_slope", _show_slope)
+				mat.set_shader_parameter(name, value)
+
+
+func _palette_colors() -> PackedColorArray:
+	var colors := PackedColorArray()
+	colors.resize(16)
+	var defaults := [
+		Color(0.55, 0.42, 0.28), Color(0.45, 0.48, 0.30), Color(0.40, 0.40, 0.40),
+		Color(0.62, 0.55, 0.38), Color(0.30, 0.35, 0.22), Color(0.70, 0.68, 0.60),
+		Color(0.50, 0.32, 0.22), Color(0.28, 0.30, 0.38),
+	]
+	for i in 16:
+		colors[i] = defaults[i % defaults.size()]
+	for world in MapState.worlds:
+		if typeof(world) != TYPE_DICTIONARY:
+			continue
+		if str(world.get("id", "")).to_lower() != MapState.world.to_lower():
+			continue
+		var types: Array = world.get("texture_types", [])
+		for t in types:
+			if typeof(t) != TYPE_DICTIONARY:
+				continue
+			var idx := int(t.get("index", 0))
+			var rgb: Array = t.get("flat_color", [128, 128, 128])
+			if idx >= 0 and idx < 16 and rgb.size() >= 3:
+				colors[idx] = Color(float(rgb[0]), float(rgb[1]), float(rgb[2]))
+	return colors
 
 
 func rebuild(p_field: HeightField) -> void:
@@ -61,6 +125,10 @@ func _add_chunk(cx: int, cz: int) -> void:
 		float(CHUNK_CELLS) / float(field.grid_z)
 	))
 	mat.set_shader_parameter("show_slope", _show_slope)
+	if MapState.mat_texture:
+		mat.set_shader_parameter("mat_tex", MapState.mat_texture)
+	mat.set_shader_parameter("mat_colors", _palette_colors())
+	mat.set_shader_parameter("show_materials", MapState.mat_grid_x > 0)
 	inst.material_override = mat
 	inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(inst)

@@ -13,6 +13,9 @@ from bzmap.editor.jsonio import emit
 from bzmap.editor.new import create_map
 from bzmap.editor.open import open_map
 from bzmap.editor.save import save_session
+from bzmap.editor.assets import build_assets
+from bzmap.editor.package_cmd import package_session
+from bzmap.editor.render_cmd import render_session
 from bzmap.editor.validate import validate_session
 from bzmap.editor.worlds import worlds_from_game
 
@@ -65,6 +68,30 @@ def add_editor_parser(sub):
     validate.add_argument("--game-root", default="")
     validate.add_argument("--json", action="store_true")
     validate.set_defaults(editor_handler=_cmd_validate)
+
+    assets = verbs.add_parser("assets", help="enumerate install classes into a cache")
+    assets.add_argument("--game-root", required=True)
+    assets.add_argument("--cache", required=True)
+    assets.add_argument("--pack", action="append", default=[])
+    assets.add_argument("--refresh", action="store_true")
+    assets.add_argument("--json", action="store_true")
+    assets.set_defaults(editor_handler=_cmd_assets)
+
+    render = verbs.add_parser("render", help="north-up thumbnail / overview")
+    render.add_argument("--session", required=True)
+    render.add_argument("--out", required=True)
+    render.add_argument("--debug", action="store_true")
+    render.add_argument("--json", action="store_true")
+    render.set_defaults(editor_handler=_cmd_render)
+
+    package = verbs.add_parser("package", help="install to test mod or assemble a pack")
+    package.add_argument("--session", required=True)
+    package.add_argument("--mode", choices=("install", "pack"), required=True)
+    package.add_argument("--game-root", default="")
+    package.add_argument("--test-id", default="")
+    package.add_argument("--out", default="")
+    package.add_argument("--json", action="store_true")
+    package.set_defaults(editor_handler=_cmd_package)
 
     editor.set_defaults(func=run_editor)
     return editor
@@ -142,4 +169,27 @@ def _cmd_validate(args):
         args.session,
         tier=args.tier,
         game_root=args.game_root or None,
+    )
+
+
+def _cmd_assets(args):
+    return build_assets(
+        args.game_root,
+        args.cache,
+        pack_paths=args.pack or None,
+        refresh=args.refresh,
+    )
+
+
+def _cmd_render(args):
+    return render_session(args.session, args.out, debug=args.debug)
+
+
+def _cmd_package(args):
+    return package_session(
+        args.session,
+        args.mode,
+        game_root=args.game_root or None,
+        test_id=args.test_id or None,
+        out_dir=args.out or None,
     )

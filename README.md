@@ -6,8 +6,10 @@ piece of map data the game reads, and save a file set the game loads.
 
 Exports to Linux and Windows.
 
-> **Status: standalone smoke build.** The `bzmap` backend is bundled in
-> `backend/`. Open a map and fly the terrain — no sibling repo required.
+> **Status: usable editor.** Probe an install, open or create a map, sculpt,
+> paint, place units (proxies), validate, and save. The `bzmap` backend is
+> bundled in `backend/`. No sibling repo required. Meshes beyond labelled
+> proxies and a Windows-bundled Python are still outstanding.
 
 ---
 
@@ -73,8 +75,13 @@ godot --path .
 ```
 
 Then **Probe** (finds your Steam install) → **Open map…** and pick a `.trn` /
-`.bzn` / `.hg2` from BZP or a generated set. Fly with `WASD` `Q`/`E`, look
-with right mouse, `H` toggles slope tint, `F` frames the map.
+`.bzn` / `.hg2` from BZP or a generated set.
+
+- Fly: `WASD` `Q`/`E`, right mouse look, `F` frame, `Space` top-down, `H` slope
+- Tools: `1`–`8` or the toolbar. `[` / `]` brush radius. `Ctrl+Z` undo.
+- LMB sculpts or places. Palette search is on the left. `F1` is the hotkey list.
+- First run imports an asset index (labelled proxies). Import assets again
+  after a game or BZP update.
 
 - **Godot 4.7 stable**
 - **Python 3.11+** (for the bundled backend)

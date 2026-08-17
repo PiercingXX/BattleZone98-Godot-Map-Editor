@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import math
 
+from pathlib import Path
+
 from bzmap.formats.bzn import GameObject, read_bzn
 
 
@@ -45,6 +47,34 @@ def load_variant_objects(path, *, id_prefix="obj"):
     bzn = read_bzn(path)
     records, blocks = objects_from_bzn(bzn, id_prefix=id_prefix)
     return records, blocks, bzn
+
+
+def template_text_for(prjid, source_dir, extra_bzns=None):
+    """Return a verbatim ``[GameObject]`` block for ``prjid``, or None.
+
+    Prefers a same-class block already in the session residue, then any extra
+    BZN paths (typically a BZP map). Never synthesizes a block.
+    """
+    wanted = (prjid or "").lower()
+    search = []
+    source_dir = Path(source_dir)
+    if source_dir.is_dir():
+        search.extend(
+            sorted(p for p in source_dir.iterdir() if p.is_file() and p.suffix.lower() == ".bzn")
+        )
+    for extra in extra_bzns or []:
+        extra = Path(extra)
+        if extra.is_file():
+            search.append(extra)
+    for path in search:
+        try:
+            bzn = read_bzn(path)
+        except (OSError, ValueError, UnicodeDecodeError):
+            continue
+        for obj in bzn.objects:
+            if (obj.prjid or "").lower() == wanted:
+                return obj.render()
+    return None
 
 
 def apply_record_to_block(obj: GameObject, record):

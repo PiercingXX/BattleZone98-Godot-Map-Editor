@@ -170,3 +170,112 @@ def test_new_save_validate(game_root, tmp_path):
     # What we require: the file set exists and the validator runs.
     assert "findings" in report
     assert (session / "report.json").is_file()
+
+
+def test_binary_bzn_is_reported(tmp_path):
+    from bzmap.editor.open import is_binary_bzn, open_map
+    from bzmap.editor.errors import EditorError
+
+    fake = tmp_path / "oldmap.bzn"
+    fake.write_bytes(b"\x00\x01\x02binary leftover")
+    assert is_binary_bzn(fake) is True
+    # A basename group with only a binary BZN and no hg2 still fails open,
+    # but the binary is identified before we invent an ASCII rewrite.
+    hg2 = tmp_path / "oldmap.hg2"
+    hg2.write_bytes(b"not-a-real-hg2")
+    try:
+        open_map(fake, tmp_path / "sess")
+    except EditorError as exc:
+        assert exc.code in {"binary_bzn_unsupported", "missing_hg2"} or "binary" in exc.message.lower()
+    else:
+        raise AssertionError("binary BZN must not silently convert")
+
+
+def test_assets_builds_index(game_root, tmp_path):
+    from bzmap.editor.assets import build_assets
+
+    cache = tmp_path / "cache"
+    result = build_assets(game_root, cache, pack_paths=[], refresh=True)
+    assert result["ok"] is True
+    assert len(result["classes"]) > 100, result.get("unresolved")
+    prjids = {c["prjid"] for c in result["classes"]}
+    assert any(p.startswith("pspwn") or "tank" in p or "recy" in p for p in prjids)
+    assert (cache / "index.json").is_file()
+    # Second call hits the fingerprint cache.
+    again = build_assets(game_root, cache, pack_paths=[], refresh=False)
+    assert again["source_fingerprint"] == result["source_fingerprint"]
+
+
+def test_render_writes_north_up_png(game_root, tmp_path):
+    from bzmap.editor.new import create_map
+    from bzmap.editor.render_cmd import render_session
+
+    session = tmp_path / "rsess"
+    create_map("xxrendr", "mars", 1280, 1280, session, game_root)
+    out = tmp_path / "thumbs"
+    result = render_session(session, out)
+    assert result["ok"] is True
+    assert result["north_up"] is True
+    assert Path(result["png"]).is_file()
+    assert Path(result["preview"]).is_file()
+
+
+def test_clone_new_object_on_save(game_root, pack_dir, tmp_path):
+    from bzmap.editor.new import create_map
+    from bzmap.editor.session import read_json, write_json, session_paths
+
+    session = tmp_path / "csess"
+    created = create_map("xxclone", "mars", 1280, 1280, session, game_root)
+    if not created.get("ok"):
+        pytest.skip("new map failed")
+    paths = session_paths(session)
+    objects = read_json(paths["objects"])
+    dirty = read_json(paths["dirty"])
+    # Place a spawn by cloning the scaffold already in residue.
+    rec = {
+        "id": "new-0001",
+        "origin": "new",
+        "prjid": "pspwn_1",
+        "x": 200.0, "y": 100.0, "z": 200.0,
+        "yaw_deg": 0.0,
+        "team": 0,
+        "label": "xxclone99_spawn",
+        "up_convention": "upright",
+        "pinned_y": False,
+        "managed": False,
+        "required": False,
+        "template_verified": True,
+        "placement_mode": "bzn",
+    }
+    objects.setdefault("", []).append(rec)
+    dirty.setdefault("objects", {}).setdefault("", []).append("new-0001")
+    write_json(paths["objects"], objects)
+    write_json(paths["dirty"], dirty)
+    out = tmp_path / "cout"
+    saved = save_session(session, out)
+    assert saved["ok"] is True
+    text = (out / "xxclone.bzn").read_text(encoding="utf-8", errors="replace")
+    assert "xxclone99_spawn" in text
+
+
+def test_terrain_dirty_reencodes(game_root, tmp_path):
+    from bzmap.editor.new import create_map
+    from bzmap.editor.session import read_json, write_json, session_paths
+    import numpy as np
+
+    session = tmp_path / "tsess"
+    create_map("xxsculp", "mars", 1280, 1280, session, game_root)
+    paths = session_paths(session)
+    dirty = read_json(paths["dirty"])
+    dirty["terrain"] = True
+    write_json(paths["dirty"], dirty)
+    raw = np.fromfile(paths["terrain"], dtype="<u2")
+    raw[100] = 1500
+    raw.tofile(paths["terrain"])
+    out = tmp_path / "tout"
+    saved = save_session(session, out)
+    assert saved["ok"] is True
+    assert "xxsculp.hg2" in saved["regenerated"]
+    from bzmap.formats.hg2 import read_hg2
+    hm = read_hg2(out / "xxsculp.hg2")
+    assert int(hm.data.reshape(-1)[100]) & 0x1FFF == 1500

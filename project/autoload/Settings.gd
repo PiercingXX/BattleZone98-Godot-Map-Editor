@@ -7,6 +7,8 @@ var bzmap_home: String = ""
 var python_path: String = ""
 var game_root: String = ""
 var last_map_dir: String = ""
+var walk_mode: bool = false
+var last_cache_fingerprint: String = ""
 
 var _cfg := ConfigFile.new()
 
@@ -22,6 +24,8 @@ func _load() -> void:
 	python_path = _cfg.get_value("paths", "python_path", "")
 	game_root = _cfg.get_value("paths", "game_root", "")
 	last_map_dir = _cfg.get_value("paths", "last_map_dir", "")
+	walk_mode = bool(_cfg.get_value("camera", "walk_mode", false))
+	last_cache_fingerprint = str(_cfg.get_value("assets", "fingerprint", ""))
 
 
 func save() -> void:
@@ -29,4 +33,6 @@ func save() -> void:
 	_cfg.set_value("paths", "python_path", python_path)
 	_cfg.set_value("paths", "game_root", game_root)
 	_cfg.set_value("paths", "last_map_dir", last_map_dir)
+	_cfg.set_value("camera", "walk_mode", walk_mode)
+	_cfg.set_value("assets", "fingerprint", last_cache_fingerprint)
 	_cfg.save(PATH)

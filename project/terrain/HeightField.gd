@@ -54,6 +54,47 @@ func height_at(x_m: float, z_m: float) -> float:
 	return lerpf(lerpf(h00, h10, tx), lerpf(h01, h11, tx), tz)
 
 
+func write_rect(x0: int, z0: int, w: int, d: int, values: PackedInt32Array) -> void:
+	if grid_x < 1:
+		return
+	var i := 0
+	for z in range(z0, z0 + d):
+		for x in range(x0, x0 + w):
+			if x < 0 or z < 0 or x >= grid_x or z >= grid_z:
+				i += 1
+				continue
+			heights[z * grid_x + x] = values[i]
+			i += 1
+	upload_rect(x0, z0, w, d)
+
+
+func upload_rect(x0: int, z0: int, w: int, d: int) -> void:
+	if image == null:
+		_rebuild_texture()
+		return
+	x0 = clampi(x0, 0, grid_x - 1)
+	z0 = clampi(z0, 0, grid_z - 1)
+	var x1 := mini(grid_x - 1, x0 + w - 1)
+	var z1 := mini(grid_z - 1, z0 + d - 1)
+	for z in range(z0, z1 + 1):
+		for x in range(x0, x1 + 1):
+			var h := float(heights[z * grid_x + x]) * HEIGHT_SCALE
+			image.set_pixel(x, z, Color(h, 0.0, 0.0))
+	if texture:
+		texture.update(image)
+	else:
+		texture = ImageTexture.create_from_image(image)
+
+
+func write_r16(path: String) -> Error:
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return FileAccess.get_open_error()
+	for i in heights.size():
+		file.store_16(heights[i] & 0xFFFF)
+	return OK
+
+
 func _rebuild_texture() -> void:
 	var floats := PackedFloat32Array()
 	var n := grid_x * grid_z

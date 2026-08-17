@@ -299,7 +299,7 @@ func save_map(session_dir: String, out_dir: String, stem: String = "") -> void:
 	run("save", args)
 
 
-func new_map(stem: String, world: String, width_m: int, depth_m: int, session_dir: String, game_root: String) -> void:
+func new_map(stem: String, world: String, width_m: int, depth_m: int, session_dir: String, game_root: String, pack_kind: String = "bzp") -> void:
 	run("new", PackedStringArray([
 		"--stem", stem,
 		"--world", world,
@@ -307,6 +307,7 @@ func new_map(stem: String, world: String, width_m: int, depth_m: int, session_di
 		"--depth", str(depth_m),
 		"--session", session_dir,
 		"--game-root", game_root,
+		"--pack-kind", pack_kind,
 	]))
 
 
@@ -315,3 +316,29 @@ func validate(session_dir: String, game_root: String = "") -> void:
 	if not game_root.is_empty():
 		args.append_array(PackedStringArray(["--game-root", game_root]))
 	run("validate", args)
+
+
+func assets(game_root: String, cache: String, refresh: bool = false) -> void:
+	var args := PackedStringArray(["--game-root", game_root, "--cache", cache])
+	if refresh:
+		args.append("--refresh")
+	run("assets", args)
+
+
+func render_map(session_dir: String, out_dir: String) -> void:
+	run("render", PackedStringArray(["--session", session_dir, "--out", out_dir]))
+
+
+func package_install(session_dir: String, game_root: String, test_id: String = "") -> void:
+	var args := PackedStringArray([
+		"--session", session_dir, "--mode", "install", "--game-root", game_root,
+	])
+	if not test_id.is_empty():
+		args.append_array(PackedStringArray(["--test-id", test_id]))
+	run("package", args)
+
+
+func package_pack(session_dir: String, out_dir: String) -> void:
+	run("package", PackedStringArray([
+		"--session", session_dir, "--mode", "pack", "--out", out_dir,
+	]))

@@ -82,29 +82,30 @@ define, not a game format.
 
 ## What is already here
 
-Standalone smoke build: probe / open / new / save / validate against the
-bundled backend, GPU-displaced terrain, free-fly camera, object markers.
+Working editor, not a smoke shell:
 
-## What is left
+- Bridge goldens: open→save with no edits is byte-identical (single-zone and
+  multi-zone). Binary BZNs are detected and refused — there is still no
+  binary reader, so they are not silently converted.
+- Viewport: GPU-displaced chunks, analytic raycast, slope / material / brush
+  overlays, fly camera (walk-the-surface is Alt).
+- Sculpt + paint + ramp + undo. Writes clamp to raw 1..4095; inherited
+  out-of-range cells pass through until touched.
+- Assets: `bzmap editor assets` enumerates the install, writes proxy icons,
+  marks verified classes. Viewport fidelity is **proxy** until a `.glb`
+  appears in the cache (HD / geo conversion is the next converter job).
+- Placement: live palette, raycast, clone-on-save for verified classes,
+  runtime `BuildObject` for the rest, singular undeletable player.
+- Map data, findings panel (click-to-fly), thumbnail, install-to-test-mod,
+  pack assembly.
 
-Build in this order. Do not start a phase whose predecessor is not working.
+## Still open
 
-1. **Bridge goldens** — `open` then `save` with no edits is byte-identical on
-   a stock map, a multi-zone map, and a binary BZN (ASCII conversion reported).
-2. **Viewport** — 5120 m at 60 fps, analytic raycast agreeing with
-   `height_at()` to a centimetre.
-3. **Sculpting + undo** — raise/lower, flatten, smooth, ramp; clamp raw 1 and
-   4095 on *writes* (inherited out-of-range stock data passes through);
-   mixed sculpt/object undo; sculpted `.hg2` re-opens identical.
-4. **Assets** — install auto-discovery on Linux and Windows, first-run import,
-   fidelity chain HD → textured geo → flat geo → labeled proxy, terrain atlas
-   splatting.
-5. **Placement** — live palette from the user's install, raycast + terrain
-   normal, clone-only BZN blocks, required singular player object.
-6. **Map data + packaging** — new-map wizard, metadata, water/plants,
-   validation panel, thumbnail / install-to-test-mod / pack assembly.
-7. **Ship** — a map authored entirely in the editor loads in BZ98R; Linux and
-   Windows exports both run.
+- Binary BZN *read* (save-as-ASCII) — blocked on a format reader in `bzmap`.
+- HD / `.geo` / `.sdf` → `.glb` converter. Proxies are the working rung.
+- Windows export with a bundled embeddable Python. Source checkout works.
+- An in-game play-test of a map authored entirely here. Offline checks are
+  not that test.
 
 When blocked, write what you tried and continue with work that does not depend
 on it. Do not stall the whole build on one unknown, and do not silently guess.
