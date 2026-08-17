@@ -161,7 +161,7 @@ func _test_package_errors(t, tmp: String) -> void:
 	var bad: Dictionary = BzPackage.package_session(session, "explode")
 	t.eq(bad.get("ok"), false)
 	t.eq(str(bad.get("error", {}).get("code", "")), "bad_mode")
-	t.eq(str(bad.get("error", {}).get("hint", "")), "use install or pack")
+	t.eq(str(bad.get("error", {}).get("hint", "")), "use install, addon, or pack")
 
 
 func _test_install_safety(t, tmp: String) -> void:

@@ -268,6 +268,12 @@ func package_install(session_dir: String, game_root: String, test_id: String = "
 	run("package", args)
 
 
+func package_addon(session_dir: String, game_root: String) -> void:
+	run("package", PackedStringArray([
+		"--session", session_dir, "--mode", "addon", "--game-root", game_root,
+	]))
+
+
 func package_pack(session_dir: String, out_dir: String) -> void:
 	run("package", PackedStringArray([
 		"--session", session_dir, "--mode", "pack", "--out", out_dir,

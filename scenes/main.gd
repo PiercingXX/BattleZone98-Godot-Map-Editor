@@ -417,7 +417,13 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 		"render":
 			_log.call("thumbnail %s" % result.get("png", ""))
 		"package":
-			_log.call("package %s → %s" % [result.get("mode", ""), result.get("dest", "")])
+			_log.call("package %s: %d files → %s" % [
+				result.get("mode", ""), (result.get("files", []) as Array).size(),
+				result.get("dest", ""),
+			])
+			var shared: Array = result.get("shared_lua", [])
+			if not shared.is_empty():
+				_log.call("bundled shared lua: %s" % ", ".join(PackedStringArray(shared)))
 
 
 func _on_call_failed(verb: String, error: Dictionary) -> void:

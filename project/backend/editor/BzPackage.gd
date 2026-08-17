@@ -3,8 +3,17 @@ class_name BzPackage
 ## Port of assemble.py + install.py + package_cmd.py.
 ##
 ## Safety (install.py / docs/07): the only writes into a game tree are
-## `<game_root>/mods/<test_id>/` and `<game_root>/modEnabled.dat`. Never the
-## installed pack, workshop dir, or any other path under the install.
+## `<game_root>/mods/<test_id>/`, `<game_root>/modEnabled.dat`, and
+## `<game_root>/addon/` (mode "addon"). Never the installed pack, the
+## workshop dir, or any other path under the install.
+##
+## The generator repo's live harness (its docs/17 + containers/FINDINGS.md)
+## proved that hand-editing modEnabled.dat does NOT activate a mod, and that
+## the reliable way to make the engine load an authored map is copying the
+## map file set — plus the pack's shared lua modules (RequireFix.lua,
+## SBPNavLogic.lua) when the map script requires them — into
+## `<install>/addon/`. Mode "addon" implements that verified route; the
+## "install" test-mod mode is kept for parity with the Python reference.
 
 ## Per-map suffixes that make up one map's entry in the flat pack (assemble.py).
 const MAP_SUFFIXES: Array[String] = [
@@ -379,6 +388,34 @@ static func package_session(
 			"previous_mod": _decode_previous(previous),
 			"files": saved.get("files", []),
 		}
+	if mode == "addon":
+		if game_root.is_empty():
+			return BzErrors.err("no_game", "package --mode addon needs --game-root")
+		var addon: String = _abs(game_root).path_join("addon")
+		var mk_addon: Dictionary = _ensure_dir(addon)
+		if BzErrors.is_err(mk_addon):
+			return mk_addon
+		var copied: Array = []
+		var da2 := DirAccess.open(staging)
+		if da2 != null:
+			for name2 in da2.get_files():
+				if str(name2) == "features.json":
+					continue
+				var cres: Dictionary = _copy_file(
+					staging.path_join(str(name2)), addon.path_join(str(name2))
+				)
+				if BzErrors.is_err(cres):
+					return cres
+				copied.append(str(name2))
+		var shared: Array = _copy_shared_lua(staging, addon)
+		return {
+			"ok": true,
+			"mode": "addon",
+			"dest": addon,
+			"files": copied,
+			"shared_lua": shared,
+			"warnings": saved.get("warnings", []),
+		}
 	if mode == "pack":
 		if out_dir.is_empty():
 			return BzErrors.err("no_out", "package --mode pack needs --out")
@@ -394,5 +431,72 @@ static func package_session(
 	return BzErrors.err(
 		"bad_mode",
 		"unknown package mode '%s'" % mode,
-		"use install or pack"
+		"use install, addon, or pack"
 	)
+
+
+## Copy the pack's shared lua modules into ``dest_dir`` when a staged map
+## script requires them. The engine reports a missing require only as a
+## modal dialog, never in the log, so bundling proactively is the only
+## reliable option. Returns the copied file names.
+static func _copy_shared_lua(staging: String, dest_dir: String) -> Array:
+	var regex := RegEx.new()
+	if regex.compile("require\\s*[\\(\\s]\\s*[\"']([^\"']+)[\"']") != OK:
+		return []
+	var queue: Array = []
+	var seen := {}
+	var da := DirAccess.open(staging)
+	if da == null:
+		return []
+	for name in da.get_files():
+		if str(name).to_lower().ends_with(".lua"):
+			for m in regex.search_all(FileAccess.get_file_as_string(staging.path_join(str(name)))):
+				var req := m.get_string(1)
+				if not seen.has(req):
+					seen[req] = true
+					queue.append(req)
+	if queue.is_empty():
+		return []
+	# The verified recipe (generator docs/17): RequireFix pulls SBPNavLogic
+	# in turn, so ship both whenever anything is required at all.
+	for forced in ["RequireFix", "SBPNavLogic"]:
+		if not seen.has(forced):
+			seen[forced] = true
+			queue.append(forced)
+	var copied: Array = []
+	var roots: Array = []
+	var disc: Dictionary = BzDiscover.discover()
+	for item in disc.get("installs", []):
+		if typeof(item) == TYPE_DICTIONARY and item.get("kind") == "workshop_item":
+			roots.append(str(item.get("path", "")))
+	# Transitive closure: each copied module may require further modules.
+	while not queue.is_empty():
+		var req2: String = str(queue.pop_front())
+		var fname := "%s.lua" % req2
+		if FileAccess.file_exists(dest_dir.path_join(fname)) \
+				or FileAccess.file_exists(staging.path_join(fname)):
+			continue
+		for root in roots:
+			var src := _find_file_ci(str(root), fname)
+			if not src.is_empty():
+				var res: Dictionary = _copy_file(src, dest_dir.path_join(fname))
+				if res.get("ok", false):
+					copied.append(fname)
+					for m2 in regex.search_all(FileAccess.get_file_as_string(src)):
+						var sub := m2.get_string(1)
+						if not seen.has(sub):
+							seen[sub] = true
+							queue.append(sub)
+				break
+	return copied
+
+
+static func _find_file_ci(dir: String, fname: String) -> String:
+	var da := DirAccess.open(dir)
+	if da == null:
+		return ""
+	var want := fname.to_lower()
+	for name in da.get_files():
+		if str(name).to_lower() == want:
+			return dir.path_join(str(name))
+	return ""

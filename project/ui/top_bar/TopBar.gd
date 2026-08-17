@@ -44,7 +44,7 @@ func _ready() -> void:
 	var pop: PopupMenu = %More.get_popup()
 	pop.add_item("Import assets", MORE_IMPORT)
 	pop.add_item("Render thumbnail", MORE_RENDER)
-	pop.add_item("Install to test mod", MORE_INSTALL)
+	pop.add_item("Install into game (addon)", MORE_INSTALL)
 	pop.add_item("Assemble pack", MORE_PACK)
 	pop.add_separator()
 	pop.add_item("Re-probe install", MORE_PROBE)

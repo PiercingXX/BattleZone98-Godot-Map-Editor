@@ -50,7 +50,10 @@ func install_mod() -> void:
 		log.call("no game root")
 		return
 	MapState.persist()
-	Backend.package_install(MapState.session_dir, Settings.game_root)
+	# The addon route is the one the live harness verified the engine
+	# actually loads from; the mods/<id> + modEnabled.dat route is ignored
+	# by the game (generator repo docs/17).
+	Backend.package_addon(MapState.session_dir, Settings.game_root)
 
 
 func choose_install(path: String) -> void:
