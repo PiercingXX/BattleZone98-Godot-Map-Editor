@@ -156,10 +156,13 @@ func _make_chunk_mesh(cells: int, cell_m: float) -> ArrayMesh:
 			var i1 := i0 + 1
 			var i2 := i0 + verts
 			var i3 := i2 + 1
+			# Godot front faces wind clockwise; seen from +Y this order keeps
+			# the top surface front-facing (the reversed order culled the
+			# entire terrain from above).
 			st.add_index(i0)
-			st.add_index(i2)
-			st.add_index(i1)
 			st.add_index(i1)
 			st.add_index(i2)
+			st.add_index(i1)
 			st.add_index(i3)
+			st.add_index(i2)
 	return st.commit()

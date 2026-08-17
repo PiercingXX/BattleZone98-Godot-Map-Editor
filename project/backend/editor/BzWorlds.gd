@@ -104,6 +104,11 @@ static func _atlas_lookup(game_root: String, atlas_name: String, world_id: Strin
 		game_root.path_join("Edit").path_join("Detail").path_join("%s.dds" % stem),
 		game_root.path_join("BZ_ASSETS").path_join("pc").path_join("textures")
 			.path_join("TerrainTextures").path_join("Detail").path_join("%s.dds" % stem),
+		# Newer installs ship per-world diffuse atlases here and have no
+		# Detail_PNG entry for some worlds (elysium, ganymede). Not in the
+		# Python reference — added after checking a real install.
+		game_root.path_join("Edit").path_join("BZ_TERRAIN_ATLASES_DIFF_PNG")
+			.path_join("%s_ATLAS_D.png" % world_id.to_upper()),
 	]
 	var image: String = ""
 	for c in candidates:
