@@ -14,15 +14,16 @@ code copied to produce them.
 
 ## Where implementations go
 
-Every one of these formats is implemented in the **`bzmap` Python toolchain**
-(sibling repo `battlezone98-map-generator`), never in the editor. See
-`AGENTS.md` §"the single most important thing to understand" and
-`docs/02-bzmap-bridge.md`. If a format module does not exist yet in `bzmap`,
-adding it is the correct move; parsing bytes in GDScript is not.
+Every one of these formats is implemented in the **GDScript format layer**
+under `project/backend/formats/` (see `docs/03-gdscript-port.md`), ported from
+the `bzmap` Python toolchain originally developed in the sibling repo
+`battlezone98-map-generator`. Format code lives there and only there — the
+editor UI never parses game bytes itself. See `AGENTS.md` §"the single most
+important thing to understand".
 
-When a module is added, record in that repo, per module, that it was built from
-this specification set via the clean-room process below. That note is the
-evidence if provenance is ever questioned.
+When a module is added, record per module that it was built from this
+specification set (directly or via the `bzmap` port) under the clean-room
+process below. That note is the evidence if provenance is ever questioned.
 
 ## The documents
 

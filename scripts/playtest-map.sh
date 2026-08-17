@@ -1,23 +1,14 @@
 #!/usr/bin/env bash
 # Author a tiny map and print the Proton command to load it.
-# Does not write into the game install.
+# Does not write into the game install. Pure GDScript — no Python needed.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GAME="${GAME_ROOT:-$HOME/.steam/steam/steamapps/common/Battlezone 98 Redux}"
 OUT="${1:-/tmp/xxedplay-out}"
-export PYTHONPATH="$ROOT/backend${PYTHONPATH:+:$PYTHONPATH}"
-PYTHON="${PYTHON:-$ROOT/.venv/bin/python}"
-mkdir -p /tmp/xxedplay-session "$OUT"
-"$PYTHON" - <<PY
-from pathlib import Path
-from bzmap.editor.new import create_map
-from bzmap.editor.save import save_session
-game = Path(r"$GAME")
-sess = Path("/tmp/xxedplay-session")
-out = Path(r"$OUT")
-create_map("xxedplay", "mars", 1280, 1280, sess, game, pack_kind="bzp")
-print(save_session(sess, out))
-PY
+GODOT="${GODOT:-godot}"
+
+"$GODOT" --headless --path "$ROOT" -s res://scripts/playtest_map.gd -- "$OUT" "$GAME"
+
 echo
 echo "Load in-game (game already running? close it first):"
 echo "  STEAM_COMPAT_CLIENT_INSTALL_PATH=\$HOME/.steam/steam \\"

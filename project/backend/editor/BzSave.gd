@@ -11,7 +11,7 @@ const _EOL := "\r\n"
 
 static func save_session(session_dir: String, out_dir: String, stem: String = "") -> Dictionary:
 	## Write the session to ``out_dir``. Returns the docs/02 §3 save payload.
-	var paths: Dictionary = _session_paths(session_dir)
+	var paths: Dictionary = BzSession.session_paths(session_dir)
 	if not FileAccess.file_exists(str(paths["manifest"])):
 		return BzErrors.err(
 			"no_session",
@@ -19,7 +19,7 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 			"open or new a map first",
 			session_dir
 		)
-	var manifest_v: Variant = _read_json(str(paths["manifest"]))
+	var manifest_v: Variant = BzSession.read_json(str(paths["manifest"]))
 	if BzErrors.is_err(manifest_v):
 		return manifest_v
 	if typeof(manifest_v) != TYPE_DICTIONARY:
@@ -27,7 +27,7 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 	var manifest: Dictionary = manifest_v
 	var dirty := {}
 	if FileAccess.file_exists(str(paths["dirty"])):
-		var dirty_v: Variant = _read_json(str(paths["dirty"]))
+		var dirty_v: Variant = BzSession.read_json(str(paths["dirty"]))
 		if BzErrors.is_err(dirty_v):
 			return dirty_v
 		if typeof(dirty_v) == TYPE_DICTIONARY:
@@ -68,12 +68,12 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 
 	# Terrain
 	if _truthy(dirty.get("terrain")):
-		var header_v: Variant = _read_json(str(paths["hg2_header"]))
+		var header_v: Variant = BzSession.read_json(str(paths["hg2_header"]))
 		if BzErrors.is_err(header_v):
 			return header_v
 		if typeof(header_v) != TYPE_DICTIONARY:
 			return BzErrors.err("invalid_json", "hg2_header.json is not an object", "", str(paths["hg2_header"]))
-		var heightmap_v: Variant = _reconstruct_heightmap(paths, header_v)
+		var heightmap_v: Variant = BzSession.reconstruct_heightmap(paths, header_v)
 		if BzErrors.is_err(heightmap_v):
 			return heightmap_v
 		var heightmap: BzHg2.HeightMap = heightmap_v as BzHg2.HeightMap
@@ -89,7 +89,7 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 		warnings.append("terrain re-encoded from terrain.r16")
 	else:
 		var dest_hg2_c: String = out_dir.path_join("%s.hg2" % out_stem)
-		var src_hg2: String = _find_source_file(source_dir, source_stem, ".hg2")
+		var src_hg2: String = BzSession.find_source_file(source_dir, source_stem, ".hg2")
 		if (
 			not src_hg2.is_empty()
 			and FileAccess.file_exists(dest_hg2_c)
@@ -101,7 +101,7 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 	if _truthy(dirty.get("materials")):
 		var mat_x: int = int(manifest["mat_grid_x"])
 		var mat_z: int = int(manifest["mat_grid_z"])
-		var raw_v: Variant = _read_materials_u16(str(paths["materials"]), mat_z, mat_x)
+		var raw_v: Variant = BzSession.read_materials_u16(str(paths["materials"]), mat_z, mat_x)
 		if BzErrors.is_err(raw_v):
 			return raw_v
 		var grid: BzMat.MaterialGrid = raw_v as BzMat.MaterialGrid
@@ -116,7 +116,7 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 		regenerated.append(dest_mat.get_file())
 	else:
 		var dest_mat_c: String = out_dir.path_join("%s.mat" % out_stem)
-		var src_mat: String = _find_source_file(source_dir, source_stem, ".mat")
+		var src_mat: String = BzSession.find_source_file(source_dir, source_stem, ".mat")
 		if (
 			not src_mat.is_empty()
 			and FileAccess.file_exists(dest_mat_c)
@@ -126,7 +126,7 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 
 	# Objects
 	if _objects_dirty(dirty):
-		var objects_v: Variant = _read_json(str(paths["objects"]))
+		var objects_v: Variant = BzSession.read_json(str(paths["objects"]))
 		if BzErrors.is_err(objects_v):
 			return objects_v
 		if typeof(objects_v) != TYPE_DICTIONARY:
@@ -141,10 +141,10 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 			var records: Array = records_v if typeof(records_v) == TYPE_ARRAY else []
 			var touched: Dictionary = _touched_set(dirty_objects, str(variant), objects_field, records)
 			var dest_bzn: String = out_dir.path_join(
-				"%s%s" % [out_stem, _variant_bzn_suffix(str(variant))]
+				"%s%s" % [out_stem, BzSession.variant_bzn_suffix(str(variant))]
 			)
-			var src_bzn: String = _find_source_file(
-				source_dir, source_stem, _variant_bzn_suffix(str(variant))
+			var src_bzn: String = BzSession.find_source_file(
+				source_dir, source_stem, BzSession.variant_bzn_suffix(str(variant))
 			)
 			if src_bzn.is_empty():
 				warnings.append(
@@ -169,10 +169,10 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 		var variants: Array = variants_v if typeof(variants_v) == TYPE_ARRAY else [""]
 		for variant in variants:
 			var dest_c: String = out_dir.path_join(
-				"%s%s" % [out_stem, _variant_bzn_suffix(str(variant))]
+				"%s%s" % [out_stem, BzSession.variant_bzn_suffix(str(variant))]
 			)
-			var src_c: String = _find_source_file(
-				source_dir, source_stem, _variant_bzn_suffix(str(variant))
+			var src_c: String = BzSession.find_source_file(
+				source_dir, source_stem, BzSession.variant_bzn_suffix(str(variant))
 			)
 			if (
 				not src_c.is_empty()
@@ -194,7 +194,7 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 	# Derived-file note: we never invent a .lgt on an untouched save.
 	var features := {}
 	if FileAccess.file_exists(str(paths["features"])):
-		var feat_v: Variant = _read_json(str(paths["features"]))
+		var feat_v: Variant = BzSession.read_json(str(paths["features"]))
 		if BzErrors.is_err(feat_v):
 			return feat_v
 		if typeof(feat_v) == TYPE_DICTIONARY:
@@ -475,119 +475,3 @@ static func _abs(path: String) -> String:
 	if cwd == null:
 		return ProjectSettings.globalize_path(path).simplify_path()
 	return cwd.get_current_dir().path_join(path).simplify_path()
-
-
-# -- private copies of BzSession helpers (BzSession.gd currently fails to
-# compile on Godot 4.7.1: String.is_absolute() does not exist) ---------------
-
-const _HEIGHT_MASK := 0x1FFF
-const _FLAG_SHIFT := 13
-const _ZONE_SIZE := 256
-
-
-static func _session_paths(session_dir: String) -> Dictionary:
-	var root: String = session_dir
-	var residue: String = root.path_join("residue")
-	return {
-		"root": root,
-		"manifest": root.path_join("manifest.json"),
-		"terrain": root.path_join("terrain.r16"),
-		"materials": root.path_join("materials.u16"),
-		"objects": root.path_join("objects.json"),
-		"features": root.path_join("features.json"),
-		"meta": root.path_join("meta.json"),
-		"dirty": root.path_join("dirty.json"),
-		"report": root.path_join("report.json"),
-		"masks": root.path_join("masks"),
-		"residue": residue,
-		"source": residue.path_join("source"),
-		"hg2_header": residue.path_join("hg2_header.json"),
-		"hg2_flags": residue.path_join("hg2_flags.u8"),
-	}
-
-
-static func _read_json(path: String) -> Variant:
-	if not FileAccess.file_exists(path):
-		return BzErrors.err("not_found", "no such file or directory: %s" % path, "", path)
-	var text: String = FileAccess.get_file_as_string(path)
-	var parsed: Variant = JSON.parse_string(text)
-	if parsed == null and text.strip_edges() != "null":
-		return BzErrors.err("invalid_json", "failed to parse JSON: %s" % path, "", path)
-	return parsed
-
-
-static func _find_source_file(source_dir: String, stem: String, suffix: String) -> String:
-	var target: String = (stem + suffix).to_lower()
-	for p in _list_files(source_dir):
-		if str(p).get_file().to_lower() == target:
-			return str(p)
-	return ""
-
-
-static func _variant_bzn_suffix(variant: String) -> String:
-	return "%s.bzn" % variant if not variant.is_empty() else ".bzn"
-
-
-static func _reconstruct_heightmap(paths: Dictionary, header: Dictionary) -> Variant:
-	var zones_x: int = int(header.get("zonesX", 0))
-	var zones_z: int = int(header.get("zonesZ", 0))
-	var grid_x: int = zones_x * _ZONE_SIZE
-	var grid_z: int = zones_z * _ZONE_SIZE
-	var heights_v: Variant = _read_u16(str(paths.get("terrain", "")), grid_z * grid_x, "terrain")
-	if BzErrors.is_err(heights_v):
-		return heights_v
-	var heights: PackedInt32Array = heights_v
-	var flags := PackedByteArray()
-	flags.resize(grid_z * grid_x)
-	var flags_path: String = str(paths.get("hg2_flags", ""))
-	if FileAccess.file_exists(flags_path):
-		var raw: PackedByteArray = FileAccess.get_file_as_bytes(flags_path)
-		if raw.size() != grid_z * grid_x:
-			return BzErrors.err(
-				"flags_size_mismatch",
-				"hg2_flags.u8 has %d samples, expected %d" % [raw.size(), grid_z * grid_x],
-				"",
-				flags_path
-			)
-		flags = raw
-	var words := PackedInt32Array()
-	words.resize(heights.size())
-	for i in heights.size():
-		var fl: int = flags[i] if i < flags.size() else 0
-		words[i] = ((fl << _FLAG_SHIFT) | (heights[i] & _HEIGHT_MASK)) & 0xFFFF
-	return BzHg2.HeightMap.new(
-		zones_x,
-		zones_z,
-		words,
-		int(header.get("version", 1)),
-		int(header.get("depth", 8)),
-		int(header.get("unknownA", 10)),
-		int(header.get("unknownB", 0))
-	)
-
-
-static func _read_materials_u16(path: String, grid_z: int, grid_x: int) -> Variant:
-	var raw_v: Variant = _read_u16(path, grid_z * grid_x, "materials")
-	if BzErrors.is_err(raw_v):
-		return raw_v
-	return BzMat.MaterialGrid.new(raw_v, grid_z, grid_x)
-
-
-static func _read_u16(path: String, expected: int, kind: String) -> Variant:
-	if not FileAccess.file_exists(path):
-		return BzErrors.err("not_found", "no such file or directory: %s" % path, "", path)
-	var bytes: PackedByteArray = FileAccess.get_file_as_bytes(path)
-	var n: int = bytes.size() / 2
-	if n != expected:
-		var code: String = "terrain_size_mismatch" if kind == "terrain" else "materials_size_mismatch"
-		return BzErrors.err(
-			code,
-			"%s has %d samples, expected %d" % [path.get_file(), n, expected],
-			"",
-			path
-		)
-	var out := PackedInt32Array()
-	out.resize(n)
-	for i in n:
-		out[i] = bytes.decode_u16(i * 2)
-	return out

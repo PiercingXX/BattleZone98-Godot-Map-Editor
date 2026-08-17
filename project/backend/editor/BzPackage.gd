@@ -261,41 +261,9 @@ static func _decode_previous(previous: Variant) -> Variant:
 	return previous
 
 
-static func _session_paths(session_dir: String) -> Dictionary:
-	## Private copy of BzSession.session_paths. BzSession.gd does not compile
-	## in Godot 4.7 (String.is_absolute); do not call it from this file.
-	var residue: String = session_dir.path_join("residue")
-	return {
-		"root": session_dir,
-		"manifest": session_dir.path_join("manifest.json"),
-		"terrain": session_dir.path_join("terrain.r16"),
-		"materials": session_dir.path_join("materials.u16"),
-		"objects": session_dir.path_join("objects.json"),
-		"features": session_dir.path_join("features.json"),
-		"meta": session_dir.path_join("meta.json"),
-		"dirty": session_dir.path_join("dirty.json"),
-		"report": session_dir.path_join("report.json"),
-		"masks": session_dir.path_join("masks"),
-		"residue": residue,
-		"source": residue.path_join("source"),
-		"hg2_header": residue.path_join("hg2_header.json"),
-		"hg2_flags": residue.path_join("hg2_flags.u8"),
-	}
-
-
-static func _read_json(path: String) -> Variant:
-	if not FileAccess.file_exists(path):
-		return BzErrors.err("not_found", "no such file or directory: %s" % path, "", path)
-	var text: String = FileAccess.get_file_as_string(path)
-	var parsed: Variant = JSON.parse_string(text)
-	if parsed == null and text.strip_edges() != "null":
-		return BzErrors.err("invalid_json", "failed to parse JSON: %s" % path, "", path)
-	return parsed
-
-
 static func _copy_residue_source(session_dir: String, out_dir: String, stem: String) -> Dictionary:
 	## Private fallback when BzSave.save_session cannot run. Copies residue/source.
-	var paths: Dictionary = _session_paths(session_dir)
+	var paths: Dictionary = BzSession.session_paths(session_dir)
 	var source_dir: String = str(paths["source"])
 	var made: Dictionary = _ensure_dir(out_dir)
 	if BzErrors.is_err(made):
@@ -326,42 +294,25 @@ static func _copy_residue_source(session_dir: String, out_dir: String, stem: Str
 	}
 
 
-static func _script_has(path: String, method: String) -> bool:
-	if not ResourceLoader.exists(path):
-		return false
-	var script: GDScript = load(path) as GDScript
-	return script != null and script.has_method(method)
-
-
 static func _save_session(session_dir: String, out_dir: String, stem: String) -> Dictionary:
-	## Prefer BzSave.save_session (package_cmd.py). Fallback: residue/source copy.
-	## BzSave calls BzSession; skip both when BzSession does not compile
-	## (Godot 4.7: String.is_absolute is not a method).
-	var session_ok: bool = _script_has(
-		"res://project/backend/editor/BzSession.gd", "session_paths"
-	)
-	var save_path: String = "res://project/backend/editor/BzSave.gd"
-	if session_ok and _script_has(save_path, "save_session"):
-		var script: GDScript = load(save_path) as GDScript
-		var saved_v: Variant = script.call("save_session", session_dir, out_dir, stem)
-		if typeof(saved_v) == TYPE_DICTIONARY:
-			var saved: Dictionary = saved_v
-			if saved.get("ok", false):
-				return saved
-			if BzErrors.is_err(saved):
-				var code: String = str(saved.get("error", {}).get("code", ""))
-				if code == "no_session" or code == "no_stem":
-					return saved
-				var fallback: Dictionary = _copy_residue_source(session_dir, out_dir, stem)
-				if fallback.get("ok", false):
-					var warns: Array = fallback.get("warnings", [])
-					warns.append(
-						"save_session: %s" % str(saved.get("error", {}).get("message", saved))
-					)
-					fallback["warnings"] = warns
-					return fallback
-				return saved
-	return _copy_residue_source(session_dir, out_dir, stem)
+	## Prefer BzSave.save_session (package_cmd.py). On a non-fatal save error,
+	## copy residue/source so pack/install can still stage a map directory.
+	var saved: Dictionary = BzSave.save_session(session_dir, out_dir, stem)
+	if saved.get("ok", false):
+		return saved
+	if BzErrors.is_err(saved):
+		var code: String = str(saved.get("error", {}).get("code", ""))
+		if code == "no_session" or code == "no_stem":
+			return saved
+		var fallback: Dictionary = _copy_residue_source(session_dir, out_dir, stem)
+		if fallback.get("ok", false):
+			var warns: Array = fallback.get("warnings", [])
+			warns.append(
+				"save_session: %s" % str(saved.get("error", {}).get("message", saved))
+			)
+			fallback["warnings"] = warns
+			return fallback
+	return saved
 
 
 static func package_session(
@@ -372,7 +323,7 @@ static func package_session(
 	out_dir: String = ""
 ) -> Dictionary:
 	## mode is install or pack. Payload: docs/02 §3 package.
-	var paths: Dictionary = _session_paths(session_dir)
+	var paths: Dictionary = BzSession.session_paths(session_dir)
 	if not FileAccess.file_exists(str(paths["manifest"])):
 		return BzErrors.err(
 			"no_session",
@@ -380,7 +331,7 @@ static func package_session(
 			"",
 			session_dir
 		)
-	var manifest_v: Variant = _read_json(str(paths["manifest"]))
+	var manifest_v: Variant = BzSession.read_json(str(paths["manifest"]))
 	if BzErrors.is_err(manifest_v):
 		return manifest_v
 	if typeof(manifest_v) != TYPE_DICTIONARY:

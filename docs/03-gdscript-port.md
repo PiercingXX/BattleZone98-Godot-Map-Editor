@@ -1,18 +1,21 @@
 # 03 — The pure-GDScript backend port
 
-**Decision (2026-08-17):** the Python `backend/bzmap` toolchain is being ported
-to GDScript in full, minus the map *generator* (`bzmap/generate/*`, the
-`corpus`/`generate` CLI verbs, and everything only they import). The editor
-becomes a self-contained Godot 4.7 project: no Python, no venv, no
-per-platform dependency install. This supersedes the "never parse formats in
-GDScript" rule in `AGENTS.md` — the guarantee behind that rule (byte-identical
-round-trips) is carried forward as a **test requirement** on the port instead.
+**Decision (2026-08-17), completed same day:** the Python `backend/bzmap`
+toolchain was ported to GDScript in full, minus the map *generator*
+(`bzmap/generate/*`, the `corpus`/`generate` CLI verbs, and everything only
+they import). The editor is a self-contained Godot 4.7 project: no Python, no
+venv, no per-platform dependency install. This supersedes the "never parse
+formats in GDScript" rule that used to live in `AGENTS.md` — the guarantee
+behind that rule (byte-identical round-trips) is carried forward as a **test
+requirement** on the port instead (`tests/gd/test_bridge_goldens.gd` and the
+per-format round-trip tests).
 
-The Python code in `backend/` is the **reference implementation** during the
-port and is deleted when the port is verified. Port it faithfully: same
-behavior, same JSON payload shapes (docs/02 §3), same round-trip guarantees.
-Where Python behavior and a format spec (`docs/formats/F1–F8`) disagree, the
-Python behavior wins — flag the discrepancy in a comment.
+The Python code was the **reference implementation** and was deleted once the
+port was verified; it lives in git history (the parent of commit `af28863`).
+The port mirrors it faithfully: same behavior, same JSON payload shapes
+(docs/02 §3), same round-trip guarantees. Where Python behavior and a format
+spec (`docs/formats/F1–F8`) disagree, the Python behavior wins — each case is
+flagged in a comment in the ported module.
 
 ---
 

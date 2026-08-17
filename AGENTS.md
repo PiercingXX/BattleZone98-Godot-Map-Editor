@@ -11,12 +11,12 @@ You are building the **BattleZone 98 Godot Map Editor** — a standalone Godot
 round-trips are a test requirement, not an aspiration.**
 
 The format toolchain was originally the bundled Python package
-`backend/bzmap`, invoked as a subprocess per `docs/02-bzmap-bridge.md`. It is
-being ported to GDScript in full (minus the map generator) so the editor is
-self-contained — see `docs/03-gdscript-port.md` for the decision, layout, and
-conventions. During the port, the Python code is the **reference
-implementation**: port its behavior faithfully, and where it disagrees with a
-spec in `docs/formats/`, the Python behavior wins (flag the discrepancy).
+`backend/bzmap`, invoked as a subprocess per `docs/02-bzmap-bridge.md`. It
+was ported to GDScript in full (minus the map generator) on 2026-08-17, and
+`backend/` was deleted — see `docs/03-gdscript-port.md` for the decision,
+layout, and conventions, and git history (`af28863^`) for the Python
+reference. Where the port and a spec in `docs/formats/` disagree, the ported
+(Python-derived) behavior wins; each such case is flagged in a code comment.
 
 The Python toolchain round-trips all 128 corpus BZNs and all 36 corpus HG2s
 byte-identically. The port inherits that bar: open→save with no edits must be
@@ -91,7 +91,7 @@ Working editor, not a smoke shell:
   overlays, fly camera (walk-the-surface is V).
 - Sculpt + paint + ramp + undo. Writes clamp to raw 1..4095; inherited
   out-of-range cells pass through until touched.
-- Assets: `bzmap editor assets` enumerates the install, writes proxy icons,
+- Assets: the `assets` verb (`BzAssets`) enumerates the install, writes proxy icons,
   marks verified classes. Viewport fidelity is **proxy** until a `.glb`
   appears in the cache (HD / geo conversion is the next converter job).
 - Placement: live palette, raycast, clone-on-save for verified classes,

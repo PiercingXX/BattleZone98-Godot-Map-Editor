@@ -308,8 +308,7 @@ static func _verified_prjids(pack_dirs: PackedStringArray) -> Dictionary:
 
 
 static func _bzn_prjids(path: String) -> PackedStringArray:
-	## Prefer BzBzn.read_bzn when the sibling module loads; otherwise scan
-	## PrjID value lines (the only field `obj.prjid` needs).
+	## Prefer BzBzn.read_bzn; scan PrjID value lines if the parse fails.
 	var via: Variant = _try_bzn_prjids(path)
 	if via != null:
 		return via
@@ -450,7 +449,7 @@ static func _class_record(
 
 static func _convert_class(stem: String, search_roots: Array, dest: String) -> Dictionary:
 	## Best-effort convert. Returns `{path, fidelity, reason}`.
-	## Python imports convert.convert_class; prefer BzConvert when it loads.
+	## Python imports convert.convert_class; prefer BzConvert.convert_class.
 	var via := _try_bz_convert(stem, search_roots, dest)
 	if not via.is_empty():
 		return via
@@ -550,9 +549,6 @@ static func _convert_hd(stem: String, index: Dictionary, dest: String) -> Dictio
 	var mesh_path := _resolve_asset(index, stem, PackedStringArray([".mesh"]))
 	if mesh_path.is_empty():
 		return {"path": "", "why": "no .mesh"}
-	# BzOgre is a sibling format module; load it at runtime so a mid-port
-	# parse error there cannot take down BzAssets (docs/03: private copy /
-	# degrade — do not edit the other file).
 	var ogre = _try_read_ogre(mesh_path)
 	if ogre == null:
 		return {"path": "", "why": "no .mesh"}
@@ -708,13 +704,7 @@ static func _convert_bwd2(stem: String, index: Dictionary, dest: String) -> Dict
 # --- helpers ----------------------------------------------------------------
 
 static func _try_bz_convert(stem: String, search_roots: Array, dest: String) -> Dictionary:
-	const SCRIPT_PATH := "res://project/backend/editor/BzConvert.gd"
-	if not ResourceLoader.exists(SCRIPT_PATH):
-		return {}
-	var script := load(SCRIPT_PATH) as GDScript
-	if script == null or not script.has_method("convert_class"):
-		return {}
-	var res: Variant = script.call("convert_class", stem, search_roots, dest)
+	var res: Variant = BzConvert.convert_class(stem, search_roots, dest)
 	if typeof(res) == TYPE_ARRAY and (res as Array).size() >= 3:
 		var path_v: Variant = res[0]
 		var path := "" if path_v == null else str(path_v)
@@ -729,13 +719,7 @@ static func _try_bz_convert(stem: String, search_roots: Array, dest: String) -> 
 
 
 static func _try_bzn_prjids(path: String) -> Variant:
-	const SCRIPT_PATH := "res://project/backend/formats/BzBzn.gd"
-	if not ResourceLoader.exists(SCRIPT_PATH):
-		return null
-	var script := load(SCRIPT_PATH) as GDScript
-	if script == null or not script.has_method("read_bzn"):
-		return null
-	var res: Variant = script.call("read_bzn", path)
+	var res: Variant = BzBzn.read_bzn(path)
 	if typeof(res) != TYPE_DICTIONARY:
 		return null
 	var payload: Dictionary = res
@@ -753,13 +737,7 @@ static func _try_bzn_prjids(path: String) -> Variant:
 
 
 static func _try_read_ogre(path: String) -> Variant:
-	const SCRIPT_PATH := "res://project/backend/formats/BzOgre.gd"
-	if not ResourceLoader.exists(SCRIPT_PATH):
-		return null
-	var script := load(SCRIPT_PATH) as GDScript
-	if script == null or not script.has_method("read_ogre_mesh"):
-		return null
-	var res: Variant = script.call("read_ogre_mesh", path)
+	var res: Variant = BzOgre.read_ogre_mesh(path)
 	if typeof(res) != TYPE_DICTIONARY:
 		return res
 	var payload: Dictionary = res

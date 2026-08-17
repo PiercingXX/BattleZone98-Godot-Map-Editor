@@ -11,10 +11,9 @@ class_name BzNew
 ## Python ``write_complete_trn`` rewrites only ``[Size]`` (standalone origin
 ## + Width/Depth). Python wins.
 ##
-## Format/session classes are reached via ``load()`` rather than class_name
-## identifiers. Godot 4.7 ``-s`` mode binds a class_name to a bare GDScript
-## (static methods missing) when this file lists too many global classes,
-## especially inner types like ``BzHg2.HeightMap``.
+## ``_open_map`` is kept (not BzOpen.open_map): it writes empty meta, a
+## relative session path, and a simpler basename-group collect. Tests pin
+## the create_map payload that this path produces.
 
 const KNOWN_TERRAIN_COLLISIONS := []
 
@@ -49,9 +48,8 @@ static func create_map(
 	if stem.is_empty() or not _stem_alnum_ok(stem):
 		return BzErrors.err("bad_stem", "stem %s is empty or not alphanumeric" % _py_repr(stem))
 
-	var disc: GDScript = _script("res://project/backend/editor/BzDiscover.gd")
 	if game_root.is_empty():
-		game_root = str(disc.call("first_game_root")) if disc != null else ""
+		game_root = BzDiscover.first_game_root()
 	if game_root.is_empty():
 		return BzErrors.err(
 			"no_game",
@@ -59,7 +57,7 @@ static func create_map(
 			"probe first, or install Battlezone 98 Redux"
 		)
 
-	var taken: Dictionary = _known_terrain_names(game_root, disc)
+	var taken: Dictionary = _known_terrain_names(game_root)
 	if taken.has(stem.to_lower()):
 		return BzErrors.err(
 			"stem_collision",
@@ -109,7 +107,7 @@ static func create_map(
 				game_root.path_join("Edit").path_join("trn")
 			)
 
-	var paths: Dictionary = _ensure_session_dir(session_dir)
+	var paths: Dictionary = BzSession.ensure_session_dir(session_dir)
 	if BzErrors.is_err(paths):
 		return paths
 	var staging: String = str(paths["source"])
@@ -123,10 +121,7 @@ static func create_map(
 	var wr_hg2: Variant = heightmap.write(staging.path_join("%s.hg2" % stem))
 	if typeof(wr_hg2) == TYPE_DICTIONARY and wr_hg2.get("ok") == false:
 		return wr_hg2
-	var mat: GDScript = _script("res://project/backend/formats/BzMat.gd")
-	if mat == null:
-		return BzErrors.err("backend_crash", "BzMat is not available")
-	var painted: Variant = mat.call("auto_paint", heightmap, _DEFAULT_PAINT_RULES)
+	var painted: Variant = BzMat.auto_paint(heightmap, _DEFAULT_PAINT_RULES)
 	if BzErrors.is_err(painted) or (typeof(painted) == TYPE_DICTIONARY and painted.get("ok") == false):
 		if typeof(painted) == TYPE_DICTIONARY:
 			return painted
@@ -137,32 +132,23 @@ static func create_map(
 	if typeof(wr_mat) == TYPE_DICTIONARY and wr_mat.get("ok") == false:
 		return wr_mat
 	_write_complete_trn(staging.path_join("%s.trn" % stem), width_m, depth_m, template_trn)
-	var ini: GDScript = _script("res://project/backend/formats/BzIni.gd")
-	if ini != null:
-		ini.call("write_ini", staging.path_join("%s.ini" % stem), stem, "multiplayer")
-	var des: GDScript = _script("res://project/backend/formats/BzDes.gd")
-	if des != null:
-		des.call(
-			"write_des",
-			staging.path_join("%s.des" % stem),
-			stem,
-			world.capitalize(),
-			"%dx%d" % [width_m, depth_m],
-			0,
-			0,
-			14
-		)
+	BzIni.write_ini(staging.path_join("%s.ini" % stem), stem, "multiplayer")
+	BzDes.write_des(
+		staging.path_join("%s.des" % stem),
+		stem,
+		world.capitalize(),
+		"%dx%d" % [width_m, depth_m],
+		0,
+		0,
+		14
+	)
 	if pack_kind == "bzp":
-		var odf: GDScript = _script("res://project/backend/formats/BzOdf.gd")
-		if odf != null:
-			odf.call("write_odf", staging.path_join("%s.odf" % stem))
-	var vxt: GDScript = _script("res://project/backend/formats/BzVxt.gd")
-	if vxt != null:
-		vxt.call("write_standard_vxt", staging.path_join("%s.vxt" % stem))
+		BzOdf.write_odf(staging.path_join("%s.odf" % stem))
+	BzVxt.write_standard_vxt(staging.path_join("%s.vxt" % stem))
 	_bake_lgt(heightmap, staging.path_join("%s.lgt" % stem))
 
 	var warnings: Array = []
-	var template_bzn: String = _find_template_bzn(disc)
+	var template_bzn: String = _find_template_bzn()
 	var variants: Array = ["", "_S", "_ST", "_SW"]
 	if not template_bzn.is_empty():
 		var bzns: Dictionary = _build_starter_bzns(template_bzn, stem, heightmap, variants)
@@ -194,14 +180,14 @@ static func create_map(
 	manifest["source_path"] = ""
 	manifest["world"] = world
 	manifest["pack_context"] = {"kind": "bzp"} if pack_kind == "bzp" else {"kind": "base"}
-	var wr_man: Dictionary = _write_json(str(paths["manifest"]), manifest)
+	var wr_man: Dictionary = BzSession.write_json(str(paths["manifest"]), manifest)
 	if BzErrors.is_err(wr_man):
 		return wr_man
 	result["manifest"] = manifest
 	return result
 
 
-static func _known_terrain_names(game_root: String, disc: GDScript) -> Dictionary:
+static func _known_terrain_names(game_root: String) -> Dictionary:
 	var names := {}
 	var trn_dir: String = game_root.path_join("Edit").path_join("trn")
 	if DirAccess.dir_exists_absolute(trn_dir):
@@ -209,10 +195,9 @@ static func _known_terrain_names(game_root: String, disc: GDScript) -> Dictionar
 			if p.get_extension().to_lower() == "trn":
 				names[p.get_file().get_basename().to_lower()] = true
 	var discovery := {}
-	if disc != null:
-		var got: Variant = disc.call("discover")
-		if typeof(got) == TYPE_DICTIONARY:
-			discovery = got
+	var got: Variant = BzDiscover.discover()
+	if typeof(got) == TYPE_DICTIONARY:
+		discovery = got
 	for item_v in discovery.get("installs", []):
 		if typeof(item_v) != TYPE_DICTIONARY:
 			continue
@@ -228,13 +213,12 @@ static func _known_terrain_names(game_root: String, disc: GDScript) -> Dictionar
 	return names
 
 
-static func _find_template_bzn(disc: GDScript) -> String:
+static func _find_template_bzn() -> String:
 	## Return a stock .bzn that can clone player + pspwn_1, or "".
 	var discovery := {}
-	if disc != null:
-		var got: Variant = disc.call("discover")
-		if typeof(got) == TYPE_DICTIONARY:
-			discovery = got
+	var got: Variant = BzDiscover.discover()
+	if typeof(got) == TYPE_DICTIONARY:
+		discovery = got
 	var candidates: Array = []
 	for item_v in discovery.get("installs", []):
 		if typeof(item_v) != TYPE_DICTIONARY:
@@ -279,17 +263,14 @@ static func _flat_heightmap(width_m: int, depth_m: int, base_height: int) -> Var
 			"width and depth must be multiples of 1280 (got %dx%d)" % [width_m, depth_m],
 			"legal sizes are 1280, 2560, 3840, 5120; non-square is allowed"
 		)
-	var hg2: GDScript = _script("res://project/backend/formats/BzHg2.gd")
-	if hg2 == null:
-		return BzErrors.err("backend_crash", "BzHg2 is not available")
-	var zone: int = int(hg2.get("ZONE_SIZE")) if hg2.get("ZONE_SIZE") != null else _ZONE_SIZE
+	var zone: int = BzHg2.ZONE_SIZE
 	var zones_x: int = width_m / 1280
 	var zones_z: int = depth_m / 1280
 	var n: int = zones_z * zone * zones_x * zone
 	var data := PackedInt32Array()
 	data.resize(n)
 	data.fill(int(base_height))
-	return hg2.HeightMap.new(zones_x, zones_z, data)
+	return BzHg2.HeightMap.new(zones_x, zones_z, data)
 
 
 static func _bake_lgt(heightmap, path: String) -> void:
@@ -344,11 +325,7 @@ static func _append_mission_trailer(bzn) -> void:
 
 static func _build_starter_bzns(template_bzn: String, stem: String, heightmap, variants: Array) -> Dictionary:
 	## Clone player + spawn-ring scaffolds into one BznFile per variant.
-	var bzn_mod: GDScript = _script("res://project/backend/formats/BzBzn.gd")
-	var hg2: GDScript = _script("res://project/backend/formats/BzHg2.gd")
-	if bzn_mod == null or hg2 == null:
-		return {}
-	var loaded: Variant = bzn_mod.call("read_bzn", template_bzn)
+	var loaded: Variant = BzBzn.read_bzn(template_bzn)
 	if typeof(loaded) != TYPE_DICTIONARY or not bool(loaded.get("ok", false)):
 		return {}
 	var src_bzn = loaded.get("bznfile")
@@ -370,14 +347,14 @@ static func _build_starter_bzns(template_bzn: String, stem: String, heightmap, v
 	var depth_m: float = float(heightmap.depth_m)
 	var cx: float = width_m / 2.0
 	var cz: float = depth_m / 2.0
-	var cy: float = float(hg2.call("sample_m", heightmap, cx, cz))
+	var cy: float = BzHg2.sample_m(heightmap, cx, cz)
 	var radius: float = minf(width_m, depth_m) * 0.30
 	var files := {}
 	for variant_v in variants:
 		var variant: String = str(variant_v)
 		var n_spawns: int = 2 if variant == "_S" else 14
 		var blocks: Array = []
-		var player = bzn_mod.GameObject.from_template(player_text)
+		var player = BzBzn.GameObject.from_template(player_text)
 		player.set_position(cx, cy, cz)
 		player.set_yaw(0.0)
 		player.set_identity(0, 1, "%s0_player" % stem)
@@ -388,15 +365,15 @@ static func _build_starter_bzns(template_bzn: String, stem: String, heightmap, v
 			var ang: float = (2.0 * PI * float(i)) / float(n_spawns)
 			var x: float = cx + radius * cos(ang)
 			var z: float = cz + radius * sin(ang)
-			var y: float = float(hg2.call("sample_m", heightmap, x, z))
-			var spawn = bzn_mod.GameObject.from_template(spawn_text)
+			var y: float = BzHg2.sample_m(heightmap, x, z)
+			var spawn = BzBzn.GameObject.from_template(spawn_text)
 			spawn.set_position(x, y, z)
 			spawn.set_yaw(ang)
 			spawn.set_identity(i + 1, i + 2, "%s%d_spawn" % [stem, i + 1])
 			spawn.set_team(0)
 			spawn.set_is_user(false)
 			blocks.append(spawn)
-		var bzn = bzn_mod.BznFile.build(header_text, blocks, tail_text)
+		var bzn = BzBzn.BznFile.build(header_text, blocks, tail_text)
 		bzn.set_header("size [1]", blocks.size())
 		bzn.set_header("seq_count [1]", blocks.size())
 		bzn.set_header("msn_filename", "%s.bzn" % stem)
@@ -469,8 +446,8 @@ static func _write_complete_trn(path: String, width_m: int, depth_m: int, templa
 
 
 static func _open_map(path: String, session_dir: String) -> Dictionary:
-	## Private copy of open.py open_map. BzOpen/BzSession currently fail to
-	## compile (BzSession uses String.is_absolute(), missing in 4.7.1).
+	## Private open-into-session used by create_map. Differs from BzOpen.open_map
+	## (empty meta, relative session path, prefix file collect, skip-on-BZN-fail).
 	var directory: String = path.get_base_dir()
 	var stem: String = path.get_file().get_basename()
 	var files: Array = []
@@ -480,7 +457,7 @@ static func _open_map(path: String, session_dir: String) -> Dictionary:
 		if name.begins_with(sl + ".") or name.begins_with(sl + "_") or name == sl + "map.lua":
 			files.append(p)
 	var warnings: Array = []
-	var paths: Dictionary = _ensure_session_dir(session_dir)
+	var paths: Dictionary = BzSession.ensure_session_dir(session_dir)
 	if BzErrors.is_err(paths):
 		return paths
 	var source_dir: String = str(paths["source"])
@@ -488,7 +465,7 @@ static func _open_map(path: String, session_dir: String) -> Dictionary:
 		var dest: String = source_dir.path_join(str(src).get_file())
 		if dest.simplify_path() != str(src).simplify_path():
 			DirAccess.copy_absolute(str(src), dest)
-	var hg2_path: String = _find_source_file(source_dir, stem, ".hg2")
+	var hg2_path: String = BzSession.find_source_file(source_dir, stem, ".hg2")
 	if hg2_path.is_empty():
 		return BzErrors.err(
 			"missing_hg2",
@@ -496,18 +473,15 @@ static func _open_map(path: String, session_dir: String) -> Dictionary:
 			"",
 			directory
 		)
-	var hg2: GDScript = _script("res://project/backend/formats/BzHg2.gd")
-	if hg2 == null:
-		return BzErrors.err("backend_crash", "BzHg2 is not available")
-	var hm_r: Variant = hg2.call("read_hg2", hg2_path)
+	var hm_r: Variant = BzHg2.read_hg2(hg2_path)
 	if typeof(hm_r) != TYPE_DICTIONARY or not bool(hm_r.get("ok", false)):
 		return hm_r if typeof(hm_r) == TYPE_DICTIONARY else BzErrors.err("value_error", "failed to read hg2")
 	var heightmap = hm_r.get("heightmap")
 	if heightmap == null:
 		return BzErrors.err("value_error", "BzHg2.read_hg2 did not return a HeightMap", "", hg2_path)
-	_write_terrain_r16(str(paths["terrain"]), heightmap)
-	_write_hg2_flags(str(paths["hg2_flags"]), heightmap)
-	_write_json(str(paths["hg2_header"]), {
+	BzSession.write_terrain_r16(str(paths["terrain"]), heightmap)
+	BzSession.write_hg2_flags(str(paths["hg2_flags"]), heightmap)
+	BzSession.write_json(str(paths["hg2_header"]), {
 		"version": heightmap.version,
 		"depth": heightmap.depth,
 		"zonesX": heightmap.zonesX,
@@ -517,13 +491,12 @@ static func _open_map(path: String, session_dir: String) -> Dictionary:
 	})
 	var mat_grid_x: int
 	var mat_grid_z: int
-	var mat_path: String = _find_source_file(source_dir, stem, ".mat")
-	var mat: GDScript = _script("res://project/backend/formats/BzMat.gd")
-	if not mat_path.is_empty() and mat != null:
-		var mat_r: Variant = mat.MaterialGrid.read(mat_path)
+	var mat_path: String = BzSession.find_source_file(source_dir, stem, ".mat")
+	if not mat_path.is_empty():
+		var mat_r: Variant = BzMat.MaterialGrid.read(mat_path)
 		if typeof(mat_r) == TYPE_DICTIONARY and bool(mat_r.get("ok", false)):
 			var grid = mat_r.get("grid")
-			_write_u16(str(paths["materials"]), grid.data)
+			BzSession.write_materials_u16(str(paths["materials"]), grid.data)
 			mat_grid_x = int(grid.grid_x)
 			mat_grid_z = int(grid.grid_z)
 		else:
@@ -535,17 +508,16 @@ static func _open_map(path: String, session_dir: String) -> Dictionary:
 		var empty := PackedInt32Array()
 		empty.resize(mat_grid_z * mat_grid_x)
 		empty.fill(0)
-		_write_u16(str(paths["materials"]), empty)
+		BzSession.write_materials_u16(str(paths["materials"]), empty)
 	var objects := {"": [], "_S": [], "_ST": [], "_SW": []}
 	var present_variants: Array = []
-	var objs: GDScript = _script("res://project/backend/editor/BzObjects.gd")
 	for variant in ["", "_S", "_ST", "_SW"]:
-		var suffix: String = "%s.bzn" % variant if variant != "" else ".bzn"
-		var bzn_path: String = _find_source_file(source_dir, stem, suffix)
-		if bzn_path.is_empty() or objs == null:
+		var suffix: String = BzSession.variant_bzn_suffix(variant)
+		var bzn_path: String = BzSession.find_source_file(source_dir, stem, suffix)
+		if bzn_path.is_empty():
 			continue
 		var prefix: String = "obj" if variant == "" else "obj%s" % variant.to_lower()
-		var loaded: Variant = objs.call("load_variant_objects", bzn_path, prefix)
+		var loaded: Variant = BzObjects.load_variant_objects(bzn_path, prefix)
 		if typeof(loaded) == TYPE_DICTIONARY and loaded.get("ok") == true:
 			objects[variant] = loaded.get("records", [])
 			present_variants.append(variant)
@@ -553,13 +525,13 @@ static func _open_map(path: String, session_dir: String) -> Dictionary:
 		warnings.append("no .bzn in the basename group")
 		present_variants = [""]
 	var features := {"water": [], "plants": []}
-	_write_json(str(paths["objects"]), objects)
-	_write_json(str(paths["features"]), features)
-	_write_json(str(paths["meta"]), {})
+	BzSession.write_json(str(paths["objects"]), objects)
+	BzSession.write_json(str(paths["features"]), features)
+	BzSession.write_json(str(paths["meta"]), {})
 	var dirty_objects := {}
 	for v in present_variants:
 		dirty_objects[str(v)] = []
-	_write_json(str(paths["dirty"]), {
+	BzSession.write_json(str(paths["dirty"]), {
 		"terrain": false,
 		"materials": false,
 		"objects": dirty_objects,
@@ -576,7 +548,7 @@ static func _open_map(path: String, session_dir: String) -> Dictionary:
 		warnings.append(
 			"source heightmap has cells above the editor authoring ceiling (raw 4095); inherited values are preserved"
 		)
-	var has_lgt: bool = not _find_source_file(source_dir, stem, ".lgt").is_empty()
+	var has_lgt: bool = not BzSession.find_source_file(source_dir, stem, ".lgt").is_empty()
 	var manifest := {
 		"contract_version": 1,
 		"stem": stem,
@@ -596,104 +568,15 @@ static func _open_map(path: String, session_dir: String) -> Dictionary:
 		"mat_cell_m": 20.0,
 		"variants": present_variants,
 		"has_lightmap": has_lgt,
-		"pack_context": {"kind": "bzp"} if _find_source_file(source_dir, stem, ".odf") != "" else {"kind": "base"},
+		"pack_context": {"kind": "bzp"} if BzSession.find_source_file(source_dir, stem, ".odf") != "" else {"kind": "base"},
 	}
-	_write_json(str(paths["manifest"]), manifest)
+	BzSession.write_json(str(paths["manifest"]), manifest)
 	return {
 		"ok": true,
 		"session": str(paths["root"]),
 		"manifest": manifest,
 		"warnings": warnings,
 	}
-
-
-static func _session_paths(session_dir: String) -> Dictionary:
-	var root: String = session_dir
-	var residue: String = root.path_join("residue")
-	return {
-		"root": root,
-		"manifest": root.path_join("manifest.json"),
-		"terrain": root.path_join("terrain.r16"),
-		"materials": root.path_join("materials.u16"),
-		"objects": root.path_join("objects.json"),
-		"features": root.path_join("features.json"),
-		"meta": root.path_join("meta.json"),
-		"dirty": root.path_join("dirty.json"),
-		"masks": root.path_join("masks"),
-		"residue": residue,
-		"source": residue.path_join("source"),
-		"hg2_header": residue.path_join("hg2_header.json"),
-		"hg2_flags": residue.path_join("hg2_flags.u8"),
-	}
-
-
-static func _ensure_session_dir(session_dir: String) -> Dictionary:
-	var paths: Dictionary = _session_paths(session_dir)
-	for key in ["root", "masks", "residue", "source"]:
-		DirAccess.make_dir_recursive_absolute(str(paths[key]))
-	return paths
-
-
-static func _write_json(path: String, payload: Variant) -> Dictionary:
-	var text: String = JSON.stringify(payload, "  ")
-	if not text.ends_with("\n"):
-		text += "\n"
-	var parent: String = path.get_base_dir()
-	if not parent.is_empty():
-		DirAccess.make_dir_recursive_absolute(parent)
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f == null:
-		return BzErrors.err("write_failed", "cannot write %s" % path, "", path)
-	f.store_string(text)
-	f.close()
-	return {"ok": true}
-
-
-static func _find_source_file(source_dir: String, stem: String, suffix: String) -> String:
-	var target: String = (stem + suffix).to_lower()
-	for p in _list_files(source_dir):
-		if str(p).get_file().to_lower() == target:
-			return str(p)
-	return ""
-
-
-static func _write_terrain_r16(path: String, heightmap) -> void:
-	var words: PackedInt32Array = heightmap.data
-	var bytes := PackedByteArray()
-	bytes.resize(words.size() * 2)
-	for i in words.size():
-		bytes.encode_u16(i * 2, words[i] & 0x1FFF)
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f:
-		f.store_buffer(bytes)
-
-
-static func _write_hg2_flags(path: String, heightmap) -> void:
-	var words: PackedInt32Array = heightmap.data
-	var flags := PackedByteArray()
-	flags.resize(words.size())
-	for i in words.size():
-		flags[i] = (words[i] >> 13) & 0xFF
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f:
-		f.store_buffer(flags)
-
-
-static func _write_u16(path: String, values: PackedInt32Array) -> void:
-	var bytes := PackedByteArray()
-	bytes.resize(values.size() * 2)
-	for i in values.size():
-		bytes.encode_u16(i * 2, values[i] & 0xFFFF)
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f:
-		f.store_buffer(bytes)
-
-
-static func _script(path: String) -> GDScript:
-	var loaded: Variant = load(path)
-	if loaded is GDScript:
-		return loaded
-	return null
 
 
 static func _stem_alnum_ok(stem: String) -> bool:
