@@ -6,11 +6,6 @@ piece of map data the game reads, and save a file set the game loads.
 
 Exports to Linux and Windows.
 
-> **Status: usable editor.** Probe an install, open or create a map, sculpt,
-> paint, place units (proxies), validate, and save. The `bzmap` backend is
-> bundled in `backend/`. No sibling repo required. Meshes beyond labelled
-> proxies and a Windows-bundled Python are still outstanding.
-
 ---
 
 ## How it works
