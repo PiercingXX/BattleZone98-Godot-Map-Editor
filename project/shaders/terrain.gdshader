@@ -3,6 +3,9 @@ render_mode specular_schlick_ggx, cull_back;
 
 uniform sampler2D height_tex : filter_linear, repeat_disable;
 uniform sampler2D mat_tex : filter_nearest, repeat_disable;
+uniform sampler2D atlas_tex : filter_linear, repeat_disable;
+uniform bool use_atlas = false;
+uniform vec4 mat_uvs[16];
 uniform vec2 map_cells = vec2(256.0, 256.0);
 uniform float cell_m = 5.0;
 uniform vec2 uv_origin = vec2(0.0);
@@ -44,7 +47,13 @@ void fragment() {
 	if (show_materials) {
 		float idx = texture(mat_tex, v_uv).r * 255.0;
 		int mi = clamp(int(idx + 0.5), 0, 15);
-		ground = mix(mat_colors[mi] / 255.0, ground, 0.25);
+		if (use_atlas) {
+			vec4 rect = mat_uvs[mi];
+			vec2 local = fract(vec2(v_world.x, v_world.z) / 20.0);
+			ground = texture(atlas_tex, rect.xy + local * rect.zw).rgb;
+		} else {
+			ground = mix(mat_colors[mi] / 255.0, ground, 0.25);
+		}
 	}
 	if (show_slope) {
 		ground = mix(vec3(0.16, 0.28, 0.72), vec3(0.95, 0.95, 0.95), clamp(slope * 3.0, 0.0, 1.0));

@@ -74,6 +74,7 @@ def add_editor_parser(sub):
     assets.add_argument("--cache", required=True)
     assets.add_argument("--pack", action="append", default=[])
     assets.add_argument("--refresh", action="store_true")
+    assets.add_argument("--no-convert", action="store_true")
     assets.add_argument("--json", action="store_true")
     assets.set_defaults(editor_handler=_cmd_assets)
 
@@ -178,6 +179,7 @@ def _cmd_assets(args):
         args.cache,
         pack_paths=args.pack or None,
         refresh=args.refresh,
+        convert=not args.no_convert,
     )
 
 

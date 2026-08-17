@@ -42,6 +42,8 @@ func set_show_grid(on: bool) -> void:
 
 func refresh_materials() -> void:
 	var colors := _palette_colors()
+	var atlas := _load_atlas()
+	var uvs := _atlas_uvs()
 	for child in get_children():
 		if child is MeshInstance3D:
 			var mat := (child as MeshInstance3D).material_override as ShaderMaterial
@@ -51,6 +53,46 @@ func refresh_materials() -> void:
 				mat.set_shader_parameter("mat_tex", MapState.mat_texture)
 			mat.set_shader_parameter("mat_colors", colors)
 			mat.set_shader_parameter("show_materials", MapState.mat_grid_x > 0)
+			if atlas:
+				mat.set_shader_parameter("atlas_tex", atlas)
+				mat.set_shader_parameter("use_atlas", true)
+				mat.set_shader_parameter("mat_uvs", uvs)
+			else:
+				mat.set_shader_parameter("use_atlas", false)
+
+
+func _load_atlas() -> Texture2D:
+	for world in MapState.worlds:
+		if typeof(world) != TYPE_DICTIONARY:
+			continue
+		if str(world.get("id", "")).to_lower() != MapState.world.to_lower():
+			continue
+		var path := str(world.get("atlas_image", ""))
+		if path.is_empty() or not FileAccess.file_exists(path):
+			return null
+		var img := Image.load_from_file(path)
+		if img == null:
+			return null
+		return ImageTexture.create_from_image(img)
+	return null
+
+
+func _atlas_uvs() -> PackedVector4Array:
+	var out := PackedVector4Array()
+	out.resize(16)
+	for i in 16:
+		out[i] = Vector4(0.0, 0.0, 0.125, 0.125)
+	for world in MapState.worlds:
+		if typeof(world) != TYPE_DICTIONARY:
+			continue
+		if str(world.get("id", "")).to_lower() != MapState.world.to_lower():
+			continue
+		var uvs: Array = world.get("tile_uvs", [])
+		for i in mini(16, uvs.size()):
+			var r: Array = uvs[i]
+			if r.size() >= 4:
+				out[i] = Vector4(float(r[0]), float(r[1]), float(r[2]), float(r[3]))
+	return out
 
 
 func _set_all(name: String, value: Variant) -> void:
@@ -101,6 +143,7 @@ func rebuild(p_field: HeightField) -> void:
 	for cz in chunks_z:
 		for cx in chunks_x:
 			_add_chunk(cx, cz)
+	refresh_materials()
 
 
 func _add_chunk(cx: int, cz: int) -> void:

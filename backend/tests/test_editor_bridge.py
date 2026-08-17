@@ -97,6 +97,9 @@ def test_worlds_lists_stock_nine(game_root):
     mars = next(w for w in worlds if w["id"] == "mars")
     assert mars["texture_types"], mars
     assert mars["atlas"]
+    assert mars.get("atlas_image"), mars
+    assert Path(mars["atlas_image"]).is_file()
+    assert mars.get("tile_uvs") and len(mars["tile_uvs"]) == 16
 
 
 def _roundtrip(pack: Path, hg2: Path, tmp_path: Path):
@@ -195,14 +198,14 @@ def test_assets_builds_index(game_root, tmp_path):
     from bzmap.editor.assets import build_assets
 
     cache = tmp_path / "cache"
-    result = build_assets(game_root, cache, pack_paths=[], refresh=True)
+    result = build_assets(game_root, cache, pack_paths=[], refresh=True, convert=False)
     assert result["ok"] is True
     assert len(result["classes"]) > 100, result.get("unresolved")
     prjids = {c["prjid"] for c in result["classes"]}
     assert any(p.startswith("pspwn") or "tank" in p or "recy" in p for p in prjids)
     assert (cache / "index.json").is_file()
     # Second call hits the fingerprint cache.
-    again = build_assets(game_root, cache, pack_paths=[], refresh=False)
+    again = build_assets(game_root, cache, pack_paths=[], refresh=False, convert=False)
     assert again["source_fingerprint"] == result["source_fingerprint"]
 
 

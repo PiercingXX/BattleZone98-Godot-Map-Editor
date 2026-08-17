@@ -69,14 +69,69 @@ def _describe_world(path, world_id):
             "flat_color": _parse_flat_color(flat),
             "label": labels.get(i) or "",
         })
+    atlas_name = atlas.strip()
+    # Edit/trn/mars.trn → game root is parents[2]
+    game_root = path.parent.parent.parent
+    atlas_image, tile_uvs = _atlas_lookup(game_root, atlas_name, world_id)
     return {
         "id": world_id,
         "label": world_id.capitalize(),
         "trn_template": str(Path("Edit") / "trn" / path.name),
-        "atlas": atlas.strip(),
+        "atlas": atlas_name,
+        "atlas_image": atlas_image,
+        "tile_uvs": tile_uvs,
         "sky": sky.strip(),
         "texture_types": texture_types,
     }
+
+
+def _atlas_lookup(game_root, atlas_name, world_id):
+    """Return (atlas_image_path, [16] uv rects) for solid tiles."""
+    stem = atlas_name
+    if stem.lower().endswith("_atlas"):
+        stem = stem[: -len("_atlas")]
+    if not stem:
+        stem = f"{world_id[:2]}_detail"
+    game_root = Path(game_root)
+    candidates = [
+        game_root / "Edit" / "Detail_PNG" / f"{stem}.png",
+        game_root / "Edit" / "Detail" / f"{stem}.dds",
+        game_root / "BZ_ASSETS" / "pc" / "textures" / "TerrainTextures" / "Detail" / f"{stem}.dds",
+    ]
+    image = ""
+    for c in candidates:
+        if c.is_file():
+            image = str(c)
+            break
+    uvs = [[0.0, 0.0, 0.125, 0.125]] * 16
+    csv = game_root / "Edit" / "PlanetMaterials" / f"{atlas_name}.csv"
+    if not csv.is_file():
+        csv = game_root / "Edit" / "PlanetMaterials" / f"{stem}_atlas.csv"
+    prefix = world_id[:2].upper()
+    if csv.is_file():
+        try:
+            text = csv.read_text(encoding="ascii", errors="replace")
+        except OSError:
+            text = ""
+        found = {}
+        for line in text.splitlines():
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) < 5:
+                continue
+            name = parts[0].upper()
+            try:
+                u, v, w, h = float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])
+            except ValueError:
+                continue
+            found[name] = [u, v, w, h]
+        for i in range(16):
+            key = f"{prefix}{i}{i}SA0.MAP"
+            alt = f"{prefix}{i:X}{i:X}SA0.MAP"
+            if key in found:
+                uvs[i] = found[key]
+            elif alt in found:
+                uvs[i] = found[alt]
+    return image, uvs
 
 
 def _texture_labels(cfg):

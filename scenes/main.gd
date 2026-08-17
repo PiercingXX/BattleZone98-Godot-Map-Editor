@@ -553,8 +553,8 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 				_smoke_path = ""
 				Backend.open_map(path, MapState.new_session_dir())
 			elif not Settings.game_root.is_empty() and not FileAccess.file_exists(MapState.cache_dir().path_join("index.json")):
-				_log("first run: importing asset index (proxies + icons)…")
-				Backend.assets(Settings.game_root, MapState.cache_dir(), false)
+				_log("first run: importing asset index (icons). Import assets again to convert meshes.")
+				Backend.assets(Settings.game_root, MapState.cache_dir(), false, false)
 		"worlds":
 			MapState.worlds = result.get("worlds", [])
 			_fill_worlds(result)

@@ -14,9 +14,9 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from bzmap.editor.convert import convert_class
 from bzmap.editor.discover import discover, first_game_root, is_game_install
 from bzmap.editor.errors import EditorError
-from bzmap.editor.jsonio import emit  # noqa: F401 — imported for symmetry
 from bzmap.formats.bzn import read_bzn
 
 _ODF_SUFFIXES = {".odf"}
@@ -232,7 +232,7 @@ def _icon(prjid, category, out_path):
     img.save(out_path, format="PNG")
 
 
-def _class_record(prjid, path, source, verified, cache_dir):
+def _class_record(prjid, path, source, verified, cache_dir, search_roots=None):
     data = _parse_odf(path)
     class_label = (
         data.get("classlabel")
@@ -256,12 +256,17 @@ def _class_record(prjid, path, source, verified, cache_dir):
     if not icon_path.is_file():
         _icon(prjid, category, icon_path)
     glb = cache_dir / "meshes" / f"{prjid}.glb"
+    fidelity = "proxy"
+    mesh = ""
     if glb.is_file():
         mesh = str(glb)
-        fidelity = "geo_textured"
-    else:
-        mesh = ""
-        fidelity = "proxy"
+        fidelity = "hd"
+    elif search_roots:
+        converted, fidelity, _why = convert_class(prjid, search_roots, glb)
+        if converted is not None:
+            mesh = str(converted)
+        else:
+            fidelity = "proxy"
     is_verified = prjid.lower() in verified
     return {
         "prjid": prjid,
@@ -282,7 +287,7 @@ def _class_record(prjid, path, source, verified, cache_dir):
     }
 
 
-def build_assets(game_root, cache_dir, pack_paths=None, refresh=False):
+def build_assets(game_root, cache_dir, pack_paths=None, refresh=False, convert=True):
     """Build or refresh the asset cache. Returns the contract payload."""
     game_root = Path(game_root) if game_root else first_game_root()
     if game_root is None or not is_game_install(game_root):
@@ -332,13 +337,24 @@ def build_assets(game_root, cache_dir, pack_paths=None, refresh=False):
 
     print(f"found {len(found)} classes; scanning templates…", flush=True)
     verified = _verified_prjids(pack_paths)
+    search_roots = None
+    if convert:
+        search_roots = [game_root, game_root / "BZ_ASSETS", game_root / "Edit"]
+        search_roots.extend(Path(p) for p in pack_paths)
 
     classes = []
     unresolved = []
-    for prjid in sorted(found):
+    for i, prjid in enumerate(sorted(found)):
         path, source = found[prjid]
+        if i and i % 200 == 0:
+            print(f"converted {i}/{len(found)}…", flush=True)
         try:
-            classes.append(_class_record(prjid, path, source, verified, cache_dir))
+            classes.append(
+                _class_record(
+                    prjid, path, source, verified, cache_dir,
+                    search_roots=search_roots,
+                )
+            )
         except OSError as exc:
             unresolved.append({"prjid": prjid, "reason": str(exc)})
 

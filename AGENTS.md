@@ -101,9 +101,11 @@ Working editor, not a smoke shell:
 
 ## Still open
 
-- Binary BZN *read* (save-as-ASCII) — blocked on a format reader in `bzmap`.
-- HD / `.geo` / `.sdf` → `.glb` converter. Proxies are the working rung.
-- Windows export with a bundled embeddable Python. Source checkout works.
+- Binary BZN *read*. F3 takes it out of the spec set on purpose — the file
+  must be re-saved from the game with `asciisave`. Do not invent a layout.
+- Windows *export templates* are a machine install, not repo content. The
+  bundle script in `scripts/` is the packaging half; it still needs templates
+  on the box that runs `godot --export-release`.
 - An in-game play-test of a map authored entirely here. Offline checks are
   not that test.
 

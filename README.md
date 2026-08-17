@@ -88,6 +88,10 @@ Then **Probe** (finds your Steam install) → **Open map…** and pick a `.trn` 
 - **A Battlezone 98 Redux installation** to open real maps. The editor itself
   ships no game content.
 
+Windows release builds: see [`scripts/windows-bundle.md`](scripts/windows-bundle.md).
+The Godot `.exe` and a `backend/` folder (embeddable CPython + `bzmap`) ship
+side by side.
+
 ## Credit
 
 - **[`bzmap`](https://github.com/PiercingXX/battlezone98-map-generator)** —

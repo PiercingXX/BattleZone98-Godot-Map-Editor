@@ -318,10 +318,12 @@ func validate(session_dir: String, game_root: String = "") -> void:
 	run("validate", args)
 
 
-func assets(game_root: String, cache: String, refresh: bool = false) -> void:
+func assets(game_root: String, cache: String, refresh: bool = false, convert: bool = true) -> void:
 	var args := PackedStringArray(["--game-root", game_root, "--cache", cache])
 	if refresh:
 		args.append("--refresh")
+	if not convert:
+		args.append("--no-convert")
 	run("assets", args)
 
 
