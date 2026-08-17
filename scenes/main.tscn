@@ -7,14 +7,14 @@
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
-background_color = Color(0.42, 0.55, 0.68, 1)
+background_color = Color(0.04, 0.045, 0.055, 1)
 ambient_light_source = 2
 ambient_light_color = Color(0.55, 0.58, 0.65, 1)
-ambient_light_energy = 0.45
+ambient_light_energy = 0.85
 fog_enabled = true
-fog_light_color = Color(0.55, 0.62, 0.7, 1)
-fog_density = 0.00035
-fog_aerial_perspective = 0.4
+fog_light_color = Color(0.12, 0.14, 0.16, 1)
+fog_density = 0.00028
+fog_aerial_perspective = 0.35
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -33,7 +33,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-color = Color(0.07, 0.075, 0.085, 1)
+color = Color(0.18, 0.18, 0.19, 1)
 
 [node name="Root" type="VBoxContainer" parent="."]
 layout_mode = 1
@@ -45,115 +45,97 @@ grow_vertical = 2
 theme_override_constants/separation = 0
 
 [node name="TopBar" type="PanelContainer" parent="Root"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 
 [node name="TopInner" type="HBoxContainer" parent="Root/TopBar"]
-layout_mode = 2
-theme_override_constants/separation = 12
-
-[node name="Title" type="Label" parent="Root/TopBar/TopInner"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 20
-text = "BattleZone 98 Godot Map Editor"
-
-[node name="MapLabel" type="Label" parent="Root/TopBar/TopInner"]
 unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-text = "no map open"
-
-[node name="Status" type="Label" parent="Root/TopBar/TopInner"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "starting…"
-
-[node name="Body" type="HSplitContainer" parent="Root"]
-layout_mode = 2
-size_flags_vertical = 3
-split_offset = 280
-
-[node name="Left" type="VBoxContainer" parent="Root/Body"]
-custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="BtnProbe" type="Button" parent="Root/Body/Left"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Probe"
-
-[node name="BtnOpen" type="Button" parent="Root/Body/Left"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Open map…"
-
-[node name="BtnNew" type="Button" parent="Root/Body/Left"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "New map…"
-
-[node name="BtnSave" type="Button" parent="Root/Body/Left"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Save…"
-
-[node name="BtnValidate" type="Button" parent="Root/Body/Left"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Validate"
-
-[node name="Help" type="Label" parent="Root/Body/Left"]
-layout_mode = 2
-autowrap_mode = 3
-text = "WASD fly  Q/E up/down
-RMB look  Shift fast
-H slope  F frame  Space top-down"
-
-[node name="ProbeList" type="ItemList" parent="Root/Body/Left"]
+[node name="Body" type="HSplitContainer" parent="Root"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+split_offset = 252
 
-[node name="Center" type="SubViewportContainer" parent="Root/Body"]
+[node name="Left" type="PanelContainer" parent="Root/Body"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(252, 0)
+layout_mode = 2
+
+[node name="LeftBox" type="VBoxContainer" parent="Root/Body/Left"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Mid" type="HSplitContainer" parent="Root/Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+split_offset = -280
+
+[node name="Center" type="SubViewportContainer" parent="Root/Body/Mid"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 stretch = true
 
-[node name="SubViewport" type="SubViewport" parent="Root/Body/Center"]
+[node name="SubViewport" type="SubViewport" parent="Root/Body/Mid/Center"]
 unique_name_in_owner = true
-handle_input_locally = true
+handle_input_locally = false
 size = Vector2i(1200, 700)
 render_target_update_mode = 4
 
-[node name="World" type="Node3D" parent="Root/Body/Center/SubViewport"]
+[node name="World" type="Node3D" parent="Root/Body/Mid/Center/SubViewport"]
 
-[node name="Sun" type="DirectionalLight3D" parent="Root/Body/Center/SubViewport/World"]
+[node name="Sun" type="DirectionalLight3D" parent="Root/Body/Mid/Center/SubViewport/World"]
 transform = Transform3D(1, 0, 0, 0, 0.5, 0.866025, 0, -0.866025, 0.5, 0, 200, 0)
 light_energy = 1.15
 shadow_enabled = false
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="Root/Body/Center/SubViewport/World"]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="Root/Body/Mid/Center/SubViewport/World"]
 environment = SubResource("Environment_1")
 
-[node name="Terrain" type="Node3D" parent="Root/Body/Center/SubViewport/World"]
+[node name="Terrain" type="Node3D" parent="Root/Body/Mid/Center/SubViewport/World"]
 unique_name_in_owner = true
 script = ExtResource("3_terrain")
 
-[node name="Objects" type="Node3D" parent="Root/Body/Center/SubViewport/World"]
+[node name="Objects" type="Node3D" parent="Root/Body/Mid/Center/SubViewport/World"]
 unique_name_in_owner = true
 script = ExtResource("4_objs")
 
-[node name="Camera" type="Camera3D" parent="Root/Body/Center/SubViewport/World"]
+[node name="Camera" type="Camera3D" parent="Root/Body/Mid/Center/SubViewport/World"]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 0.87, 0.5, 0, -0.5, 0.87, 640, 180, 200)
 current = true
 far = 12000.0
 script = ExtResource("2_cam")
 
+[node name="Right" type="PanelContainer" parent="Root/Body/Mid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(276, 0)
+layout_mode = 2
+
+[node name="RightBox" type="VBoxContainer" parent="Root/Body/Mid/Right"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="StatusBar" type="PanelContainer" parent="Root"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+
+[node name="StatusInner" type="HBoxContainer" parent="Root/StatusBar"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 12
+
 [node name="Console" type="TextEdit" parent="Root"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 160)
+visible = false
+custom_minimum_size = Vector2(0, 140)
 layout_mode = 2
 editable = false
 wrap_mode = 1
@@ -177,18 +159,18 @@ access = 2
 unique_name_in_owner = true
 title = "New map"
 ok_button_text = "Create"
-size = Vector2i(360, 220)
+size = Vector2i(400, 340)
 
 [node name="NewBox" type="VBoxContainer" parent="NewDialog"]
 offset_left = 8.0
 offset_top = 8.0
-offset_right = 352.0
-offset_bottom = 164.0
+offset_right = 392.0
+offset_bottom = 284.0
 theme_override_constants/separation = 8
 
 [node name="StemLabel" type="Label" parent="NewDialog/NewBox"]
 layout_mode = 2
-text = "Stem (≤ 8 chars)"
+text = "Stem — 8 characters max. Longer loads with no script."
 
 [node name="StemEdit" type="LineEdit" parent="NewDialog/NewBox"]
 unique_name_in_owner = true
@@ -206,17 +188,29 @@ layout_mode = 2
 
 [node name="SizeLabel" type="Label" parent="NewDialog/NewBox"]
 layout_mode = 2
-text = "Size"
+text = "Width × depth (multiples of 1280 m)"
 
-[node name="SizeOption" type="OptionButton" parent="NewDialog/NewBox"]
+[node name="SizeRow" type="HBoxContainer" parent="NewDialog/NewBox"]
+layout_mode = 2
+
+[node name="SizeOption" type="OptionButton" parent="NewDialog/NewBox/SizeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SizeZ" type="OptionButton" parent="NewDialog/NewBox/SizeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="KindLabel" type="Label" parent="NewDialog/NewBox"]
+layout_mode = 2
+text = "Pack"
+
+[node name="PackKind" type="OptionButton" parent="NewDialog/NewBox"]
 unique_name_in_owner = true
 layout_mode = 2
 
-[connection signal="pressed" from="Root/Body/Left/BtnProbe" to="." method="_on_btn_probe_pressed"]
-[connection signal="pressed" from="Root/Body/Left/BtnOpen" to="." method="_on_btn_open_pressed"]
-[connection signal="pressed" from="Root/Body/Left/BtnNew" to="." method="_on_btn_new_pressed"]
-[connection signal="pressed" from="Root/Body/Left/BtnSave" to="." method="_on_btn_save_pressed"]
-[connection signal="pressed" from="Root/Body/Left/BtnValidate" to="." method="_on_btn_validate_pressed"]
 [connection signal="file_selected" from="FileDialog" to="." method="_on_file_dialog_file_selected"]
 [connection signal="dir_selected" from="SaveDialog" to="." method="_on_save_dialog_dir_selected"]
 [connection signal="confirmed" from="NewDialog" to="." method="_on_new_dialog_confirmed"]

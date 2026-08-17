@@ -1,36 +1,63 @@
 extends Camera3D
 class_name FlyCamera
-## WASD facing-plane, Q/E world vertical, RMB look. Speed in m/s.
+## RMB look, wheel zoom, MMB orbit, WASD fly.
 
 signal speed_changed(mps: float)
 
 var base_speed: float = 80.0
 var looking: bool = false
+var orbiting: bool = false
+var pivot: Vector3 = Vector3.ZERO
 var _look_sens: float = 0.003
 
 
-func _unhandled_input(event: InputEvent) -> void:
+func handle_event(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
 			looking = mb.pressed
+			orbiting = false
 			Input.mouse_mode = (
 				Input.MOUSE_MODE_CAPTURED if looking else Input.MOUSE_MODE_VISIBLE
 			)
-			get_viewport().set_input_as_handled()
+		elif mb.button_index == MOUSE_BUTTON_MIDDLE:
+			orbiting = mb.pressed
+			looking = false
+			Input.mouse_mode = (
+				Input.MOUSE_MODE_CAPTURED if orbiting else Input.MOUSE_MODE_VISIBLE
+			)
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
-			base_speed = clampf(base_speed * 1.15, 5.0, 2000.0)
-			speed_changed.emit(base_speed)
-			get_viewport().set_input_as_handled()
+			_dolly(-1.0)
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			base_speed = clampf(base_speed / 1.15, 5.0, 2000.0)
-			speed_changed.emit(base_speed)
-			get_viewport().set_input_as_handled()
-	elif looking and event is InputEventMouseMotion:
+			_dolly(1.0)
+	elif event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
-		rotate_y(-mm.relative.x * _look_sens)
-		rotation.x = clampf(rotation.x - mm.relative.y * _look_sens, -1.2, 1.2)
-		get_viewport().set_input_as_handled()
+		if looking:
+			rotate_y(-mm.relative.x * _look_sens)
+			rotation.x = clampf(rotation.x - mm.relative.y * _look_sens, -1.35, 1.35)
+		elif orbiting:
+			_orbit(mm.relative)
+
+
+func _dolly(sign: float) -> void:
+	var step := maxf(8.0, base_speed * 0.35) * sign
+	global_position += global_transform.basis.z * step
+
+
+func _orbit(rel: Vector2) -> void:
+	var offset := global_position - pivot
+	var dist := maxf(offset.length(), 8.0)
+	var yaw := -rel.x * _look_sens
+	var pitch := -rel.y * _look_sens
+	offset = offset.rotated(Vector3.UP, yaw)
+	var right := Vector3.UP.cross(offset).normalized()
+	if right.length_squared() < 0.001:
+		right = Vector3.RIGHT
+	var pitched := offset.rotated(right, pitch)
+	if pitched.normalized().dot(Vector3.UP) > 0.95 or pitched.normalized().dot(Vector3.UP) < -0.95:
+		pitched = offset
+	global_position = pivot + pitched.normalized() * dist
+	look_at(pivot, Vector3.UP)
 
 
 func _process(delta: float) -> void:
@@ -64,32 +91,19 @@ func _process(delta: float) -> void:
 
 func frame_map(width_m: float, depth_m: float, height_m: float) -> void:
 	base_speed = maxf(40.0, maxf(width_m, depth_m) * 0.08)
-	global_position = Vector3(width_m * 0.5, height_m + maxf(80.0, depth_m * 0.15), depth_m * 0.15)
-	look_at(Vector3(width_m * 0.5, height_m, depth_m * 0.55), Vector3.UP)
+	pivot = Vector3(width_m * 0.5, height_m, depth_m * 0.5)
+	global_position = Vector3(width_m * 0.5, height_m + maxf(120.0, depth_m * 0.22), depth_m * -0.02)
+	look_at(pivot, Vector3.UP)
 	speed_changed.emit(base_speed)
 
 
 func top_down(width_m: float, depth_m: float) -> void:
-	global_position = Vector3(width_m * 0.5, maxf(width_m, depth_m) * 0.9, depth_m * 0.5)
-	look_at(Vector3(width_m * 0.5, 0.0, depth_m * 0.5), Vector3.FORWARD)
+	pivot = Vector3(width_m * 0.5, 0.0, depth_m * 0.5)
+	global_position = Vector3(width_m * 0.5, maxf(width_m, depth_m) * 0.95, depth_m * 0.5)
+	look_at(pivot, Vector3.FORWARD)
 	speed_changed.emit(base_speed)
 
 
 func _text_focused() -> bool:
 	var focus := get_viewport().gui_get_focus_owner()
-	return focus is LineEdit or focus is TextEdit
-
-
-func _unhandled_key_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo:
-		var key := event as InputEventKey
-		if key.keycode == KEY_SPACE:
-			# Caller wires overview via group.
-			get_tree().call_group("editor_shell", "camera_overview")
-			get_viewport().set_input_as_handled()
-		elif key.keycode == KEY_F:
-			get_tree().call_group("editor_shell", "camera_frame")
-			get_viewport().set_input_as_handled()
-		elif key.keycode == KEY_H:
-			get_tree().call_group("editor_shell", "toggle_slope")
-			get_viewport().set_input_as_handled()
+	return focus is LineEdit or focus is TextEdit or focus is SpinBox or focus is TextEdit

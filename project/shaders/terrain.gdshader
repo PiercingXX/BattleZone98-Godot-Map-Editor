@@ -52,11 +52,12 @@ void fragment() {
 			vec2 local = fract(vec2(v_world.x, v_world.z) / 20.0);
 			ground = texture(atlas_tex, rect.xy + local * rect.zw).rgb;
 		} else {
-			ground = mix(mat_colors[mi] / 255.0, ground, 0.25);
+			ground = mix(mat_colors[mi], ground, 0.15);
 		}
 	}
 	if (show_slope) {
-		ground = mix(vec3(0.16, 0.28, 0.72), vec3(0.95, 0.95, 0.95), clamp(slope * 3.0, 0.0, 1.0));
+		vec3 slope_col = mix(vec3(0.16, 0.28, 0.72), vec3(0.95, 0.95, 0.95), clamp(slope * 3.0, 0.0, 1.0));
+		ground = mix(ground, slope_col, 0.55);
 	}
 	float h = texture(height_tex, v_uv).r;
 	if (h < 0.05) {

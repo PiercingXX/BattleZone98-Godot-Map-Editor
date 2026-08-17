@@ -7,7 +7,7 @@ const CHUNK_CELLS := 128
 var field: HeightField
 var _chunk_mesh: ArrayMesh
 var _shader: Shader
-var _show_slope: bool = true
+var _show_slope: bool = false
 
 
 func _ready() -> void:
@@ -70,6 +70,9 @@ func _load_atlas() -> Texture2D:
 		var path := str(world.get("atlas_image", ""))
 		if path.is_empty() or not FileAccess.file_exists(path):
 			return null
+		# DDS ice atlases blow out to white in the viewport. PNG only.
+		if not path.to_lower().ends_with(".png"):
+			return null
 		var img := Image.load_from_file(path)
 		if img == null:
 			return null
@@ -125,7 +128,11 @@ func _palette_colors() -> PackedColorArray:
 			var idx := int(t.get("index", 0))
 			var rgb: Array = t.get("flat_color", [128, 128, 128])
 			if idx >= 0 and idx < 16 and rgb.size() >= 3:
-				colors[idx] = Color(float(rgb[0]), float(rgb[1]), float(rgb[2]))
+				colors[idx] = Color(
+					clampf(float(rgb[0]) / 255.0, 0.0, 1.0),
+					clampf(float(rgb[1]) / 255.0, 0.0, 1.0),
+					clampf(float(rgb[2]) / 255.0, 0.0, 1.0)
+				)
 	return colors
 
 

@@ -4,28 +4,31 @@ extends Control
 const SculptToolScript = preload("res://project/sculpt/SculptTool.gd")
 const ObjectCommandScript = preload("res://project/commands/ObjectCommand.gd")
 const TerrainRaycastScript = preload("res://project/terrain/TerrainRaycast.gd")
+const DarkThemeScript = preload("res://project/ui/DarkTheme.gd")
 
-@onready var _status: Label = %Status
 @onready var _console: TextEdit = %Console
-@onready var _probe_list: ItemList = %ProbeList
-@onready var _map_label: Label = %MapLabel
-@onready var _btn_probe: Button = %BtnProbe
-@onready var _btn_open: Button = %BtnOpen
-@onready var _btn_new: Button = %BtnNew
-@onready var _btn_save: Button = %BtnSave
-@onready var _btn_validate: Button = %BtnValidate
 @onready var _file_dialog: FileDialog = %FileDialog
 @onready var _save_dialog: FileDialog = %SaveDialog
 @onready var _new_dialog: ConfirmationDialog = %NewDialog
 @onready var _stem_edit: LineEdit = %StemEdit
 @onready var _world_option: OptionButton = %WorldOption
 @onready var _size_option: OptionButton = %SizeOption
+@onready var _size_z: OptionButton = %SizeZ
+@onready var _pack_kind: OptionButton = %PackKind
 @onready var _terrain: Node3D = %Terrain
 @onready var _objects: Node3D = %Objects
 @onready var _camera: Camera3D = %Camera
 @onready var _center: Control = %Center
 @onready var _viewport: SubViewport = %SubViewport
 
+var _status: Label
+var _map_label: Label
+var _btn_open: Button
+var _btn_new: Button
+var _btn_save: Button
+var _btn_validate: Button
+var _btn_probe: Button
+var _probe_list: ItemList
 var _tool: String = "fly"
 var _sculpt = SculptToolScript.new()
 var _stroking: bool = false
@@ -33,29 +36,39 @@ var _armed: Dictionary = {}
 var _palette: ItemList
 var _search: LineEdit
 var _findings: ItemList
-var _inspector: TextEdit
 var _variant: OptionButton
 var _tool_bar: HBoxContainer
+var _tool_buttons: Dictionary = {}
 var _radius: HSlider
 var _strength: HSlider
+var _radius_val: Label
+var _strength_val: Label
 var _debug: Label
 var _cursor: Label
-var _meta: TextEdit
 var _water: SpinBox
-var _pack_kind: OptionButton
-var _size_z: OptionButton
 var _help: Window
 var _pending_package: String = ""
 var _autosave: Timer
 var _ramp_a: Vector3 = Vector3.INF
 var _last_stamp: Vector3 = Vector3.INF
 var _filter: String = ""
+var _insp_prj: LineEdit
+var _insp_x: SpinBox
+var _insp_y: SpinBox
+var _insp_z: SpinBox
+var _insp_yaw: SpinBox
+var _insp_team: SpinBox
+var _insp_label: LineEdit
+var _insp_mode: Label
+var _busy_targets: Array = []
 
 
 func _ready() -> void:
 	randomize()
+	theme = DarkThemeScript.make()
 	add_to_group("editor_shell")
 	_build_chrome()
+	_try_load_asset_index()
 	Backend.discovered.connect(_on_discovered)
 	Backend.call_started.connect(_on_call_started)
 	Backend.stderr_line.connect(_on_stderr)
@@ -84,162 +97,258 @@ func _ready() -> void:
 
 
 func _build_chrome() -> void:
-	var body := $Root/Body
+	var top: HBoxContainer = %TopInner
+	var brand := Label.new()
+	brand.text = "BZ98"
+	top.add_child(brand)
+	_map_label = Label.new()
+	_map_label.text = "no map"
+	top.add_child(_map_label)
+	top.add_child(_vsep())
+	_btn_open = _bar_btn("Open", _on_btn_open_pressed)
+	_btn_new = _bar_btn("New", _on_btn_new_pressed)
+	_btn_save = _bar_btn("Save", _on_btn_save_pressed)
+	_btn_validate = _bar_btn("Validate", _on_btn_validate_pressed)
+	top.add_child(_btn_open)
+	top.add_child(_btn_new)
+	top.add_child(_btn_save)
+	top.add_child(_btn_validate)
+	var more := MenuButton.new()
+	more.text = "More"
+	var pop := more.get_popup()
+	pop.add_item("Import assets", 0)
+	pop.add_item("Render thumbnail", 1)
+	pop.add_item("Install to test mod", 2)
+	pop.add_item("Assemble pack", 3)
+	pop.add_separator()
+	pop.add_item("Re-probe install", 4)
+	pop.add_item("Hotkeys  F1", 5)
+	pop.id_pressed.connect(_on_more)
+	top.add_child(more)
+	top.add_child(_vsep())
 	_tool_bar = HBoxContainer.new()
-	_tool_bar.add_theme_constant_override("separation", 6)
-	$Root/TopBar/TopInner.add_child(_tool_bar)
-	$Root/TopBar/TopInner.move_child(_tool_bar, 1)
+	_tool_bar.add_theme_constant_override("separation", 2)
+	var group := ButtonGroup.new()
 	for spec in [
-		["fly", "Fly"], ["raise", "Raise"], ["lower", "Lower"],
-		["flatten", "Flatten"], ["smooth", "Smooth"], ["ramp", "Ramp"],
-		["noise", "Noise"], ["paint", "Paint"], ["place", "Place"],
-		["select", "Select"],
+		["fly", "Fly", "1"], ["raise", "Raise", "2"], ["lower", "Lower", "3"],
+		["flatten", "Flat", "4"], ["smooth", "Smooth", "5"], ["ramp", "Ramp", "6"],
+		["paint", "Paint", "7"], ["place", "Place", "8"], ["select", "Select", ""],
+		["noise", "Noise", ""],
 	]:
 		var b := Button.new()
 		b.text = spec[1]
 		b.toggle_mode = true
+		b.button_group = group
 		b.button_pressed = spec[0] == "fly"
+		b.tooltip_text = spec[1] if spec[2] == "" else "%s  (%s)" % [spec[1], spec[2]]
 		b.pressed.connect(_set_tool.bind(spec[0]))
 		_tool_bar.add_child(b)
+		_tool_buttons[spec[0]] = b
+	top.add_child(_tool_bar)
+	top.add_child(_vsep())
 	_variant = OptionButton.new()
+	_variant.tooltip_text = "Active variant"
 	_variant.item_selected.connect(func(_i): _on_variant_changed())
-	_tool_bar.add_child(_variant)
-	var undo_b := Button.new()
-	undo_b.text = "Undo"
-	undo_b.pressed.connect(func(): UndoStack.undo())
-	_tool_bar.add_child(undo_b)
-	var redo_b := Button.new()
-	redo_b.text = "Redo"
-	redo_b.pressed.connect(func(): UndoStack.redo())
-	_tool_bar.add_child(redo_b)
-	var assets_b := Button.new()
-	assets_b.text = "Import assets"
-	assets_b.pressed.connect(_import_assets)
-	_tool_bar.add_child(assets_b)
-	var thumb_b := Button.new()
-	thumb_b.text = "Thumbnail"
-	thumb_b.pressed.connect(_render_thumb)
-	_tool_bar.add_child(thumb_b)
-	var inst_b := Button.new()
-	inst_b.text = "Install to test mod"
-	inst_b.pressed.connect(_install_mod)
-	_tool_bar.add_child(inst_b)
-	var pack_b := Button.new()
-	pack_b.text = "Assemble pack"
-	pack_b.pressed.connect(_assemble_pack)
-	_tool_bar.add_child(pack_b)
+	top.add_child(_variant)
+	var undo_b := _bar_btn("Undo", func(): UndoStack.undo())
+	var redo_b := _bar_btn("Redo", func(): UndoStack.redo())
+	top.add_child(undo_b)
+	top.add_child(redo_b)
+	top.add_child(_bar_btn("Frame", func(): camera_frame()))
+	%Center.gui_input.connect(_on_view_gui_input)
+	%Center.mouse_filter = Control.MOUSE_FILTER_STOP
 
-	var left: VBoxContainer = $Root/Body/Left
+	var left: VBoxContainer = %LeftBox
+	left.add_child(_section("Palette"))
 	_search = LineEdit.new()
-	_search.placeholder_text = "Search classes…"
+	_search.placeholder_text = "Search units…"
 	_search.text_changed.connect(func(t): _filter = t; _fill_palette())
 	left.add_child(_search)
-	left.move_child(_search, 0)
 	_palette = ItemList.new()
 	_palette.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_palette.item_selected.connect(_on_palette_selected)
 	left.add_child(_palette)
-
-	var sliders := VBoxContainer.new()
+	left.add_child(_section("Brush"))
+	var rr := HBoxContainer.new()
 	var rl := Label.new()
-	rl.text = "Radius m"
-	sliders.add_child(rl)
+	rl.text = "Radius"
+	rl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_radius_val = Label.new()
+	_radius_val.text = "40 m"
+	rr.add_child(rl)
+	rr.add_child(_radius_val)
+	left.add_child(rr)
 	_radius = HSlider.new()
 	_radius.min_value = 5
 	_radius.max_value = 400
 	_radius.value = 40
-	_radius.value_changed.connect(func(v): _sculpt.radius_m = v)
-	sliders.add_child(_radius)
+	_radius.value_changed.connect(func(v):
+		_sculpt.radius_m = v
+		_radius_val.text = "%d m" % int(v)
+	)
+	left.add_child(_radius)
+	var sr := HBoxContainer.new()
 	var sl := Label.new()
 	sl.text = "Strength"
-	sliders.add_child(sl)
+	sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_strength_val = Label.new()
+	_strength_val.text = "45%"
+	sr.add_child(sl)
+	sr.add_child(_strength_val)
+	left.add_child(sr)
 	_strength = HSlider.new()
 	_strength.min_value = 0.05
 	_strength.max_value = 1.0
 	_strength.step = 0.05
 	_strength.value = 0.45
-	_strength.value_changed.connect(func(v): _sculpt.strength = v)
-	sliders.add_child(_strength)
-	left.add_child(sliders)
+	_strength.value_changed.connect(func(v):
+		_sculpt.strength = v
+		_strength_val.text = "%d%%" % int(v * 100.0)
+	)
+	left.add_child(_strength)
 
-	var right := VBoxContainer.new()
-	right.custom_minimum_size = Vector2(280, 0)
-	right.add_theme_constant_override("separation", 6)
-	var il := Label.new()
-	il.text = "Inspector"
-	right.add_child(il)
-	_inspector = TextEdit.new()
-	_inspector.custom_minimum_size = Vector2(0, 140)
-	_inspector.placeholder_text = "No selection"
-	right.add_child(_inspector)
+	var right: VBoxContainer = %RightBox
+	right.add_child(_section("Object"))
+	_insp_prj = _ro_field("class")
+	_insp_label = LineEdit.new()
+	_insp_label.placeholder_text = "label"
+	_insp_x = _spin("x m", -20000, 20000, 0.1)
+	_insp_y = _spin("y m", -50, 900, 0.1)
+	_insp_z = _spin("z m", -20000, 20000, 0.1)
+	_insp_yaw = _spin("yaw °", -180, 180, 1)
+	_insp_team = _spin("team", 0, 15, 1)
+	_insp_mode = Label.new()
+	for n in [_insp_prj, _insp_label, _insp_x, _insp_y, _insp_z, _insp_yaw, _insp_team, _insp_mode]:
+		right.add_child(n)
+	var irow := HBoxContainer.new()
 	var apply_b := Button.new()
-	apply_b.text = "Apply inspector"
+	apply_b.text = "Apply"
+	apply_b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	apply_b.pressed.connect(_apply_inspector)
-	right.add_child(apply_b)
-	var ml := Label.new()
-	ml.text = "Metadata (raw)"
-	right.add_child(ml)
-	_meta = TextEdit.new()
-	_meta.custom_minimum_size = Vector2(0, 120)
-	right.add_child(_meta)
-	var mw := Button.new()
-	mw.text = "Write metadata"
-	mw.pressed.connect(_write_meta)
-	right.add_child(mw)
-	var wl := Label.new()
-	wl.text = "Waterline (m, -1 off)"
-	right.add_child(wl)
+	var del_b := Button.new()
+	del_b.text = "Delete"
+	del_b.pressed.connect(_delete_selected)
+	irow.add_child(apply_b)
+	irow.add_child(del_b)
+	right.add_child(irow)
+	right.add_child(_section("Water"))
 	_water = SpinBox.new()
 	_water.min_value = -1
 	_water.max_value = 820
 	_water.step = 0.5
 	_water.value = -1
+	_water.prefix = "line "
+	_water.suffix = "m"
 	_water.value_changed.connect(func(v): _terrain.set_water_level(v))
 	right.add_child(_water)
-	var fl := Label.new()
-	fl.text = "Findings  (click to fly)"
-	right.add_child(fl)
+	right.add_child(_section("Findings"))
 	_findings = ItemList.new()
 	_findings.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_findings.item_selected.connect(_on_finding_selected)
 	right.add_child(_findings)
-	body.add_child(right)
 
+	var status: HBoxContainer = %StatusInner
 	_cursor = Label.new()
 	_cursor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	$Root/TopBar/TopInner.add_child(_cursor)
+	_cursor.text = "Open a map to begin"
+	status.add_child(_cursor)
+	_status = Label.new()
+	_status.text = "starting"
+	status.add_child(_status)
 	_debug = Label.new()
-	_debug.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	$Root/TopBar/TopInner.add_child(_debug)
+	status.add_child(_debug)
+	var cons := Button.new()
+	cons.text = "Log"
+	cons.toggle_mode = true
+	cons.tooltip_text = "Toggle console  (`)"
+	cons.toggled.connect(func(on): _console.visible = on)
+	status.add_child(cons)
 
-	_pack_kind = OptionButton.new()
+	_probe_list = ItemList.new()
+	_probe_list.visible = false
+	add_child(_probe_list)
+	_btn_probe = Button.new()
+	_busy_targets = [_btn_open, _btn_new, _btn_save, _btn_validate]
+
 	_pack_kind.add_item("BZP map", 0)
 	_pack_kind.add_item("Base-game map", 1)
-	_new_dialog.get_node("NewBox").add_child(_pack_kind)
-	var zl := Label.new()
-	zl.text = "Depth"
-	_new_dialog.get_node("NewBox").add_child(zl)
-	_size_z = OptionButton.new()
 	for size in [1280, 2560, 3840, 5120]:
+		_size_option.add_item("%s m" % size, size)
 		_size_z.add_item("%s m" % size, size)
-	_new_dialog.get_node("NewBox").add_child(_size_z)
 
 	_help = Window.new()
 	_help.title = "Hotkeys"
-	_help.size = Vector2i(480, 360)
+	_help.size = Vector2i(460, 320)
 	_help.visible = false
 	_help.close_requested.connect(func(): _help.hide())
 	var help_l := Label.new()
 	help_l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	help_l.text = """WASD fly  Q/E up down  RMB look  Shift fast  Ctrl slow
-Wheel speed  F frame  Space top-down  H slope  G material grid
-1–8 tools  [ ] radius  Ctrl+[ ] strength  Esc disarm
-Ctrl+Z undo  Ctrl+Shift+Z redo  Ctrl+S save  F1 this help
+	help_l.offset_left = 16
+	help_l.offset_top = 16
+	help_l.offset_right = 444
+	help_l.offset_bottom = 300
+	help_l.text = """RMB look   mouse wheel zoom   MMB orbit   WASD fly   Q/E up down
+Shift fast   Ctrl slow   F frame map   Space top-down   H slope tint
+1–8 tools   [ ] radius   Shift+[ ] strength   Esc fly
+Ctrl+Z undo   Ctrl+Shift+Z redo   Ctrl+S save   ` log   F1 this
 LMB sculpt / place / select    Shift+click keep placing
-Walk-the-surface: Settings.walk_mode (Alt toggles)"""
-	help_l.set_anchors_preset(Control.PRESET_FULL_RECT)
+Alt walk-the-surface"""
 	_help.add_child(help_l)
 	add_child(_help)
+
+
+func _section(title: String) -> Label:
+	var l := Label.new()
+	l.text = title
+	return l
+
+
+func _bar_btn(caption: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = caption
+	b.pressed.connect(cb)
+	return b
+
+
+func _vsep() -> ColorRect:
+	var r := ColorRect.new()
+	r.custom_minimum_size = Vector2(1, 18)
+	r.color = Color(1, 1, 1, 0.10)
+	r.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return r
+
+
+func _ro_field(placeholder: String) -> LineEdit:
+	var e := LineEdit.new()
+	e.editable = false
+	e.placeholder_text = placeholder
+	return e
+
+
+func _spin(prefix: String, mn: float, mx: float, step: float) -> SpinBox:
+	var s := SpinBox.new()
+	s.min_value = mn
+	s.max_value = mx
+	s.step = step
+	s.prefix = prefix + " "
+	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return s
+
+
+func _on_more(id: int) -> void:
+	match id:
+		0:
+			_import_assets()
+		1:
+			_render_thumb()
+		2:
+			_install_mod()
+		3:
+			_assemble_pack()
+		4:
+			Backend.probe()
+		5:
+			_help.popup_centered()
 
 
 func _process(_delta: float) -> void:
@@ -256,7 +365,8 @@ func _process(_delta: float) -> void:
 	var hit := _pick()
 	if hit.get("hit", false):
 		var p: Vector3 = hit["position"]
-		_cursor.text = "xz %.1f, %.1f  h %.1f m  mat %d  %s" % [
+		_camera.pivot = p
+		_cursor.text = "xz %.1f, %.1f  h %.1f m  mat %d  %s   ·  RMB look  wheel zoom  MMB orbit  WASD fly" % [
 			p.x, p.z, p.y, MapState.material_at(p.x, p.z), _tool,
 		]
 		if _tool in ["raise", "lower", "flatten", "smooth", "ramp", "noise", "undefined", "paint"]:
@@ -281,6 +391,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		var k := event as InputEventKey
 		if k.keycode == KEY_F1:
 			_help.popup_centered()
+			get_viewport().set_input_as_handled()
+		elif k.keycode == KEY_QUOTELEFT:
+			_console.visible = not _console.visible
 			get_viewport().set_input_as_handled()
 		elif k.keycode == KEY_G:
 			_terrain.set_show_grid(not _terrain.get_child_count() == 0)
@@ -320,19 +433,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif k.keycode >= KEY_1 and k.keycode <= KEY_8:
 			var tools := ["fly", "raise", "lower", "flatten", "smooth", "ramp", "paint", "place"]
 			_set_tool(tools[k.keycode - KEY_1])
-	if event is InputEventMouseButton and _over_viewport():
-		var mb := event as InputEventMouseButton
-		if mb.button_index != MOUSE_BUTTON_LEFT:
-			return
-		var hit := _pick()
-		if not hit.get("hit", false):
-			return
-		var p: Vector3 = hit["position"]
-		if mb.pressed:
-			_on_lmb_down(p, hit, mb.shift_pressed)
-		else:
-			_on_lmb_up()
-		get_viewport().set_input_as_handled()
+		elif k.keycode == KEY_F and not k.ctrl_pressed:
+			camera_frame()
+			get_viewport().set_input_as_handled()
+		elif k.keycode == KEY_SPACE:
+			camera_overview()
+			get_viewport().set_input_as_handled()
+		elif k.keycode == KEY_H:
+			toggle_slope()
+			get_viewport().set_input_as_handled()
 
 
 func _on_lmb_down(p: Vector3, hit: Dictionary, shift: bool) -> void:
@@ -502,17 +611,36 @@ func _apply_ramp(a: Vector3, b: Vector3) -> void:
 func _set_tool(name: String) -> void:
 	_tool = name
 	_sculpt.mode = name
-	if _tool_bar:
-		for child in _tool_bar.get_children():
-			if child is Button and child.toggle_mode:
-				child.button_pressed = child.text.to_lower() == name or (
-					name == "fly" and child.text == "Fly"
-				)
+	if _tool_buttons.has(name):
+		var btn: Button = _tool_buttons[name]
+		btn.set_pressed_no_signal(true)
 	if name != "place":
 		_armed = {}
 		_objects.set_ghost(false, {}, MapState.field, Vector3.UP)
-	_terrain.set_show_grid(name == "paint")
+	if _terrain.has_method("set_show_grid"):
+		_terrain.set_show_grid(name == "paint")
 	_refresh_status()
+
+
+func _on_view_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index in [MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+			_camera.handle_event(event)
+			accept_event()
+			return
+		if mb.button_index == MOUSE_BUTTON_LEFT:
+			var hit := _pick()
+			if hit.get("hit", false):
+				if mb.pressed:
+					_on_lmb_down(hit["position"], hit, mb.shift_pressed)
+				else:
+					_on_lmb_up()
+			accept_event()
+			return
+	elif event is InputEventMouseMotion and (_camera.looking or _camera.orbiting):
+		_camera.handle_event(event)
+		accept_event()
 
 
 func _over_viewport() -> bool:
@@ -558,6 +686,8 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 		"worlds":
 			MapState.worlds = result.get("worlds", [])
 			_fill_worlds(result)
+			if MapState.has_session and _terrain.has_method("refresh_materials"):
+				_terrain.refresh_materials()
 		"open", "new":
 			MapState.load_from_open(result)
 			for w in result.get("warnings", []):
@@ -625,12 +755,7 @@ func _fill_probe(result: Dictionary) -> void:
 		_probe_list.add_item("warning: %s" % warning)
 	if not Settings.game_root.is_empty() and not _is_smoke():
 		Backend.worlds(Settings.game_root)
-		var idx := MapState.cache_dir().path_join("index.json")
-		if FileAccess.file_exists(idx):
-			var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(idx))
-			if typeof(parsed) == TYPE_DICTIONARY:
-				MapState.asset_index = parsed
-				_fill_palette()
+		_try_load_asset_index()
 
 
 func _fill_worlds(result: Dictionary) -> void:
@@ -640,6 +765,17 @@ func _fill_worlds(result: Dictionary) -> void:
 			continue
 		_world_option.add_item("%s" % world.get("label", world.get("id", "")))
 		_world_option.set_item_metadata(_world_option.item_count - 1, world.get("id", ""))
+
+
+func _try_load_asset_index() -> void:
+	var idx := MapState.cache_dir().path_join("index.json")
+	if not FileAccess.file_exists(idx):
+		return
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(idx))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	MapState.asset_index = parsed
+	_fill_palette()
 
 
 func _fill_palette() -> void:
@@ -708,57 +844,58 @@ func _on_finding_selected(index: int) -> void:
 
 
 func _fill_inspector() -> void:
-	if _inspector == null:
+	if _insp_prj == null:
 		return
 	if MapState.selected_ids.is_empty():
-		_inspector.text = ""
+		_insp_prj.text = ""
+		_insp_label.text = ""
+		_insp_mode.text = "nothing selected"
 		return
 	var rec := MapState.find_object(MapState.selected_ids[0])
-	_inspector.text = JSON.stringify(rec, "  ")
+	if rec.is_empty():
+		return
+	_insp_prj.text = str(rec.get("prjid", ""))
+	_insp_label.text = str(rec.get("label", ""))
+	_insp_x.value = float(rec.get("x", 0.0))
+	_insp_y.value = float(rec.get("y", 0.0))
+	_insp_z.value = float(rec.get("z", 0.0))
+	_insp_yaw.value = float(rec.get("yaw_deg", 0.0))
+	_insp_team.value = int(rec.get("team", 0))
+	_insp_mode.text = "%s  ·  %s" % [
+		rec.get("placement_mode", "bzn"),
+		"required" if rec.get("required", false) else rec.get("id", ""),
+	]
 
 
 func _apply_inspector() -> void:
 	if MapState.selected_ids.is_empty():
 		return
-	var parsed: Variant = JSON.parse_string(_inspector.text)
-	if typeof(parsed) != TYPE_DICTIONARY:
-		_log("inspector JSON did not parse")
-		return
 	var id := MapState.selected_ids[0]
 	var before := MapState.find_object(id).duplicate(true)
-	if bool(before.get("required", false)) and parsed.get("id", id) != id:
-		_log("player object cannot be re-id'd")
+	if before.is_empty():
 		return
+	var after := before.duplicate(true)
+	after["label"] = _insp_label.text
+	after["x"] = _insp_x.value
+	after["y"] = _insp_y.value
+	after["z"] = _insp_z.value
+	after["yaw_deg"] = _insp_yaw.value
+	after["team"] = int(_insp_team.value)
 	var cmd = ObjectCommandScript.new()
 	cmd.kind = ObjectCommandScript.Kind.EDIT
 	cmd.variant = MapState.find_object_variant(id)
 	cmd.object_id = id
 	cmd.before = before
-	cmd.after = parsed
+	cmd.after = after
 	UndoStack.push(cmd)
 	_on_objects_mutated()
-
-
-func _write_meta() -> void:
-	var parsed: Variant = JSON.parse_string(_meta.text)
-	if typeof(parsed) != TYPE_DICTIONARY:
-		_log("metadata JSON did not parse")
-		return
-	MapState.meta = parsed
-	if not MapState.dirty.has("meta"):
-		MapState.dirty["meta"] = []
-	MapState.dirty["meta"] = ["raw"]
-	MapState.unsaved = true
-	MapState.persist()
-	_log("metadata marked dirty")
 
 
 func _on_session_changed() -> void:
 	_refresh_map_label()
 	_fill_variants()
+	_try_load_asset_index()
 	_fill_palette()
-	if _meta:
-		_meta.text = JSON.stringify(MapState.meta, "  ")
 	if not MapState.has_session:
 		return
 	if _terrain.has_method("rebuild"):
@@ -843,11 +980,9 @@ func _on_speed_changed(mps: float) -> void:
 
 
 func _set_busy(value: bool) -> void:
-	_btn_probe.disabled = value
-	_btn_open.disabled = value
-	_btn_new.disabled = value
-	_btn_save.disabled = value
-	_btn_validate.disabled = value
+	for b in _busy_targets:
+		if b:
+			b.disabled = value
 
 
 func _log(text: String) -> void:
