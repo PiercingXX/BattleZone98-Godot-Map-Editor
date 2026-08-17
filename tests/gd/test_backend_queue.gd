@@ -43,9 +43,4 @@ func run(t) -> void:
 
 
 func _stub(verb: String, _args: PackedStringArray) -> Dictionary:
-	return {
-		"verb": verb,
-		"code": 0,
-		"stdout": "{\"ok\": true, \"verb\": \"%s\"}" % verb,
-		"stderr": "",
-	}
+	return {"ok": true, "verb": verb}

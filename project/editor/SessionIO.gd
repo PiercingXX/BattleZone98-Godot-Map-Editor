@@ -92,7 +92,7 @@ func new_confirmed() -> void:
 	if shell._world_option.selected >= 0 and shell._world_option.get_item_metadata(shell._world_option.selected) != null:
 		world = str(shell._world_option.get_item_metadata(shell._world_option.selected))
 	var w: int = shell._size_option.get_item_id(shell._size_option.selected) if shell._size_option.selected >= 0 else 1280
-	var d := shell._size_z.get_item_id(shell._size_z.selected) if shell._size_z.selected >= 0 else w
+	var d: int = shell._size_z.get_item_id(shell._size_z.selected) if shell._size_z.selected >= 0 else w
 	if w <= 0:
 		w = 1280
 	if d <= 0:

@@ -64,7 +64,7 @@ static func write_complete_trn(
 
 
 static func _default_template() -> String:
-	return ProjectSettings.globalize_path("res://backend/reference").path_join(_TRN_TEMPLATE)
+	return ProjectSettings.globalize_path("res://project/backend/reference").path_join(_TRN_TEMPLATE)
 
 
 # -- TerrainConfig -----------------------------------------------------------

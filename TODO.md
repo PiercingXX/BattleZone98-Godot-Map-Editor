@@ -3,6 +3,13 @@
 **Status (2026-08-16): Phases 1–5 implemented.** Verification notes are at
 the bottom of this file.
 
+**Status (2026-08-17): superseded where it mentions Python.** The `bzmap`
+Python backend was ported to GDScript in full (`docs/03-gdscript-port.md`);
+`backend/` is gone, the subprocess driver is an in-process dispatcher, and
+the "never parse formats in GDScript" rule below is inverted — the format
+layer now lives in `project/backend/`. Everything else here remains an
+accurate record of the phase 1–5 work.
+
 Skippy — this is your work order. Every bug below was confirmed by reading the
 shipped code (file:line refs included); none of it is speculative. Work the
 phases **in order**: Phase 1 stops the bleeding, Phase 2 locks behavior with

@@ -10,24 +10,23 @@ Exports to Linux and Windows.
 
 ## How it works
 
-Two halves, one contract:
+Pure GDScript, one process, zero runtime dependencies:
 
-- **This repo** — the Godot application **and** the bundled `bzmap` backend
-  under `backend/`. Viewport, camera, brushes, gizmos, panels, undo. The
-  GDScript side holds a heightmap, a material grid, and a list of objects, and
-  it never learns what a `.hg2` is.
-- **`backend/bzmap`** — the Python toolchain that owns every file format,
-  invoked as a subprocess at workflow boundaries (open, save, validate,
-  package). Originally developed as
-  [`battlezone98-map-generator`](https://github.com/PiercingXX/battlezone98-map-generator);
-  this editor vendors the package so it runs from a single checkout.
+- **The editor** — viewport, camera, brushes, gizmos, panels, undo. It works
+  on a row-major heightmap, a material grid, and a list of objects.
+- **The format layer** (`project/backend/`) — every game file format
+  (`.hg2`, `.mat`, `.trn`, `.bzn`, OGRE meshes, …) parsed and written in
+  GDScript. Ported from the Python `bzmap` toolchain originally developed as
+  [`battlezone98-map-generator`](https://github.com/PiercingXX/battlezone98-map-generator).
 
-`bzmap` round-trips all 128 corpus mission files and all 36 corpus heightmaps
-byte-identically. The editor inherits that guarantee by never going around it,
-which is why **opening a stock map, changing one thing, and saving leaves every
-untouched file byte-for-byte identical.**
+The format layer's contract: **opening a stock map, changing one thing, and
+saving leaves every untouched file byte-for-byte identical.** Untouched source
+data passes through verbatim; byte-identical round-trips are enforced by the
+test suite, not promised by convention.
 
-The interface between the two is [`docs/02-bzmap-bridge.md`](docs/02-bzmap-bridge.md).
+The internal boundary between the two halves is
+[`docs/02-bzmap-bridge.md`](docs/02-bzmap-bridge.md) (session model) and
+[`docs/03-gdscript-port.md`](docs/03-gdscript-port.md) (the port layout).
 
 ## Features
 
@@ -48,18 +47,19 @@ The interface between the two is [`docs/02-bzmap-bridge.md`](docs/02-bzmap-bridg
 | Doc | What it covers |
 |---|---|
 | [`AGENTS.md`](AGENTS.md) | Operating rules for Skippy. |
-| [`docs/02-bzmap-bridge.md`](docs/02-bzmap-bridge.md) | The editor ↔ `bzmap` contract. |
+| [`docs/02-bzmap-bridge.md`](docs/02-bzmap-bridge.md) | The session model and verb contract between the UI and the format layer. |
+| [`docs/03-gdscript-port.md`](docs/03-gdscript-port.md) | The pure-GDScript port: layout, conventions, module table. |
 | [`docs/formats/`](docs/formats/README.md) | Clean-room functional specs for every game file format (`F1`–`F8`). |
 
 ## Run it
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -e backend
 godot --path .
 ```
 
-Tests (backend pytest + editor GDScript suite):
+That's it — no Python, no venv, no dependency install on any platform.
+
+Tests (headless GDScript suite):
 
 ```bash
 scripts/test.sh
@@ -75,19 +75,17 @@ Then **Probe** (finds your Steam install) → **Open map…** and pick a `.trn` 
   after a game or BZP update.
 
 - **Godot 4.7 stable**
-- **Python 3.11+** (for the bundled backend)
 - **A Battlezone 98 Redux installation** to open real maps. The editor itself
   ships no game content.
 
 Windows release builds: see [`scripts/windows-bundle.md`](scripts/windows-bundle.md).
-The Godot `.exe` and a `backend/` folder (embeddable CPython + `bzmap`) ship
-side by side.
+The exported Godot `.exe` is the whole application.
 
 ## Credit
 
 - **[`bzmap`](https://github.com/PiercingXX/battlezone98-map-generator)** —
-  the format toolchain this editor vendors under `backend/`; every format spec
-  and round-trip guarantee comes from there.
+  the Python format toolchain this editor's GDScript format layer was ported
+  from; every format spec and round-trip guarantee originates there.
 - **[GrizzlyOne95](https://github.com/GrizzlyOne95)** —
   [WorldBuilder](https://github.com/GrizzlyOne95/Battlezone98Redux_WorldBuilder)
   (MIT) for heightmap zone packing, material auto-painting, and atlas tooling,

@@ -13,7 +13,7 @@ class_name BzTemplates
 const _EOL := "\r\n"
 const _OBJECT_TEMPLATE := "bzn-object-template.txt"
 const _HEADER_TAIL_TEMPLATE := "bzn-header-tail-template.txt"
-const DEFAULT_REFERENCE_DIR := "res://backend/reference"
+const DEFAULT_REFERENCE_DIR := "res://project/backend/reference"
 
 
 static func template(prjid: String, bzn_path: String = "") -> String:

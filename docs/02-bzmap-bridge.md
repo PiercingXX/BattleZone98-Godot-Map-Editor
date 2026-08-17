@@ -1,14 +1,21 @@
 # 02 — The `bzmap` bridge contract
 
-This is the interface between the two halves of the project. Both sides are
-built against this document. Change it deliberately and in one commit across
-both repos.
+> **Status (2026-08-17):** the Python subprocess backend this document was
+> written against has been ported to GDScript in full — see
+> [`docs/03-gdscript-port.md`](03-gdscript-port.md). The **session model (§1),
+> verb payload shapes (§3–4), error shapes (§5), and the crash-safety gate
+> (§6) remain the canonical contract**, now between the UI and the in-process
+> format layer under `project/backend/`. The invocation mechanics (§2) and
+> backend location/shipping (§7–8) are historical: verbs are direct GDScript
+> calls dispatched by `project/autoload/Backend.gd` on a worker thread, and
+> nothing needs locating or shipping.
 
-**Where the work lives:** the `bzmap editor` subcommand group is the bundled
-backend at `backend/bzmap/editor/*.py`, wired into `backend/bzmap/cli.py`.
-The driver (`Backend.gd`) lives in the Godot tree. Neither side reaches past
-this contract. The editor checkout is standalone — it does not require another
-git repo at runtime.
+This is the interface between the two halves of the project. Both sides are
+built against this document. Change it deliberately and in one commit.
+
+**Where the work lives:** the verbs are `project/backend/editor/Bz*.gd`; the
+driver (`Backend.gd`) dispatches them. Neither side reaches past this
+contract. The editor checkout is standalone.
 
 ---
 

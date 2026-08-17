@@ -51,8 +51,8 @@ bzp-snapshot/
 *.vdf
 
 # In-repo backend templates (not extracted game assets).
-!backend/reference/
-!backend/reference/**
+!project/backend/reference/
+!project/backend/reference/**
 
 # The clean-room wall. Format truth lives in docs/formats/; the third-party
 # reference addons it was derived from were deleted on purpose and must not

@@ -115,7 +115,7 @@ class _Buf extends RefCounted:
 		while end < data.size() and int(data[end]) != 0x0A:
 			end += 1
 		var found: bool = end < data.size()
-		var s := _ascii_ignore(data, pos, end)
+		var s := BzOgre._ascii_ignore(data, pos, end)
 		pos = end + 1 if found else end
 		return s
 

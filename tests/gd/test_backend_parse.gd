@@ -1,27 +1,37 @@
 extends RefCounted
-## _parse_json_object on clean JSON, stderr prefix, empty, truncated.
+## Backend._parse_args: the CLI-style flag arrays the wrapper methods build
+## must round-trip into the flags/positional form the dispatcher consumes.
 
 
 func run(t) -> void:
-	var clean: Dictionary = Backend._parse_json_object('{"ok": true, "n": 1}')
-	t.eq(clean.get("ok"), true)
-	t.eq(clean.get("n"), 1)
+	var open := Backend._parse_args(PackedStringArray(
+		["/maps/canyon.trn", "--session", "/tmp/s1"]
+	))
+	t.eq((open["positional"] as Array).size(), 1, "one positional")
+	t.eq(open["positional"][0], "/maps/canyon.trn")
+	t.eq(open["flags"].get("session"), "/tmp/s1")
 
-	var noisy: Dictionary = Backend._parse_json_object("loading assets\nwarn: skip\n{\"ok\": true, \"verb\": \"probe\"}")
-	t.eq(noisy.get("ok"), true)
-	t.eq(noisy.get("verb"), "probe")
+	var new_args := Backend._parse_args(PackedStringArray([
+		"--stem", "mymap", "--world", "green", "--width", "2560",
+		"--depth", "1280", "--session", "/tmp/s2", "--game-root", "",
+		"--pack-kind", "bzp",
+	]))
+	var nf: Dictionary = new_args["flags"]
+	t.eq(nf.get("stem"), "mymap")
+	t.eq(nf.get("width"), "2560")
+	t.eq(nf.get("depth"), "1280")
+	t.eq(nf.get("game-root"), "", "empty value flag survives")
+	t.eq(nf.get("pack-kind"), "bzp")
 
-	var nested: Dictionary = Backend._parse_json_object("loading assets\n{\n  \"ok\": true,\n  \"installs\": [{\"kind\": \"game\"}]\n}")
-	t.eq(nested.get("ok"), true, "noise + nested object")
-	t.eq((nested.get("installs", []) as Array).size(), 1, "nested array survives")
+	var assets := Backend._parse_args(PackedStringArray(
+		["--game-root", "/g", "--cache", "/c", "--refresh", "--no-convert"]
+	))
+	var af: Dictionary = assets["flags"]
+	t.eq(af.get("refresh"), true, "boolean flag")
+	t.eq(af.get("no-convert"), true, "boolean flag with no value")
+	t.eq(af.get("cache"), "/c", "value flag after boolean parsing")
 
-	var braced: Dictionary = Backend._parse_json_object("progress {5 of 9}\n{\"ok\": true}")
-	t.eq(braced.get("ok"), true, "noise containing balanced braces")
+	var eq_form := Backend._parse_args(PackedStringArray(["--session=/tmp/s3"]))
+	t.eq(eq_form["flags"].get("session"), "/tmp/s3", "--flag=value form")
 
-	var unbalanced: Dictionary = Backend._parse_json_object("stray { in noise\n{\"ok\": true}")
-	t.eq(unbalanced.get("ok"), true, "noise with unbalanced brace")
-
-	t.eq(Backend._parse_json_object(""), {})
-	t.eq(Backend._parse_json_object("no json here"), {})
-	t.eq(Backend._parse_json_object("{\"ok\": tru"), {}, "truncated")
-	t.eq(Backend._parse_json_object("[1, 2, 3]"), {}, "array is not an object")
+	t.eq(Backend._parse_args(PackedStringArray()), {"flags": {}, "positional": []})

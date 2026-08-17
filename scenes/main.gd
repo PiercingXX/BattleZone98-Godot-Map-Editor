@@ -64,13 +64,8 @@ func _ready() -> void:
 	autosave.start()
 	_refresh_map_label()
 	_log.call("BattleZone 98 Godot Map Editor. F1 help. Open a map to sculpt and place.")
-	if Backend.available:
-		_log.call(Backend.bzmap_home)
-		Backend.probe()
-		_queue_smoke_open()
-	else:
-		_status.set_status("error", "backend missing")
-		_log.call(Backend.last_error)
+	Backend.probe()
+	_queue_smoke_open()
 
 
 func _notification(what: int) -> void:

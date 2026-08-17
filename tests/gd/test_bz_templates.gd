@@ -61,7 +61,7 @@ func run(t) -> void:
 	# --- DEFAULT_REFERENCE_DIR + repo template (eggeizr1) if present ---
 	t.ok(BzTemplates.DEFAULT_REFERENCE_DIR.contains("backend/reference"))
 	var repo_obj := ProjectSettings.globalize_path(
-		"res://backend/reference/bzn-object-template.txt"
+		"res://project/backend/reference/bzn-object-template.txt"
 	)
 	if FileAccess.file_exists(repo_obj) or FileAccess.file_exists(BzTemplates.DEFAULT_REFERENCE_DIR.path_join("bzn-object-template.txt")):
 		var repo := BzTemplates.TemplateLoader.new()
