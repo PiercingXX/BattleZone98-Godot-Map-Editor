@@ -132,7 +132,7 @@ def open_map(path, session_dir):
             f"{binary_bzns[0].name} is a binary BZN; a binary reader is not "
             "in bzmap yet",
             hint="re-save from the game with the asciisave launch argument, "
-                 "or wait for the binary reader (tracked in the editor docs/10)",
+                 "or wait for the binary reader",
             path=binary_bzns[0],
         )
 

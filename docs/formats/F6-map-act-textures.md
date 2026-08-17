@@ -93,7 +93,7 @@ stock content.
 
 ## 6. Conversion targets
 
-For the editor's mesh cache (`docs/05` §6), textures are converted to **PNG**.
+For the editor's mesh cache, textures are converted to **PNG**.
 Straightforward: decode per §2, apply the palette per §3–4, write RGBA.
 
 For Redux HD material scripts (F7 §5), textures are referenced as **DDS**, named

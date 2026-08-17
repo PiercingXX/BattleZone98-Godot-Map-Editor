@@ -56,23 +56,12 @@ The interface between the two is [`docs/02-bzmap-bridge.md`](docs/02-bzmap-bridg
 - Validation report with click-to-fly-there findings
 - Packaging: thumbnail rendering, install to a test mod, pack assembly
 
-## Reading the specs
+## Docs
 
 | Doc | What it covers |
 |---|---|
-| [`AGENTS.md`](AGENTS.md) | **Start here.** Operating rules for the build agent. |
-| [`docs/00-project-brief.md`](docs/00-project-brief.md) | Scope, deliverables, definition of done. |
-| [`docs/01-architecture.md`](docs/01-architecture.md) | The two-process split and why. |
-| [`docs/02-bzmap-bridge.md`](docs/02-bzmap-bridge.md) | **The contract.** Session format, verbs, schemas. |
-| [`docs/03-viewport-and-camera.md`](docs/03-viewport-and-camera.md) | Terrain rendering, raycasting, camera, performance budget. |
-| [`docs/04-sculpting.md`](docs/04-sculpting.md) | Brush model, the brushes, undo/redo, material painting. |
-| [`docs/05-assets.md`](docs/05-assets.md) | Live asset enumeration and the fidelity chain. |
-| [`docs/06-object-placement.md`](docs/06-object-placement.md) | Palette, placement, the class-layout law, variants. |
-| [`docs/07-map-data-and-ui.md`](docs/07-map-data-and-ui.md) | New-map wizard, metadata, water/plants, app shell. |
-| [`docs/08-validation-and-packaging.md`](docs/08-validation-and-packaging.md) | Findings panel and the packaging buttons. |
-| [`docs/09-build-plan.md`](docs/09-build-plan.md) | Phased milestones with acceptance criteria. |
-| [`docs/10-open-questions.md`](docs/10-open-questions.md) | Unknowns, risks, and the experiments that resolve them. |
-| [`QUESTIONS-TODO.md`](QUESTIONS-TODO.md) | The design decision record. |
+| [`AGENTS.md`](AGENTS.md) | Operating rules for Skippy. |
+| [`docs/02-bzmap-bridge.md`](docs/02-bzmap-bridge.md) | The editor ↔ `bzmap` contract. |
 | [`docs/formats/`](docs/formats/README.md) | Clean-room functional specs for every game file format (`F1`–`F8`). |
 
 ## Run it

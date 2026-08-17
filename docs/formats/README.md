@@ -28,13 +28,13 @@ evidence if provenance is ever questioned.
 
 | Doc | Format | Used by |
 |---|---|---|
-| [F1](F1-hg2-heightfield.md) | `.hg2` terrain heightfield | `docs/02` §1, `docs/04` sculpting |
-| [F2](F2-mat-tilemap.md) | `.mat` terrain material tilemap, atlas layout, autotiling | `docs/04` §7, `docs/05` §4 |
-| [F3](F3-trn-and-bzn-ascii.md) | `.trn` terrain config, ASCII `.bzn` mission save | `docs/06`, `docs/07` |
-| [F4](F4-geo-mesh.md) | `.geo` classic mesh | `docs/05` fidelity chain |
-| [F5](F5-bwd2-vdf-sdf.md) | `.vdf` / `.sdf` BWD2 model containers | `docs/05` fidelity chain |
-| [F6](F6-map-act-textures.md) | `.map` texture image, `.act` palette | `docs/05` §4 |
-| [F7](F7-ogre-mesh-skeleton-material.md) | Redux HD: OGRE `.mesh` / `.skeleton` / `.material` | `docs/05` `hd` rung, `docs/10` Q-B |
+| [F1](F1-hg2-heightfield.md) | `.hg2` terrain heightfield | session heights, sculpting |
+| [F2](F2-mat-tilemap.md) | `.mat` terrain material tilemap, atlas layout, autotiling | material paint, atlas splat |
+| [F3](F3-trn-and-bzn-ascii.md) | `.trn` terrain config, ASCII `.bzn` mission save | open / save / objects |
+| [F4](F4-geo-mesh.md) | `.geo` classic mesh | viewport fidelity chain |
+| [F5](F5-bwd2-vdf-sdf.md) | `.vdf` / `.sdf` BWD2 model containers | viewport fidelity chain |
+| [F6](F6-map-act-textures.md) | `.map` texture image, `.act` palette | terrain atlas |
+| [F7](F7-ogre-mesh-skeleton-material.md) | Redux HD: OGRE `.mesh` / `.skeleton` / `.material` | `hd` fidelity rung |
 | [F8](F8-conventions-and-test-vectors.md) | Coordinate frames, enumerations, cross-format conventions, acceptance vectors | everything |
 
 ## Confidence marking

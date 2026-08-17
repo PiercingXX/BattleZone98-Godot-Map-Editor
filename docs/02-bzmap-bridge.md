@@ -165,19 +165,17 @@ bzmap editor probe --json
 }
 ```
 
-**Install discovery is specified in full in `docs/05` §2a and §2b** — Steam App
-ID `301650`, the per-platform Steam roots, the `libraryfolders.vdf` walk for
-secondary drives, GOG fallbacks, and the two-argument validation
-(`battlezone98redux.exe` **and** `BZ_ASSETS/common/models/`). The generator
-repo's `_GAME_ROOTS` in `bzmap/cli.py` is the Linux starting point and is
-incomplete for Windows — extend it from that spec.
+**Install discovery** (implemented in `backend/bzmap/editor/discover.py`):
+Steam App ID `301650`, the per-platform Steam roots, the `libraryfolders.vdf`
+walk for secondary drives, GOG fallbacks, and the two-argument validation
+(`battlezone98redux.exe` **and** `BZ_ASSETS/common/models/`).
 
 Two corrections to the example above, measured 2026-08-16:
 
 - **Workshop items live in two places**, and neither contains the other:
   `<library>/steamapps/workshop/content/301650/<id>/` (subscribed) and
   `<install>/packaged_mods/<id>/` (materialised). `probe` must report the union,
-  keyed by ID, with the source of each. `docs/05` §2b.
+  keyed by ID, with the source of each.
 - `packaged_mods/` IDs are **not all Steam workshop IDs** — internal ones such
   as `9990001` appear there — so `kind: "workshop_item"` needs a `source` field
   (`"workshop"` / `"packaged"` / `"both"`) rather than an assumed provenance.
@@ -208,9 +206,9 @@ bzmap editor worlds --game-root <path> --json
 ```
 
 Nine stock worlds ship in `Edit/trn/`: achilles, elysium, europa, ganymede, io,
-mars, moon, titan, venus. `texture_types` feeds the material painting palette
-(`docs/04` §6) — the editor needs to know how many materials a world has and
-roughly what colour each is, even before atlas textures are resolved.
+mars, moon, titan, venus. `texture_types` feeds the material painting palette —
+the editor needs to know how many materials a world has and roughly what colour
+each is, even before atlas textures are resolved.
 
 ### `assets`
 Build (or refresh) the asset cache: enumerate every placeable class from the
@@ -251,9 +249,9 @@ bzmap editor assets --game-root <path> [--pack <workshop-path> ...] \
 
 Field notes:
 - `source` — `"game"` or the workshop item id, so the editor can enforce the
-  **assets do not cross workshop items** rule (`docs/05` §5).
-- `mesh_fidelity` — one of `hd`, `geo_textured`, `geo_flat`, `proxy`. The
-  degradation chain in `docs/05` §3.
+  **assets do not cross workshop items** rule.
+- `mesh_fidelity` — one of `hd`, `geo_textured`, `geo_flat`, `proxy`. Degrade
+  down that chain when a rung cannot be loaded.
 - `template_verified` / `placement_mode` — the crash-safety gate. See §6 below;
   this is the most consequential field in the whole contract.
 - `source_fingerprint` — lets the editor detect that the install changed (a
@@ -353,7 +351,7 @@ bzmap editor validate --session <dir> [--tier 1,2] --json
 ```
 
 `world_pos` and `object_id` are what make this a *panel* rather than a log —
-the editor flies the camera to a finding when you click it (`docs/08` §2).
+the editor flies the camera to a finding when you click it.
 Backend must populate them wherever the underlying validator knows a location.
 
 ### `render`
@@ -410,7 +408,7 @@ the backend on `save`.
 ```
 
 `pack_context` tells the editor which asset layers are legal for this map
-(`docs/05` §5) and which metadata conventions to present (`docs/07` §3):
+and which metadata conventions to present:
 `{"kind": "base"}` for a plain base-game map, `{"kind": "bzp", ...}` for a BZP
 one.
 
@@ -453,14 +451,14 @@ One record per placed object, per variant:
   Without this link there is no way to know which blocks may be re-emitted
   verbatim — it is the hinge of the pass-through rule.
 - `managed: true` marks backend-owned objects (water/plant carriers — the
-  editor may inspect but not transform them, `docs/07` §5).
-- `required: true` marks objects that must exist (the player object,
-  `docs/06` §8) — the editor refuses to delete them.
+  editor may inspect but not transform them).
+- `required: true` marks objects that must exist (the player object) — the
+  editor refuses to delete them.
 
 ### 4b. `features.json`
 
-Water and plant authoring parameters (`docs/07` §5), consumed by the backend's
-mesh generation on save:
+Water and plant authoring parameters, consumed by the backend's mesh
+generation on save:
 
 ```json
 {
@@ -537,13 +535,12 @@ avoids BZN-placed craft acquiring pilots at load and turning hostile.
 are a **BZP convention**. For a `{"kind": "base"}` map the backend needs a
 base-game script template that the engine loads natively, with the same
 host-guarded spawn block. Verify a base-game `<stem>.lua` actually runs before
-relying on it — this is a Phase 0/1 check, tracked in `docs/10` Q-G. If runtime
-spawning turns out to be BZP-only, unverified classes on base-game maps are
-simply unavailable, stated in the palette with the reason.
+relying on it. If runtime spawning turns out to be BZP-only, unverified classes
+on base-game maps are simply unavailable, stated in the palette with the reason.
 
 The editor's job is to **show this distinction in the palette and the
-inspector** (`docs/06` §5), never to override it. A user placing a howitzer
-should see that it will be spawned at runtime, and why.
+inspector**, never to override it. A user placing a howitzer should see that it
+will be spawned at runtime, and why.
 
 The known-good classes as of the generator repo's corpus work are geysers,
 scrap, spawn points, the player, depots, and environment mesh carriers. Craft
@@ -571,9 +568,8 @@ install has one) work on both platforms without quoting.
 For public release, the Windows export should bundle an embeddable Python plus
 the dependencies under `./backend/`, so a user is not asked to set up a Python
 environment to run a map editor. Until that packaging exists, discovery order 4
-covers the operator's own machines. **Track this in `docs/10`, do not skip it
-silently** — it is the difference between a tool the operator can use and a
-tool the community can use.
+covers a source checkout. Do not skip the Windows bundle — it is the difference
+between a tool the operator can use and a tool the community can use.
 
 ## 8. Contract versioning
 

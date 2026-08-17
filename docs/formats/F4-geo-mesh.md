@@ -121,7 +121,7 @@ to avoid rather than reproduce.
 ## 6. Per-face flat colour is a real render mode
 
 Each face carries an RGB triple. The engine renders these flat colours when a
-texture does not resolve. That makes the `geo_flat` rung of `docs/05`'s fidelity
+texture does not resolve. That makes the `geo_flat` rung of the viewport fidelity
 chain **engine-faithful, not a fallback we invented** — a `.geo` with unresolved
 textures still looks approximately correct rather than untextured grey.
 

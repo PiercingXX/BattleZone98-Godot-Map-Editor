@@ -1,9 +1,9 @@
 # F7 — Redux HD models: OGRE `.mesh`, `.skeleton`, `.material`
 
-**This document answers `docs/10` Q-B.** Battlezone 98 Redux's HD runtime model
-format is **OGRE**: binary `.mesh`, binary `.skeleton`, text `.material`
-scripts, and `.dds` textures. It is fully decodable, and the `hd` rung of
-`docs/05`'s fidelity chain is therefore reachable rather than aspirational.
+Battlezone 98 Redux's HD runtime model format is **OGRE**: binary `.mesh`,
+binary `.skeleton`, text `.material` scripts, and `.dds` textures. It is fully
+decodable, so the `hd` rung of the viewport fidelity chain is reachable rather
+than aspirational.
 
 Confidence: **VERIFIED** for the chunk layouts — these are the documented OGRE
 serializer formats and a complete pure-Python reader/writer implementing them
@@ -336,16 +336,16 @@ editor never writes `.material`.
 
 ## 7. Asset discovery
 
-To inventory a Redux install for the editor's asset index (`docs/05` §2,
-`docs/10` Q-A), the extension set that matters is:
+To inventory a Redux install for the editor's asset index, the extension set
+that matters is:
 
 ```
 .odf .geo .vdf .sdf .map .act .mesh .skeleton .material .dds
 ```
 
 Classic and HD assets coexist; a class may have both a `.sdf`/`.geo` chain and
-an OGRE `.mesh`, which is exactly what makes `docs/05`'s fidelity chain a chain
-rather than a choice.
+an OGRE `.mesh`, which is exactly what makes the viewport fidelity chain a
+chain rather than a choice.
 
 ## 8. Acceptance tests
 
