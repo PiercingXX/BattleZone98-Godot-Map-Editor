@@ -110,5 +110,3 @@ side by side.
   classic GEO/VDF/SDF layouts.
 - The BZP pack and its maintainer, whose corpus is the ground truth behind
   nearly every format fact these specs rely on.
-- Rebellion, for *Battlezone 98 Redux*. All game assets remain theirs; this tool
-  reads them from your installation and redistributes nothing.
