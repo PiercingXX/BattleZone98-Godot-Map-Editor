@@ -13,16 +13,6 @@ Exports to Linux and Windows.
 
 ---
 
-## Why
-
-The only map editor for BZ98R is the one inside the game, reached with
-`/startedit`: no collision, no undo, a 1998 UI, Windows-only through the game
-itself. Everything else the community uses is command-line — `MakeTRN.exe`,
-WorldBuilder, and the `bzmap` toolchain.
-
-Nobody has a tool where you can see the map you are making while you make it.
-This is that tool.
-
 ## How it works
 
 Two halves, one contract:
