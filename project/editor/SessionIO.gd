@@ -29,6 +29,7 @@ func handle_more(id: int) -> void:
 				shell._save_dialog.title = "Assemble pack into…"
 				shell._save_dialog.popup_centered_ratio(0.5)
 		TopBarScript.MORE_PROBE:
+			shell._probe_explicit = true
 			Backend.probe()
 		TopBarScript.MORE_HELP:
 			shell._help.popup_help()

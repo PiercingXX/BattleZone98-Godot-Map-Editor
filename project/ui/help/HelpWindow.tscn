@@ -4,7 +4,7 @@
 
 [node name="HelpWindow" type="Window"]
 title = "Hotkeys"
-size = Vector2i(520, 340)
+size = Vector2i(520, 380)
 visible = false
 unresizable = false
 script = ExtResource("1_script")

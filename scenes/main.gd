@@ -37,6 +37,7 @@ var _setting_tool: bool = false
 var _ramp_a: Vector3 = Vector3.INF
 var _last_stamp: Vector3 = Vector3.INF
 var _pending_package: String = ""
+var _probe_explicit: bool = false
 var _save_as: bool = false
 var _quit_after_save: bool = false
 var _smoke_path: String = ""
@@ -314,6 +315,8 @@ func _on_tool_state(name: String) -> void:
 	_sculpt.mode = name
 	# TopBar subscribes to ToolState.tool_changed itself.
 	_apply_grid()
+	if name != "ramp":
+		_ramp_a = Vector3.INF
 	if name != "place":
 		_objects.set_ghost(false, {}, MapState.field, Vector3.UP)
 
@@ -358,7 +361,16 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 	_status.set_status("ok", "ok: %s" % verb)
 	match verb:
 		"probe":
-			if not _is_smoke():
+			# Only interrupt with the install picker when there is a choice
+			# to make (no saved root) or the user explicitly asked via More →
+			# Re-probe; routine startup probes stay silent.
+			var explicit := _probe_explicit
+			_probe_explicit = false
+			if not _is_smoke() and (
+				explicit
+				or Settings.game_root.is_empty()
+				or (result.get("installs", []) as Array).is_empty()
+			):
 				_probe.show_probe(result)
 			if not Settings.game_root.is_empty() and not _is_smoke():
 				Backend.worlds(Settings.game_root)
@@ -443,6 +455,13 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 
 
 func _on_call_failed(verb: String, error: Dictionary) -> void:
+	if verb == "save":
+		# A failed save must not leave quit / new-map / package intents
+		# armed for the next save that succeeds.
+		_quit_after_save = false
+		_save_as = false
+		_pending_package = ""
+		_io.consume_new_after_save()
 	_top.set_busy(false)
 	_console.visible = true
 	_status.set_log_visible(true)
@@ -485,6 +504,10 @@ func _on_finding_select(f: Dictionary) -> void:
 func _on_finding_fly(f: Dictionary) -> void:
 	_on_finding_select(f)
 	var pos = f.get("world_pos", null)
+	if typeof(pos) != TYPE_ARRAY or (pos as Array).size() < 3:
+		var rec := MapState.find_object(str(f.get("object_id", "")))
+		if not rec.is_empty():
+			pos = [rec.get("x", 0.0), rec.get("y", 0.0), rec.get("z", 0.0)]
 	if typeof(pos) == TYPE_ARRAY and pos.size() >= 3:
 		_camera.global_position = Vector3(float(pos[0]), float(pos[1]) + 40.0, float(pos[2]) - 40.0)
 		_camera.look_at(Vector3(float(pos[0]), float(pos[1]), float(pos[2])), Vector3.UP)

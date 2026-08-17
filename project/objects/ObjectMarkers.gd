@@ -163,8 +163,10 @@ func _make_visual(rec: Dictionary, faded: bool) -> Node3D:
 	var inst := MeshInstance3D.new()
 	inst.mesh = _box
 	var size := _size_for(prjid)
-	inst.scale = Vector3(size.x / 8.0, size.y / 6.0, size.z / 8.0)
-	inst.position.y = size.y * 0.5
+	inst.scale = Vector3(size.x / _box.size.x, size.y / _box.size.y, size.z / _box.size.z)
+	# Local Y is in pre-scale mesh units so world offset is exactly size.y / 2
+	# (pick() uses wrap.position + size.y * 0.5).
+	inst.position.y = _box.size.y * 0.5
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.albedo_color = _color_for(prjid)

@@ -24,8 +24,9 @@ layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="Hint" type="Label" parent="Margin/Box"]
+unique_name_in_owner = true
 layout_mode = 2
-text = "Found installs. Select a game entry and click Use this install."
+text = "Found installs. Select a game entry and click Use this install — or double-click it."
 autowrap_mode = 3
 
 [node name="List" type="ItemList" parent="Margin/Box"]
@@ -38,7 +39,25 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Using: (none)"
 
-[node name="Use" type="Button" parent="Margin/Box"]
+[node name="Row" type="HBoxContainer" parent="Margin/Box"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Use" type="Button" parent="Margin/Box/Row"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 text = "Use this install"
+
+[node name="Browse" type="Button" parent="Margin/Box/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Pick the Battlezone 98 Redux folder if probe missed it"
+text = "Browse…"
+
+[node name="BrowseDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "Choose game install"
+ok_button_text = "Use this folder"
+file_mode = 2
+access = 2

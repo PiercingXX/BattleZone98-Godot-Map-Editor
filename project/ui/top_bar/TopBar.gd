@@ -22,6 +22,7 @@ const MORE_HELP := 5
 const MORE_SAVE_AS := 6
 
 var _setting_tool: bool = false
+var _busy: bool = false
 
 @onready var _map_label: Label = %MapLabel
 @onready var _variant: OptionButton = %Variant
@@ -29,7 +30,11 @@ var _setting_tool: bool = false
 @onready var _btn_new: Button = %New
 @onready var _btn_save: Button = %Save
 @onready var _btn_validate: Button = %Validate
+@onready var _btn_undo: Button = %Undo
+@onready var _btn_redo: Button = %Redo
+@onready var _btn_frame: Button = %Frame
 @onready var _tools: HBoxContainer = %Tools
+@onready var _more: MenuButton = %More
 
 
 func _ready() -> void:
@@ -37,11 +42,11 @@ func _ready() -> void:
 	%New.pressed.connect(func(): new_requested.emit())
 	%Save.pressed.connect(func(): save_requested.emit())
 	%Validate.pressed.connect(func(): validate_requested.emit())
-	%Undo.pressed.connect(func(): undo_requested.emit())
-	%Redo.pressed.connect(func(): redo_requested.emit())
-	%Frame.pressed.connect(func(): frame_requested.emit())
+	%Undo.pressed.connect(_on_undo)
+	%Redo.pressed.connect(_on_redo)
+	%Frame.pressed.connect(_on_frame)
 	_variant.item_selected.connect(func(_i): variant_changed.emit())
-	var pop: PopupMenu = %More.get_popup()
+	var pop: PopupMenu = _more.get_popup()
 	pop.add_item("Import assets", MORE_IMPORT)
 	pop.add_item("Render thumbnail", MORE_RENDER)
 	pop.add_item("Install into game (addon)", MORE_INSTALL)
@@ -56,11 +61,18 @@ func _ready() -> void:
 		else:
 			more_selected.emit(id)
 	)
+	pop.about_to_popup.connect(_refresh_more)
 	for child in _tools.get_children():
 		if child is Button:
 			var tool_name := String(child.name).to_lower()
 			child.pressed.connect(_on_tool_button.bind(tool_name))
 	ToolState.tool_changed.connect(set_tool)
+	MapState.session_changed.connect(_refresh_actions)
+	UndoStack.changed.connect(_refresh_actions)
+	Backend.call_started.connect(func(_v): set_busy(true))
+	Backend.call_finished.connect(func(_v, _r): set_busy(false))
+	Backend.call_failed.connect(func(_v, _e): set_busy(false))
+	_refresh_actions()
 
 
 func _on_tool_button(tool_name: String) -> void:
@@ -69,14 +81,34 @@ func _on_tool_button(tool_name: String) -> void:
 	tool_selected.emit(tool_name)
 
 
+func _on_undo() -> void:
+	if not UndoStack.can_undo():
+		EditorFeedback.log("nothing to undo")
+		return
+	undo_requested.emit()
+
+
+func _on_redo() -> void:
+	if not UndoStack.can_redo():
+		EditorFeedback.log("nothing to redo")
+		return
+	redo_requested.emit()
+
+
+func _on_frame() -> void:
+	if not MapState.has_session:
+		EditorFeedback.log("open a map to frame")
+		return
+	frame_requested.emit()
+
+
 func set_map_label(text: String) -> void:
 	_map_label.text = text
 
 
 func set_busy(value: bool) -> void:
-	for b in [_btn_open, _btn_new, _btn_save, _btn_validate]:
-		if b:
-			b.disabled = value
+	_busy = value
+	_refresh_actions()
 
 
 func set_tool(name: String) -> void:
@@ -97,9 +129,67 @@ func fill_variants(variants: Array, active: String) -> void:
 		_variant.set_item_metadata(_variant.item_count - 1, v)
 		if str(v) == active:
 			_variant.select(_variant.item_count - 1)
+	_refresh_actions()
 
 
 func selected_variant() -> String:
 	if _variant.selected < 0:
 		return ""
 	return str(_variant.get_item_metadata(_variant.selected))
+
+
+func _refresh_actions() -> void:
+	var session := MapState.has_session
+	var can_act := session and not _busy
+	if _btn_open:
+		_btn_open.disabled = _busy
+	if _btn_new:
+		_btn_new.disabled = _busy
+	if _btn_save:
+		_btn_save.disabled = not can_act
+		_btn_save.tooltip_text = "Save  (Ctrl+S)" if can_act else (
+			"Busy…" if _busy else "Open a map first"
+		)
+	if _btn_validate:
+		_btn_validate.disabled = not can_act
+		_btn_validate.tooltip_text = "Validate the open map" if can_act else (
+			"Busy…" if _busy else "Open a map first"
+		)
+	if _btn_undo:
+		_btn_undo.disabled = not UndoStack.can_undo()
+		_btn_undo.tooltip_text = "Undo  (Ctrl+Z)" if UndoStack.can_undo() else "Nothing to undo"
+	if _btn_redo:
+		_btn_redo.disabled = not UndoStack.can_redo()
+		_btn_redo.tooltip_text = "Redo  (Ctrl+Shift+Z)" if UndoStack.can_redo() else "Nothing to redo"
+	if _btn_frame:
+		_btn_frame.disabled = not session
+		_btn_frame.tooltip_text = "Frame the map  (F)" if session else "Open a map first"
+	if _variant:
+		_variant.disabled = not session or _variant.item_count == 0
+		_variant.tooltip_text = "Active variant (DM / _S / _ST / _SW)" if session else "Open a map first"
+	_refresh_more()
+
+
+func _refresh_more() -> void:
+	if _more == null:
+		return
+	var pop: PopupMenu = _more.get_popup()
+	if pop.get_item_count() == 0:
+		return
+	var session := MapState.has_session
+	var root := not Settings.game_root.is_empty()
+	_set_more_item(pop, MORE_IMPORT, not _busy and root, "Probe an install first" if not root else "Import / refresh the asset index")
+	_set_more_item(pop, MORE_RENDER, not _busy and session, "Open a map first")
+	_set_more_item(pop, MORE_INSTALL, not _busy and session and root, "Needs an open map and a game install")
+	_set_more_item(pop, MORE_PACK, not _busy and session, "Open a map first")
+	_set_more_item(pop, MORE_PROBE, not _busy, "Busy…")
+	_set_more_item(pop, MORE_SAVE_AS, not _busy and session, "Open a map first")
+	_set_more_item(pop, MORE_HELP, true, "Keyboard reference  (F1)")
+
+
+func _set_more_item(pop: PopupMenu, id: int, enabled: bool, disabled_tip: String) -> void:
+	var idx := pop.get_item_index(id)
+	if idx < 0:
+		return
+	pop.set_item_disabled(idx, not enabled)
+	pop.set_item_tooltip(idx, disabled_tip if not enabled else "")

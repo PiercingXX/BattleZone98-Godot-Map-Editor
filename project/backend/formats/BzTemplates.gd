@@ -127,7 +127,7 @@ class _GameObjectLite:
 	var lines: PackedStringArray = PackedStringArray()
 	var prjid: Variant:
 		get:
-			return _get("PrjID [1]")
+			return get_field("PrjID [1]")
 
 	func _init(p_lines: Variant = PackedStringArray()) -> void:
 		lines = BzTemplates._as_lines(p_lines)
@@ -138,7 +138,7 @@ class _GameObjectLite:
 	func render() -> String:
 		return _EOL.join(lines)
 
-	func _get(key: String, default: Variant = null) -> Variant:
+	func get_field(key: String, default: Variant = null) -> Variant:
 		return BzTemplates._get_value(lines, key, default)
 
 

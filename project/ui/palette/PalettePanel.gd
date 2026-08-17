@@ -23,7 +23,7 @@ var _syncing: bool = false
 
 
 func _ready() -> void:
-	_search.text_changed.connect(func(t): _filter = t; _fill())
+	_search.text_changed.connect(func(t): _filter = t.strip_edges(); _fill())
 	_list.item_selected.connect(_on_selected)
 	_radius.value_changed.connect(_on_radius)
 	_strength.value_changed.connect(_on_strength)
@@ -33,7 +33,10 @@ func _ready() -> void:
 	_build_swatches()
 	_sync_from_state()
 	ToolState.brush_changed.connect(_sync_from_state)
-	ToolState.tool_changed.connect(func(_n): _highlight_swatch())
+	ToolState.tool_changed.connect(_on_tool)
+	ToolState.armed_changed.connect(_on_armed)
+	MapState.session_changed.connect(_on_session)
+	_fill()
 
 
 func set_classes(index: Dictionary, pack_kind: String) -> void:
@@ -95,6 +98,7 @@ func _fill() -> void:
 	_list.clear()
 	var classes: Array = _index.get("classes", [])
 	var q := _filter.to_lower()
+	var added := 0
 	for rec in classes:
 		if typeof(rec) != TYPE_DICTIONARY:
 			continue
@@ -111,14 +115,47 @@ func _fill() -> void:
 		var i := _list.add_item(text)
 		_list.set_item_metadata(i, rec)
 		_list.set_item_disabled(i, not legal)
-	_list.sort_items_by_text()
+		added += 1
+	if added == 0:
+		var empty := _empty_message(classes.size(), q)
+		var i := _list.add_item(empty)
+		_list.set_item_metadata(i, {})
+		_list.set_item_disabled(i, true)
+	else:
+		_list.sort_items_by_text()
+		_restore_armed_selection()
+
+
+func _empty_message(total: int, q: String) -> String:
+	if q != "" and total > 0:
+		return "No classes match “%s”" % q
+	if total == 0:
+		if Settings.game_root.is_empty():
+			return "No classes. More → Re-probe, then Import assets."
+		return "No classes. More → Import assets."
+	return "No classes."
+
+
+func _restore_armed_selection() -> void:
+	var armed_id := str(ToolState.armed.get("prjid", ""))
+	if armed_id.is_empty():
+		return
+	for i in _list.item_count:
+		var rec = _list.get_item_metadata(i)
+		if typeof(rec) == TYPE_DICTIONARY and str(rec.get("prjid", "")) == armed_id:
+			_list.select(i)
+			_list.ensure_current_is_visible()
+			return
 
 
 func _on_selected(index: int) -> void:
 	var rec = _list.get_item_metadata(index)
-	if typeof(rec) != TYPE_DICTIONARY:
+	if typeof(rec) != TYPE_DICTIONARY or rec.is_empty():
 		return
 	if _list.is_item_disabled(index):
+		return
+	if not MapState.has_session:
+		EditorFeedback.log("open a map before placing")
 		return
 	class_armed.emit(rec)
 
@@ -149,6 +186,23 @@ func _on_shape(shape: String) -> void:
 		return
 	ToolState.set_shape(shape)
 	_sync_shape_buttons()
+
+
+func _on_tool(name: String) -> void:
+	_highlight_swatch()
+	if name == "place" and ToolState.armed.is_empty():
+		EditorFeedback.log("pick a class in the palette")
+
+
+func _on_armed() -> void:
+	if ToolState.armed.is_empty():
+		_list.deselect_all()
+	else:
+		_restore_armed_selection()
+
+
+func _on_session() -> void:
+	_fill()
 
 
 func _sync_from_state() -> void:

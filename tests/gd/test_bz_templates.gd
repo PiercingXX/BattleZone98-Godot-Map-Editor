@@ -47,8 +47,13 @@ func run(t) -> void:
 	both.sort()
 	t.eq(both, ["synobj01", "synobj02"])
 
-	# --- module-level template() against this reference via loader ---
-	t.eq(BzTemplates.template("synobj01", bzn_path), obj_want)
+	# --- module-level template() uses the DEFAULT reference (docs/02 §6 R2
+	# idiom). An unknown prjid is empty (Python raises KeyError); the vendored
+	# reference ships the eggeizr1 geyser block.
+	t.eq(BzTemplates.template("synobj01", bzn_path), "", "unknown prjid vs default reference")
+	var geyser := BzTemplates.template("eggeizr1")
+	t.ok(geyser.begins_with("[GameObject]"), "default reference block loads")
+	t.ok(geyser.contains("eggeizr1"), "default reference is the geyser template")
 
 	# --- empty bzn header/tail falls back to reference ---
 	var bare_bzn := work.path_join("bare.bzn")
