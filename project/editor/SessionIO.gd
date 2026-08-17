@@ -32,9 +32,8 @@ func handle_more(id: int) -> void:
 			Backend.probe()
 		TopBarScript.MORE_HELP:
 			shell._help.popup_help()
-		TopBarScript.MORE_SAVE_AS:
-			shell._save_as = true
-			save()
+		# MORE_SAVE_AS never reaches here — TopBar intercepts it and emits
+		# save_as_requested instead.
 
 
 func import_assets() -> void:

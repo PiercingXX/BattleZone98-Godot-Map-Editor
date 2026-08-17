@@ -13,6 +13,19 @@ func _ready() -> void:
 	_box.size = Vector3(8, 6, 8)
 
 
+func reset() -> void:
+	# Session changed: ids from the old map must not survive into the new
+	# one (backend ids are only unique within a session).
+	for id in _by_id.keys():
+		var inst: Node = _by_id[id]
+		if inst:
+			inst.queue_free()
+	_by_id.clear()
+	if _ghost:
+		_ghost.queue_free()
+		_ghost = null
+
+
 func rebuild(objects: Dictionary, field: HeightField) -> void:
 	var live: Dictionary = {}
 	for variant in objects.keys():
@@ -99,7 +112,8 @@ func pick(origin: Vector3, direction: Vector3) -> String:
 		if MapState.find_object_variant(str(id)) != MapState.active_variant:
 			continue
 		var size := _size_for(str(rec.get("prjid", "")))
-		var center := inst.position
+		# inst.position is the object's base; the visual extends size.y up.
+		var center := inst.position + Vector3(0.0, size.y * 0.5, 0.0)
 		var t := _ray_aabb(origin, direction, center, size)
 		if t >= 0.0 and t < best_t:
 			best_t = t

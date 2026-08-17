@@ -11,9 +11,12 @@ func run(t) -> void:
 
 	Backend.available = true
 	Backend.test_worker = _stub
-	var s1 := Backend.call_started.connect(func(v): started.append(v))
-	var s2 := Backend.call_finished.connect(func(v, _r): finished.append(v))
-	var s3 := Backend.call_failed.connect(func(v, e): failed.append("%s:%s" % [v, e]))
+	var on_started := func(v): started.append(v)
+	var on_finished := func(v, _r): finished.append(v)
+	var on_failed := func(v, e): failed.append("%s:%s" % [v, e])
+	Backend.call_started.connect(on_started)
+	Backend.call_finished.connect(on_finished)
+	Backend.call_failed.connect(on_failed)
 
 	Backend.run("probe")
 	Backend.run("worlds")
@@ -32,9 +35,9 @@ func run(t) -> void:
 	t.eq(started, ["probe", "worlds", "assets"], "sequential start")
 	t.eq(finished, ["probe", "worlds", "assets"], "sequential finish")
 
-	Backend.call_started.disconnect(s1)
-	Backend.call_finished.disconnect(s2)
-	Backend.call_failed.disconnect(s3)
+	Backend.call_started.disconnect(on_started)
+	Backend.call_finished.disconnect(on_finished)
+	Backend.call_failed.disconnect(on_failed)
 	Backend.test_worker = old_worker
 	Backend.available = was_available
 

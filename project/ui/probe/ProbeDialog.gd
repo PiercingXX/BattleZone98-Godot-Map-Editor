@@ -7,9 +7,6 @@ signal install_chosen(path: String)
 @onready var _current: Label = %Current
 @onready var _use: Button = %Use
 
-var _paths: Array[String] = []
-
-
 func _ready() -> void:
 	close_requested.connect(hide)
 	_use.pressed.connect(_on_use)
@@ -19,26 +16,26 @@ func _ready() -> void:
 
 func show_probe(result: Dictionary) -> void:
 	_list.clear()
-	_paths.clear()
 	var installs: Array = result.get("installs", [])
 	for item in installs:
 		if typeof(item) != TYPE_DICTIONARY:
 			continue
 		var kind := str(item.get("kind", ""))
 		var path := str(item.get("path", ""))
+		var src := str(item.get("source", ""))
 		var extra := ""
 		if kind == "workshop_item":
-			extra = "  [%s %s]" % [item.get("id", ""), item.get("source", "")]
+			extra = "  [%s %s]" % [item.get("id", ""), src]
 			if str(item.get("id", "")) == "3406347034" and Settings.last_map_dir.is_empty():
 				Settings.last_map_dir = path
 				Settings.save()
+		elif not src.is_empty():
+			extra = "  [%s]" % src
 		var i := _list.add_item("%s  %s%s" % [kind, path, extra])
 		_list.set_item_metadata(i, item)
-		_paths.append(path if kind == "game" else "")
 	for warning in result.get("warnings", []):
 		var wi := _list.add_item("warning: %s" % warning)
 		_list.set_item_metadata(wi, {})
-		_paths.append("")
 	var root := Settings.game_root
 	_current.text = "Using: %s" % (root if not root.is_empty() else "(none)")
 	_use.disabled = true

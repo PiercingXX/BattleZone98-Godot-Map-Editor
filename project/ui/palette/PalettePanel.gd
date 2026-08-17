@@ -78,15 +78,17 @@ func _on_swatch(id: int) -> void:
 
 
 func _highlight_swatch() -> void:
-	var colors := MaterialPalette.colors()
+	# Recolor the borders on the styleboxes refresh_swatches() built (each
+	# button owns its own) so margins and hover styling survive.
 	for i in _swatch_buttons.size():
 		var b: Button = _swatch_buttons[i]
-		var sb := StyleBoxFlat.new()
-		sb.bg_color = colors[i] if i < colors.size() else Color.GRAY
-		sb.set_border_width_all(2)
+		if not b.has_theme_stylebox_override("normal"):
+			continue
+		var sb := b.get_theme_stylebox("normal") as StyleBoxFlat
+		if sb == null:
+			continue
 		var active := i == ToolState.paint_material
 		sb.border_color = Color(0.95, 0.85, 0.25) if active else Color(1, 1, 1, 0.15)
-		b.add_theme_stylebox_override("normal", sb)
 
 
 func _fill() -> void:

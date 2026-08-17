@@ -307,7 +307,7 @@ func _set_tool(name: String) -> void:
 
 func _on_tool_state(name: String) -> void:
 	_sculpt.mode = name
-	_top.set_tool(name)
+	# TopBar subscribes to ToolState.tool_changed itself.
 	_apply_grid()
 	if name != "place":
 		_objects.set_ghost(false, {}, MapState.field, Vector3.UP)
@@ -469,6 +469,8 @@ func _fill_inspector() -> void:
 
 
 func _on_session_changed() -> void:
+	if _objects.has_method("reset"):
+		_objects.reset()
 	_refresh_map_label()
 	_top.fill_variants(MapState.manifest.get("variants", [""]), MapState.active_variant)
 	_try_load_asset_index()

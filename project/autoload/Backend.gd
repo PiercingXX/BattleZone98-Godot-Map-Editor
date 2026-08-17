@@ -162,10 +162,10 @@ func run(verb: String, extra_args: PackedStringArray = PackedStringArray()) -> v
 			"hint": "from the repo root: python3 -m venv .venv && .venv/bin/pip install -e backend",
 		})
 		return
-	if busy:
-		_queue.append({"verb": verb, "args": extra_args})
-		return
-	_begin(verb, extra_args)
+	# Always go through the queue so calls made from finish handlers
+	# (while earlier calls are still queued) keep FIFO order.
+	_queue.append({"verb": verb, "args": extra_args})
+	_try_dequeue()
 
 
 func _begin(verb: String, extra_args: PackedStringArray) -> void:
@@ -224,10 +224,11 @@ func _finish_call(payload: Dictionary) -> void:
 	var stdout_text := str(payload.get("stdout", ""))
 	if not stderr_text.is_empty():
 		_emit_noise_lines(stderr_text)
-	var json_start := stdout_text.rfind("{")
+	var extracted := _extract_json_object(stdout_text)
+	var json_start := int(extracted.get("start", -1))
 	if json_start > 0:
 		_emit_noise_lines(stdout_text.substr(0, json_start))
-	var parsed := _parse_json_object(stdout_text)
+	var parsed: Dictionary = extracted.get("data", {})
 	if parsed.is_empty():
 		call_failed.emit(verb, {
 			"code": "backend_crash",
@@ -266,20 +267,51 @@ func _remember_game_root(probe: Dictionary) -> void:
 
 
 func _parse_json_object(text: String) -> Dictionary:
-	# stdout may have been mixed with stderr; take the last JSON object.
-	var start := text.rfind("{")
-	if start < 0:
-		return {}
-	var slice := text.substr(start)
-	var json := JSON.new()
-	if json.parse(slice) != OK:
-		# Try the whole text.
-		if json.parse(text.strip_edges()) != OK:
-			return {}
-	var data: Variant = json.data
-	if typeof(data) != TYPE_DICTIONARY:
-		return {}
+	var data: Dictionary = _extract_json_object(text).get("data", {})
 	return data
+
+
+func _extract_json_object(text: String) -> Dictionary:
+	# stdout may carry log noise before the (pretty-printed) JSON reply.
+	# rfind("{") would land on a nested object, so track brace depth outside
+	# string literals and try each top-level "{" from the last one back.
+	var candidates := PackedInt32Array()
+	var depth := 0
+	var in_string := false
+	var escaped := false
+	for i in text.length():
+		var c := text.unicode_at(i)
+		if c == 0x0A:  # valid JSON never has a raw newline inside a string
+			in_string = false
+			escaped = false
+		elif in_string:
+			if escaped:
+				escaped = false
+			elif c == 0x5C:  # backslash
+				escaped = true
+			elif c == 0x22:  # quote
+				in_string = false
+		elif c == 0x22:
+			in_string = true
+		elif c == 0x7B:  # {
+			if depth == 0:
+				candidates.append(i)
+			depth += 1
+		elif c == 0x7D:  # }
+			depth = maxi(depth - 1, 0)
+	var json := JSON.new()
+	for k in range(candidates.size() - 1, -1, -1):
+		if json.parse(text.substr(candidates[k])) == OK and typeof(json.data) == TYPE_DICTIONARY:
+			return {"start": candidates[k], "data": json.data}
+	# Unbalanced braces in the noise can hide the real "{" from the depth
+	# scan; the plain last-brace slice still catches a flat trailing object.
+	var last := text.rfind("{")
+	if last >= 0 and not candidates.has(last):
+		if json.parse(text.substr(last)) == OK and typeof(json.data) == TYPE_DICTIONARY:
+			return {"start": last, "data": json.data}
+	if json.parse(text.strip_edges()) == OK and typeof(json.data) == TYPE_DICTIONARY:
+		return {"start": 0, "data": json.data}
+	return {"start": -1, "data": {}}
 
 
 func probe() -> void:

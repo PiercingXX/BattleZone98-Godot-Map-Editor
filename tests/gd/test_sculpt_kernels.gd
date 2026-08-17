@@ -19,7 +19,11 @@ func run(t) -> void:
 		prev = w
 	sculpt.shape = "square"
 	t.eq(sculpt._weight(0.0, 0.0, 41.0, 0.0), 0.0)
-	t.ok(sculpt._weight(0.0, 0.0, 40.0, 40.0) <= 0.0001, "square uses chebyshev")
+	# (30,30): chebyshev 30 <= r, euclidean 42.4 > r — distinguishes the shapes.
+	t.ok(sculpt._weight(0.0, 0.0, 30.0, 30.0) > 0.0, "square reaches the corner (chebyshev)")
+	sculpt.shape = "circle"
+	t.eq(sculpt._weight(0.0, 0.0, 30.0, 30.0), 0.0, "circle excludes the corner")
+	sculpt.shape = "square"
 	t.ok(sculpt._weight(0.0, 0.0, 20.0, 0.0) > 0.0)
 
 	var saved = MapState.field

@@ -411,3 +411,41 @@ just selects).
   Window min size 1280×720.
 - Findings: severity colours, faded "(stale)" prefix, inline Validate,
   single-click select / double-click fly-to.
+
+---
+
+## Review fixes (2026-08-17)
+
+A full code audit confirmed all phases implemented as described above. Two
+real bugs and several nits were found and fixed:
+
+- **`Backend.gd` JSON extraction** — `rfind("{")` landed on a *nested*
+  object for any reply like probe's `{"ok":…,"installs":[{…}]}`, spamming
+  the console with fake noise and, when real noise preceded a nested reply,
+  failing the parse entirely (`backend_crash`). Replaced with a brace-depth
+  scan (`_extract_json_object`) that tries each top-level `{` from the last
+  one back, with rfind + whole-text fallbacks. New cases in
+  `test_backend_parse.gd` lock it.
+- **`test_backend_queue.gd`** — `Signal.connect()` returns `Error`, not a
+  `Callable`; passing it to `disconnect()` made the file fail to load.
+  Lambdas are now held in `Callable` vars. (Evidence the editor suite has
+  never run green — see below.)
+- `Backend.run()` now always enqueues + drains, so re-entrant calls from
+  finish handlers can no longer jump ahead of queued items (true FIFO).
+- `ObjectMarkers.reset()` clears `_by_id` + ghost on session change (ids
+  are only unique per session); `pick()` AABB now centered `size.y/2` above
+  the base to match the visual.
+- `test_sculpt_kernels.gd` chebyshev assertion was vacuous ((40,40) is
+  outside both shapes); now uses (30,30), which distinguishes them.
+- `PalettePanel._highlight_swatch` recolors existing styleboxes instead of
+  rebuilding them without margins/hover; `main._on_tool_state` no longer
+  double-calls `TopBar.set_tool` (TopBar self-subscribes).
+- `ProbeDialog`: dead `_paths` removed; `source` shown for all installs,
+  not just workshop items. Dead `MORE_SAVE_AS` branch removed from
+  `SessionIO.handle_more` (TopBar intercepts the id).
+
+**Still open:** Godot is not installed on this machine (`/usr/bin/godot`
+absent despite the environment note above), so the editor suite has still
+never been executed. Backend suite re-verified 2026-08-17: 3 passed,
+12 skipped (no game install here). Next step: install Godot 4.7.1 and run
+`scripts/test.sh`.
