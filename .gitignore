@@ -47,6 +47,11 @@ bzp-snapshot/
 !project/backend/reference/
 !project/backend/reference/**
 
+# Starter templates — generated from vendored reference data by
+# scripts/make_templates.gd, not extracted game assets.
+!templates/
+!templates/**
+
 # The clean-room wall. Format truth lives in docs/formats/; the third-party
 # reference addons it was derived from were deleted on purpose and must not
 # come back. See AGENTS.md rule 8 and docs/formats/README.md.

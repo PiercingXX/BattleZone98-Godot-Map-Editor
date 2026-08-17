@@ -8,6 +8,8 @@ const DarkThemeScript = preload("res://project/ui/DarkTheme.gd")
 @onready var _file_dialog: FileDialog = %FileDialog
 @onready var _save_dialog: FileDialog = %SaveDialog
 @onready var _new_dialog: ConfirmationDialog = %NewDialog
+@onready var _new_guard: ConfirmationDialog = %NewGuardDialog
+@onready var _template_option: OptionButton = %TemplateOption
 @onready var _quit_dialog: ConfirmationDialog = %QuitDialog
 @onready var _stem_edit: LineEdit = %StemEdit
 @onready var _world_option: OptionButton = %WorldOption
@@ -115,6 +117,13 @@ func _wire() -> void:
 	_quit_dialog.custom_action.connect(func(a):
 		if a == "discard":
 			get_tree().quit()
+	)
+	_new_guard.confirmed.connect(_io.new_after_save)
+	_new_guard.add_button("Discard changes", true, "discard")
+	_new_guard.custom_action.connect(func(a):
+		if a == "discard":
+			_new_guard.hide()
+			_io.show_new_dialog()
 	)
 	%Center.gui_input.connect(_on_view_gui_input)
 	%Center.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -374,6 +383,11 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 			_palette.refresh_swatches()
 		"open", "new":
 			MapState.load_from_open(result)
+			if not _io.template_stem.is_empty():
+				MapState.stem = _io.template_stem
+				_io.template_stem = ""
+				MapState.unsaved = true
+				_refresh_map_label()
 			for w in result.get("warnings", []):
 				_log.call("warning: %s" % w)
 			if _is_smoke():
@@ -401,6 +415,8 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 				get_tree().quit()
 			if _is_smoke():
 				get_tree().quit(0)
+			if _io.consume_new_after_save():
+				_io.show_new_dialog()
 		"validate":
 			MapState.findings = result.get("findings", [])
 			MapState.findings_stale = false

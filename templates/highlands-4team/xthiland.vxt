@@ -1,0 +1,9 @@
+avobserv avobserv.des	x	NSDF
+
+svobserv svobserv.des	x	CCA
+
+bvobserv bvobserv.des	x	BDOG
+
+cvobserv cvobserv.des	x	CRA
+
+observer observer.des	x	Observer

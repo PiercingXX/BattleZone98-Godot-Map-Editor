@@ -80,16 +80,90 @@ func open_file(path: String) -> void:
 	Backend.open_map(path, MapState.new_session_dir())
 
 
+var _new_after_save := false
+## Stem to apply to the session once a template open completes.
+var template_stem := ""
+
+
 func new_prompt() -> void:
+	# Guard: an open map with unsaved changes must be saved or explicitly
+	# discarded before the new-map dialog appears.
+	if MapState.has_session and MapState.unsaved:
+		shell._new_guard.popup_centered()
+		return
+	show_new_dialog()
+
+
+func new_after_save() -> void:
+	_new_after_save = true
+	save()
+
+
+func consume_new_after_save() -> bool:
+	var pending := _new_after_save
+	_new_after_save = false
+	return pending
+
+
+func show_new_dialog() -> void:
 	if shell._world_option.item_count == 0 and not Settings.game_root.is_empty():
 		Backend.worlds(Settings.game_root)
+	_fill_templates()
 	shell._new_dialog.popup_centered()
+
+
+static func templates_dir() -> String:
+	return ProjectSettings.globalize_path("res://templates").simplify_path()
+
+
+## Each subfolder of templates/ holding a .trn is one starter template.
+## The folder is read-only to the editor: templates are opened into fresh
+## sessions and never written back.
+static func list_templates() -> Array:
+	var out: Array = []
+	var root := templates_dir()
+	var da := DirAccess.open(root)
+	if da == null:
+		return out
+	var dirs := da.get_directories()
+	for d in dirs:
+		var sub := root.path_join(str(d))
+		var sda := DirAccess.open(sub)
+		if sda == null:
+			continue
+		for f in sda.get_files():
+			if str(f).to_lower().ends_with(".trn"):
+				out.append({"name": str(d), "trn": sub.path_join(str(f))})
+				break
+	return out
+
+
+func _fill_templates() -> void:
+	var opt: OptionButton = shell._template_option
+	opt.clear()
+	opt.add_item("Blank map")
+	opt.set_item_metadata(0, "")
+	for t in list_templates():
+		opt.add_item("Template: %s" % t["name"])
+		opt.set_item_metadata(opt.item_count - 1, t["trn"])
+	opt.select(0)
 
 
 func new_confirmed() -> void:
 	var stem := String(shell._stem_edit.text).strip_edges()
 	if stem.is_empty() or stem.length() > 8:
 		log.call("stem must be 1–8 characters (engine truncates scripts above 8)")
+		return
+	var template_trn := ""
+	if shell._template_option.selected >= 0:
+		template_trn = str(shell._template_option.get_item_metadata(shell._template_option.selected))
+	if not template_trn.is_empty():
+		# New from template: open the template file set into a fresh session
+		# (copy semantics — the template itself is never touched) and adopt
+		# the chosen stem for every later save.
+		template_stem = stem
+		Backend.open_map(template_trn, MapState.new_session_dir())
+		log.call("new %s from template %s" % [stem, template_trn.get_base_dir().get_file()])
 		return
 	var world := "mars"
 	if shell._world_option.selected >= 0 and shell._world_option.get_item_metadata(shell._world_option.selected) != null:
@@ -132,6 +206,10 @@ func dir_selected(dir: String) -> void:
 
 
 func do_save(dir: String) -> void:
+	if dir.simplify_path().begins_with(templates_dir()):
+		log.call("templates/ is read-only — save to a different directory")
+		save(true)
+		return
 	Settings.last_save_dir = dir
 	Settings.save()
 	MapState.persist()

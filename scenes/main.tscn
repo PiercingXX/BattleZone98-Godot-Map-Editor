@@ -148,11 +148,18 @@ ok_button_text = "Save"
 file_mode = 2
 access = 2
 
+[node name="NewGuardDialog" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "Unsaved changes"
+dialog_text = "The open map has unsaved changes.
+Save it before starting a new map?"
+ok_button_text = "Save first"
+
 [node name="NewDialog" type="ConfirmationDialog" parent="."]
 unique_name_in_owner = true
 title = "New map"
 ok_button_text = "Create"
-size = Vector2i(400, 340)
+size = Vector2i(400, 380)
 
 [node name="NewBox" type="VBoxContainer" parent="NewDialog"]
 offset_left = 8.0
@@ -160,6 +167,14 @@ offset_top = 8.0
 offset_right = 392.0
 offset_bottom = 284.0
 theme_override_constants/separation = 8
+
+[node name="TemplateLabel" type="Label" parent="NewDialog/NewBox"]
+layout_mode = 2
+text = "Start from"
+
+[node name="TemplateOption" type="OptionButton" parent="NewDialog/NewBox"]
+unique_name_in_owner = true
+layout_mode = 2
 
 [node name="StemLabel" type="Label" parent="NewDialog/NewBox"]
 layout_mode = 2

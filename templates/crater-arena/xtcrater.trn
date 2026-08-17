@@ -1,0 +1,177 @@
+[Size]
+MinX = 0
+MinZ = 0
+Width = 1280
+Depth = 1280
+Height = 0.000000
+
+[NormalView]
+Time=900
+FogStart= 80
+FogEnd= 250
+FogBreak=40
+VisibilityRange=250
+Intensity=40
+Ambient=0
+FlatRange=250
+ShadowLuma=0
+FogDirection=1
+TerrainShadowLuma=20
+CarAmbient=20
+
+[Atlases]
+MaterialName	= el_detail_atlas
+
+
+[World]
+MusicTrack=20
+
+[Sky]
+SunTexture= sun.0
+SkyType= 0
+SkyHeight = 210
+SkyTexture=elysium.map 
+
+BackdropTexture =
+BackdropDistance= 400
+BackdropWidth   = 800
+BackdropHeight  = 100
+
+[Clouds]
+Count    = 8
+Type     = 0
+TileSize = 1000
+
+Texture0 = acloud2.map
+Size0    = 500
+Height0  = 100
+
+Texture1 = acloud.map
+Size1    = 500
+Height1  = 90
+
+Texture2 = acloud2.map
+Size2    = 500
+Height2  = 80
+
+[Color]
+Palette=elysium.act
+Luma=elysium.lum
+Translucency=elysium.tbl
+Alpha=elysium.alb
+
+[TextureType0] // Packed Dirt
+FlatColor= 201
+SolidA0        = el00sa0.map
+SolidA1        = el00sa1.map
+SolidA2        = el00sa2.map
+SolidA3        = el00sa3.map
+
+SolidB0        = el00sb0.map
+SolidB1        = el00sb1.map
+SolidB2        = el00sb2.map
+SolidB3        = el00sb3.map
+
+SolidC0        = el00sc0.map
+SolidC1        = el00sc1.map
+SolidC2        = el00sc2.map
+SolidC3        = el00sc3.map
+
+DiagonalTo1_A0 = el01da0.map
+DiagonalTo1_A1 = el01da1.map
+DiagonalTo1_A2 = el01da2.map
+DiagonalTo1_A3 = el01da3.map
+
+CapTo1_A0      = el01ca0.map
+CapTo1_A1      = el01ca1.map
+CapTo1_A2      = el01ca2.map
+CapTo1_A3      = el01ca3.map
+
+DiagonalTo2_A0 = el02da0.map
+DiagonalTo2_A1 = el02da1.map
+DiagonalTo2_A2 = el02da2.map
+DiagonalTo2_A3 = el02da3.map
+
+CapTo2_A0      = el02ca0.map
+CapTo2_A1      = el02ca1.map
+CapTo2_A2      = el02ca2.map
+CapTo2_A3      = el02ca3.map
+
+DiagonalTo4_A0 = el04da0.map
+DiagonalTo4_A1 = el04da1.map
+DiagonalTo4_A2 = el04da2.map
+DiagonalTo4_A3 = el04da3.map
+
+CapTo4_A0      = el04ca0.map
+CapTo4_A1      = el04ca1.map
+CapTo4_A2      = el04ca2.map
+CapTo4_A3      = el04ca3.map
+
+
+
+[TextureType1] // Rocky Sand 
+FlatColor= 131
+SolidA0        = el11Sa0.map
+SolidA1        = el11sa1.map
+SolidA2        = el11sa2.map
+SolidA3        = el11sa3.map
+
+SolidB0        = el11Sb0.map
+SolidB1        = el11sb1.map
+SolidB2        = el11sb2.map
+SolidB3        = el11sb3.map
+
+SolidC0        = el11Sc0.map
+SolidC1        = el11sc1.map
+SolidC2        = el11sc2.map
+SolidC3        = el11sc3.map
+
+DiagonalTo2_A0 = el12da0.map
+DiagonalTo2_A1 = el12da1.map
+DiagonalTo2_A2 = el12da2.map
+DiagonalTo2_A3 = el12da3.map
+
+CapTo2_A0      = el12ca0.map
+CapTo2_A1      = el12ca1.map
+CapTo2_A2      = el12ca2.map
+CapTo2_A3      = el12ca3.map
+
+[TextureType2] // Weathered Rock
+FlatColor= 131
+
+SolidA0        = el22Sa0.map
+SolidA1        = el22sa1.map
+SolidA2        = el22sa2.map
+SolidA3        = el22sa3.map
+
+SolidB0        = el22Sb0.map
+SolidB1        = el22sb1.map
+SolidB2        = el22sb2.map
+SolidB3        = el22sb3.map
+
+SolidC0        = el22Sc0.map
+SolidC1        = el22sc1.map
+SolidC2        = el22sc2.map
+SolidC3        = el22sc3.map
+
+[TextureType3] // Geyser
+FlatColor= 201
+
+SolidA0        = el33Sa0.map
+SolidA1        = el33sa1.map
+SolidA2        = el33sa2.map
+SolidA3        = el33sa3.map
+
+[TextureType4] // Base Grid-iron
+FlatColor= 201
+SolidA0        = el04sa0.map
+SolidA1        = el04sa1.map
+SolidA2        = el04sa2.map
+SolidA3        = el04sa3.map
+
+Solidb0        = el04sb0.map
+Solidb1        = el04sb1.map
+Solidb2        = el04sb2.map
+Solidb3        = el04sb3.map
+
+
