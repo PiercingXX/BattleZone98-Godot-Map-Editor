@@ -108,12 +108,6 @@ side by side.
   [Battlezone98Redux_BlenderAIO](https://github.com/BattlezoneScrapField/Battlezone98Redux_BlenderAIO)
   (GPL-3.0), which identified the Redux OGRE model pipeline and pinned down the
   classic GEO/VDF/SDF layouts.
-
-  Both addons were studied under a **clean-room process** and are no longer
-  present in this repository; `bzmap` is written from the functional specs in
-  [`docs/formats/`](docs/formats/README.md), not from their code. Losing the
-  code does not mean losing the acknowledgement — the facts in those specs are
-  knowable because these people did the reverse engineering first.
 - The BZP pack and its maintainer, whose corpus is the ground truth behind
   nearly every format fact these specs rely on.
 - Rebellion, for *Battlezone 98 Redux*. All game assets remain theirs; this tool
