@@ -1,0 +1,106 @@
+[gd_scene load_steps=2 format=3 uid="uid://c8bzinspect0001"]
+
+[ext_resource type="Script" path="res://project/ui/inspector/InspectorPanel.gd" id="1_script"]
+
+[node name="InspectorPanel" type="PanelContainer"]
+script = ExtResource("1_script")
+
+[node name="Box" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ObjLabel" type="Label" parent="Box"]
+layout_mode = 2
+text = "Object"
+
+[node name="Prj" type="LineEdit" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+editable = false
+placeholder_text = "class"
+
+[node name="Label" type="LineEdit" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "label"
+
+[node name="X" type="SpinBox" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -20000.0
+max_value = 20000.0
+step = 0.1
+prefix = "x m "
+
+[node name="Y" type="SpinBox" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -50.0
+max_value = 900.0
+step = 0.1
+prefix = "y m "
+
+[node name="Z" type="SpinBox" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -20000.0
+max_value = 20000.0
+step = 0.1
+prefix = "z m "
+
+[node name="Yaw" type="SpinBox" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -180.0
+max_value = 180.0
+step = 1.0
+prefix = "yaw ° "
+
+[node name="Team" type="SpinBox" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 15.0
+prefix = "team "
+
+[node name="PinHeight" type="CheckBox" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "pin height"
+
+[node name="Mode" type="Label" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "nothing selected"
+
+[node name="Row" type="HBoxContainer" parent="Box"]
+layout_mode = 2
+
+[node name="Apply" type="Button" parent="Box/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Apply"
+
+[node name="Delete" type="Button" parent="Box/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Delete"
+
+[node name="WaterLabel" type="Label" parent="Box"]
+layout_mode = 2
+text = "Water"
+
+[node name="Water" type="SpinBox" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = -1.0
+max_value = 820.0
+step = 0.5
+value = -1.0
+prefix = "line "
+suffix = "m"

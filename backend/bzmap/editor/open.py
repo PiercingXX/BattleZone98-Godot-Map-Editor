@@ -16,6 +16,7 @@ from bzmap.editor.session import (
     resolve_map_input,
     variant_bzn_suffix,
     write_hg2_flags,
+    read_json,
     write_json,
     write_manifest,
     write_materials_u16,
@@ -199,6 +200,12 @@ def open_map(path, session_dir):
         )
 
     features = {"water": [], "plants": []}
+    sidecar = Path(directory) / "features.json"
+    if sidecar.is_file():
+        loaded = read_json(sidecar)
+        if isinstance(loaded, dict):
+            if "water" in loaded or "plants" in loaded:
+                features = loaded
     meta = _parse_meta(files, stem)
     dirty = empty_dirty(present_variants)
 

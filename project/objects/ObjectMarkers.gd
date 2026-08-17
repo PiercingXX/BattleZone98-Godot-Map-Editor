@@ -1,6 +1,6 @@
 extends Node3D
 class_name ObjectMarkers
-## Proxy boxes. Selection and a placement ghost.
+## Proxy boxes. Selection and a placement ghost. Rebuilds by id-diff.
 
 var _box: BoxMesh
 var _ghost: Node3D
@@ -14,11 +14,7 @@ func _ready() -> void:
 
 
 func rebuild(objects: Dictionary, field: HeightField) -> void:
-	for child in get_children():
-		if child == _ghost:
-			continue
-		child.queue_free()
-	_by_id.clear()
+	var live: Dictionary = {}
 	for variant in objects.keys():
 		var records: Variant = objects[variant]
 		if typeof(records) != TYPE_ARRAY:
@@ -27,17 +23,37 @@ func rebuild(objects: Dictionary, field: HeightField) -> void:
 		for rec in records:
 			if typeof(rec) != TYPE_DICTIONARY:
 				continue
-			_place(rec, field, ghosted, str(variant))
+			live[str(rec.get("id", ""))] = {"rec": rec, "ghosted": ghosted}
+	for id in _by_id.keys():
+		if id in live:
+			continue
+		var gone: Node = _by_id[id]
+		if gone:
+			gone.queue_free()
+		_by_id.erase(id)
+	for id in live.keys():
+		var rec: Dictionary = live[id]["rec"]
+		var ghosted: bool = live[id]["ghosted"]
+		if _by_id.has(id):
+			_update_placed(_by_id[id], rec, field, ghosted)
+		else:
+			_place(rec, field, ghosted, str(id))
 
 
 func set_ghost(visible: bool, rec: Dictionary, field: HeightField, normal: Vector3) -> void:
-	if _ghost != null:
-		_ghost.queue_free()
-		_ghost = null
 	if not visible:
+		if _ghost:
+			_ghost.visible = false
 		return
-	_ghost = _make_visual(rec, true)
-	add_child(_ghost)
+	var prjid := str(rec.get("prjid", ""))
+	if _ghost == null or str(_ghost.get_meta("prjid", "")) != prjid:
+		if _ghost:
+			_ghost.queue_free()
+			_ghost = null
+		_ghost = _make_visual(rec, true)
+		_ghost.set_meta("prjid", prjid)
+		add_child(_ghost)
+	_ghost.visible = true
 	var x := float(rec.get("x", 0.0))
 	var z := float(rec.get("z", 0.0))
 	var y := field.height_at(x, z) if field else float(rec.get("y", 0.0))
@@ -93,6 +109,12 @@ func pick(origin: Vector3, direction: Vector3) -> String:
 
 func _place(rec: Dictionary, field: HeightField, ghost: bool, _variant: String) -> void:
 	var inst := _make_visual(rec, ghost)
+	_update_placed(inst, rec, field, ghost)
+	add_child(inst)
+	_by_id[str(rec.get("id", ""))] = inst
+
+
+func _update_placed(inst: Node3D, rec: Dictionary, field: HeightField, ghosted: bool) -> void:
 	var x := float(rec.get("x", 0.0))
 	var z := float(rec.get("z", 0.0))
 	var y := float(rec.get("y", 0.0))
@@ -100,8 +122,21 @@ func _place(rec: Dictionary, field: HeightField, ghost: bool, _variant: String) 
 		y = field.height_at(x, z)
 	inst.position = Vector3(x, y, z)
 	inst.rotation.y = deg_to_rad(float(rec.get("yaw_deg", 0.0)))
-	add_child(inst)
-	_by_id[str(rec.get("id", ""))] = inst
+	inst.visible = true
+	_apply_fade(inst, ghosted)
+
+
+func _apply_fade(node: Node, faded: bool) -> void:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		var mat := mi.material_override as StandardMaterial3D
+		if mat:
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA if faded else BaseMaterial3D.TRANSPARENCY_DISABLED
+			var c := mat.albedo_color
+			c.a = 0.22 if faded else 1.0
+			mat.albedo_color = c
+	for child in node.get_children():
+		_apply_fade(child, faded)
 
 
 func _make_visual(rec: Dictionary, faded: bool) -> Node3D:

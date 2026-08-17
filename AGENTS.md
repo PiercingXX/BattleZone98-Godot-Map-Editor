@@ -70,6 +70,9 @@ define, not a game format.
 ## Environment
 
 - **Godot 4.7 stable**, pinned. GDScript, not C#.
+- Tests: `scripts/test.sh` runs `pytest backend/tests` then the headless
+  GDScript suite (`scripts/test-editor.sh`). Run it after any task that
+  touches `backend/` or editor GDScript.
 - **Cross-platform: Linux and Windows, both first-class.** Every path,
   subprocess call, and install-discovery routine must work on both. No
   shell-isms, no hardcoded separators, no assuming Proton.
@@ -88,7 +91,7 @@ Working editor, not a smoke shell:
   multi-zone). Binary BZNs are detected and refused — there is still no
   binary reader, so they are not silently converted.
 - Viewport: GPU-displaced chunks, analytic raycast, slope / material / brush
-  overlays, fly camera (walk-the-surface is Alt).
+  overlays, fly camera (walk-the-surface is V).
 - Sculpt + paint + ramp + undo. Writes clamp to raw 1..4095; inherited
   out-of-range cells pass through until touched.
 - Assets: `bzmap editor assets` enumerates the install, writes proxy icons,

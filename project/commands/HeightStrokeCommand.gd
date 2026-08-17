@@ -23,6 +23,10 @@ func setup(p_x0: int, p_z0: int, p_w: int, p_d: int, p_before: PackedInt32Array,
 	uploaded_bytes = width * depth * 4
 
 
+func cost_bytes() -> int:
+	return (before.size() + after.size()) * 4
+
+
 func do() -> void:
 	MapState.field.write_rect(x0, z0, width, depth, after)
 	_apply_snaps(snaps_after)

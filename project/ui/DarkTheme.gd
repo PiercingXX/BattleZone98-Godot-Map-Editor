@@ -21,6 +21,10 @@ static func make() -> Theme:
 
 	t.set_stylebox("panel", "PanelContainer", _box(panel, edge, 8, 1))
 	t.set_stylebox("panel", "Panel", _box(panel, edge, 8, 1))
+	t.set_constant("margin_left", "MarginContainer", 8)
+	t.set_constant("margin_right", "MarginContainer", 8)
+	t.set_constant("margin_top", "MarginContainer", 6)
+	t.set_constant("margin_bottom", "MarginContainer", 6)
 
 	t.set_stylebox("normal", "Button", _box(Color(0.26, 0.26, 0.28, 1), edge, 8, 1))
 	t.set_stylebox("hover", "Button", _box(hover, edge, 8, 1))

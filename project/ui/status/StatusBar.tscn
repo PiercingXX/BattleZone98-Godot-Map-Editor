@@ -1,0 +1,39 @@
+[gd_scene load_steps=2 format=3 uid="uid://c8bzstatus00001"]
+
+[ext_resource type="Script" path="res://project/ui/status/StatusBar.gd" id="1_script"]
+
+[node name="StatusBar" type="PanelContainer"]
+custom_minimum_size = Vector2(0, 28)
+script = ExtResource("1_script")
+
+[node name="Inner" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Cursor" type="Label" parent="Inner"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Open a map to begin"
+
+[node name="MapInfo" type="Label" parent="Inner"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+
+[node name="Status" type="Label" parent="Inner"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "starting"
+
+[node name="Debug" type="Label" parent="Inner"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+
+[node name="Log" type="Button" parent="Inner"]
+unique_name_in_owner = true
+layout_mode = 2
+toggle_mode = true
+tooltip_text = "Toggle console  (`)"
+text = "Log"

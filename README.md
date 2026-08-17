@@ -74,11 +74,17 @@ python3 -m venv .venv
 godot --path .
 ```
 
+Tests (backend pytest + editor GDScript suite):
+
+```bash
+scripts/test.sh
+```
+
 Then **Probe** (finds your Steam install) → **Open map…** and pick a `.trn` /
 `.bzn` / `.hg2` from BZP or a generated set.
 
-- Fly: `WASD` `Q`/`E`, right mouse look, `F` frame, `Space` top-down, `H` slope
-- Tools: `1`–`8` or the toolbar. `[` / `]` brush radius. `Ctrl+Z` undo.
+- Fly: `WASD` `Q`/`E`, right mouse look, `F` frame, `Space` top-down, `H` slope, `V` walk-the-surface
+- Tools: `1`–`8` or the toolbar (`9` select, `0` noise). `[` / `]` brush radius. `Ctrl+Z` undo.
 - LMB sculpts or places. Palette search is on the left. `F1` is the hotkey list.
 - First run imports an asset index (labelled proxies). Import assets again
   after a game or BZP update.

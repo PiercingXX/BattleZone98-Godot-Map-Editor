@@ -12,6 +12,7 @@ var _show_slope: bool = false
 
 func _ready() -> void:
 	_shader = load("res://project/shaders/terrain.gdshader") as Shader
+	MapState.water_changed.connect(set_water_level)
 
 
 func set_slope_overlay(on: bool) -> void:
@@ -41,9 +42,9 @@ func set_show_grid(on: bool) -> void:
 
 
 func refresh_materials() -> void:
-	var colors := _palette_colors()
+	var colors := MaterialPalette.colors()
 	var atlas := _load_atlas()
-	var uvs := _atlas_uvs()
+	var uvs := MaterialPalette.atlas_uvs()
 	for child in get_children():
 		if child is MeshInstance3D:
 			var mat := (child as MeshInstance3D).material_override as ShaderMaterial
@@ -80,60 +81,12 @@ func _load_atlas() -> Texture2D:
 	return null
 
 
-func _atlas_uvs() -> PackedVector4Array:
-	var out := PackedVector4Array()
-	out.resize(16)
-	for i in 16:
-		out[i] = Vector4(0.0, 0.0, 0.125, 0.125)
-	for world in MapState.worlds:
-		if typeof(world) != TYPE_DICTIONARY:
-			continue
-		if str(world.get("id", "")).to_lower() != MapState.world.to_lower():
-			continue
-		var uvs: Array = world.get("tile_uvs", [])
-		for i in mini(16, uvs.size()):
-			var r: Array = uvs[i]
-			if r.size() >= 4:
-				out[i] = Vector4(float(r[0]), float(r[1]), float(r[2]), float(r[3]))
-	return out
-
-
 func _set_all(name: String, value: Variant) -> void:
 	for child in get_children():
 		if child is MeshInstance3D:
 			var mat := (child as MeshInstance3D).material_override as ShaderMaterial
 			if mat:
 				mat.set_shader_parameter(name, value)
-
-
-func _palette_colors() -> PackedColorArray:
-	var colors := PackedColorArray()
-	colors.resize(16)
-	var defaults := [
-		Color(0.55, 0.42, 0.28), Color(0.45, 0.48, 0.30), Color(0.40, 0.40, 0.40),
-		Color(0.62, 0.55, 0.38), Color(0.30, 0.35, 0.22), Color(0.70, 0.68, 0.60),
-		Color(0.50, 0.32, 0.22), Color(0.28, 0.30, 0.38),
-	]
-	for i in 16:
-		colors[i] = defaults[i % defaults.size()]
-	for world in MapState.worlds:
-		if typeof(world) != TYPE_DICTIONARY:
-			continue
-		if str(world.get("id", "")).to_lower() != MapState.world.to_lower():
-			continue
-		var types: Array = world.get("texture_types", [])
-		for t in types:
-			if typeof(t) != TYPE_DICTIONARY:
-				continue
-			var idx := int(t.get("index", 0))
-			var rgb: Array = t.get("flat_color", [128, 128, 128])
-			if idx >= 0 and idx < 16 and rgb.size() >= 3:
-				colors[idx] = Color(
-					clampf(float(rgb[0]) / 255.0, 0.0, 1.0),
-					clampf(float(rgb[1]) / 255.0, 0.0, 1.0),
-					clampf(float(rgb[2]) / 255.0, 0.0, 1.0)
-				)
-	return colors
 
 
 func rebuild(p_field: HeightField) -> void:
@@ -151,6 +104,7 @@ func rebuild(p_field: HeightField) -> void:
 		for cx in chunks_x:
 			_add_chunk(cx, cz)
 	refresh_materials()
+	set_water_level(MapState.water_level())
 
 
 func _add_chunk(cx: int, cz: int) -> void:
@@ -177,8 +131,9 @@ func _add_chunk(cx: int, cz: int) -> void:
 	mat.set_shader_parameter("show_slope", _show_slope)
 	if MapState.mat_texture:
 		mat.set_shader_parameter("mat_tex", MapState.mat_texture)
-	mat.set_shader_parameter("mat_colors", _palette_colors())
+	mat.set_shader_parameter("mat_colors", MaterialPalette.colors())
 	mat.set_shader_parameter("show_materials", MapState.mat_grid_x > 0)
+	mat.set_shader_parameter("water_level", MapState.water_level())
 	inst.material_override = mat
 	inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(inst)

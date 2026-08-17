@@ -3,7 +3,7 @@ extends Node
 ##
 ## Invokes the interpreter with an argument array — never a shell string.
 ## Calls run off the main thread. stdout is one JSON object; stderr is
-## surfaced verbatim.
+## surfaced verbatim. A FIFO queue serializes overlapping run() calls.
 
 signal call_started(verb: String)
 signal stderr_line(text: String)
@@ -20,8 +20,12 @@ var last_error: String = ""
 var last_probe: Dictionary = {}
 var busy: bool = false
 
+## Tests may assign a Callable(verb, extra_args) -> Dictionary to skip python.
+var test_worker: Callable = Callable()
+
 var _thread: Thread
 var _pending_verb: String = ""
+var _queue: Array = []
 
 
 func _ready() -> void:
@@ -65,6 +69,7 @@ func _discover() -> void:
 			continue
 		if _can_import(python_exe, resolved):
 			available = true
+			OS.set_environment("PYTHONPATH", resolved)
 			Settings.bzmap_home = resolved
 			Settings.python_path = python_exe
 			Settings.save()
@@ -72,10 +77,12 @@ func _discover() -> void:
 			return
 
 	var path_python := _find_on_path()
-	if not path_python.is_empty() and _can_import(path_python, project_root.path_join("backend")):
+	var bundled := project_root.path_join("backend")
+	if not path_python.is_empty() and _can_import(path_python, bundled):
 		python_exe = path_python
-		bzmap_home = project_root.path_join("backend")
+		bzmap_home = bundled
 		available = true
+		OS.set_environment("PYTHONPATH", bundled)
 		discovered.emit(true, "backend via PATH (%s)" % path_python)
 		return
 
@@ -123,8 +130,6 @@ func _python_for(home: String, project_root: String = "") -> String:
 
 func _find_on_path() -> String:
 	for name in ["python3", "python"]:
-		var out: Array = []
-		# `command -v` is a shell-ism — walk PATH ourselves.
 		var path_env := OS.get_environment("PATH")
 		var sep := ";" if OS.get_name() == "Windows" else ":"
 		for dir in path_env.split(sep):
@@ -134,8 +139,6 @@ func _find_on_path() -> String:
 					return candidate + ".exe"
 			if FileAccess.file_exists(candidate):
 				return candidate
-		# Silence unused.
-		var _u: Array = out
 	return ""
 
 
@@ -152,12 +155,6 @@ func _can_import(python: String, home: String) -> bool:
 
 
 func run(verb: String, extra_args: PackedStringArray = PackedStringArray()) -> void:
-	if busy:
-		call_failed.emit(verb, {
-			"code": "busy",
-			"message": "a backend call is already running",
-		})
-		return
 	if not available:
 		call_failed.emit(verb, {
 			"code": "no_backend",
@@ -165,51 +162,39 @@ func run(verb: String, extra_args: PackedStringArray = PackedStringArray()) -> v
 			"hint": "from the repo root: python3 -m venv .venv && .venv/bin/pip install -e backend",
 		})
 		return
+	if busy:
+		_queue.append({"verb": verb, "args": extra_args})
+		return
+	_begin(verb, extra_args)
+
+
+func _begin(verb: String, extra_args: PackedStringArray) -> void:
 	busy = true
 	_pending_verb = verb
 	call_started.emit(verb)
 	_thread = Thread.new()
-	_thread.start(_worker.bind(verb, extra_args))
+	if test_worker.is_valid():
+		_thread.start(test_worker.bind(verb, extra_args))
+	else:
+		_thread.start(_worker.bind(verb, extra_args))
 
 
 func _worker(verb: String, extra_args: PackedStringArray) -> Dictionary:
 	var argv := PackedStringArray(["-m", "bzmap.cli", "editor", verb])
 	argv.append_array(extra_args)
 	argv.append("--json")
-	var old_pp := OS.get_environment("PYTHONPATH")
-	if not bzmap_home.is_empty():
-		OS.set_environment("PYTHONPATH", bzmap_home)
-	var stdout_text := ""
-	var stderr_text := ""
-	var code := -1
-	if OS.has_method("execute_with_pipe"):
-		var pipe: Variant = OS.call("execute_with_pipe", python_exe, argv, true)
-		if typeof(pipe) == TYPE_DICTIONARY and not pipe.is_empty():
-			var stdout_f: FileAccess = pipe.get("stdio")
-			var stderr_f: FileAccess = pipe.get("stderr")
-			if stdout_f:
-				stdout_text = stdout_f.get_as_text()
-			if stderr_f:
-				stderr_text = stderr_f.get_as_text()
-			code = 0 if stdout_text.strip_edges().begins_with("{") else 1
-		else:
-			code = -1
-	if stdout_text.is_empty():
-		var output: Array = []
-		code = OS.execute(python_exe, argv, output, true, false)
-		var combined := ""
-		for line in output:
-			combined += str(line)
-			if not str(line).ends_with("\n"):
-				combined += "\n"
-		stdout_text = combined
-	if not bzmap_home.is_empty():
-		OS.set_environment("PYTHONPATH", old_pp)
+	var output: Array = []
+	var code := OS.execute(python_exe, argv, output, true, false)
+	var combined := ""
+	for line in output:
+		combined += str(line)
+		if not str(line).ends_with("\n"):
+			combined += "\n"
 	return {
 		"verb": verb,
 		"code": code,
-		"stdout": stdout_text,
-		"stderr": stderr_text,
+		"stdout": combined,
+		"stderr": "",
 	}
 
 
@@ -222,22 +207,33 @@ func _process(_delta: float) -> void:
 	_thread = null
 	busy = false
 	_finish_call(payload)
+	_try_dequeue()
+
+
+func _try_dequeue() -> void:
+	if busy or _queue.is_empty():
+		return
+	var item: Dictionary = _queue.pop_front()
+	_begin(str(item.get("verb", "")), item.get("args", PackedStringArray()))
 
 
 func _finish_call(payload: Dictionary) -> void:
 	var verb := str(payload.get("verb", _pending_verb))
+	var code := int(payload.get("code", -1))
 	var stderr_text := str(payload.get("stderr", ""))
-	if not stderr_text.is_empty():
-		for line in stderr_text.split("\n"):
-			if not line.is_empty():
-				stderr_line.emit(line)
 	var stdout_text := str(payload.get("stdout", ""))
+	if not stderr_text.is_empty():
+		_emit_noise_lines(stderr_text)
+	var json_start := stdout_text.rfind("{")
+	if json_start > 0:
+		_emit_noise_lines(stdout_text.substr(0, json_start))
 	var parsed := _parse_json_object(stdout_text)
 	if parsed.is_empty():
 		call_failed.emit(verb, {
 			"code": "backend_crash",
 			"message": "backend produced no parseable JSON",
 			"hint": stdout_text if not stdout_text.is_empty() else stderr_text,
+			"exit_code": code,
 		})
 		return
 	if parsed.get("ok", false):
@@ -250,6 +246,12 @@ func _finish_call(payload: Dictionary) -> void:
 		if err.is_empty():
 			err = {"code": "failed", "message": str(parsed)}
 		call_failed.emit(verb, err)
+
+
+func _emit_noise_lines(text: String) -> void:
+	for line in text.split("\n"):
+		if not line.is_empty():
+			stderr_line.emit(line)
 
 
 func _remember_game_root(probe: Dictionary) -> void:

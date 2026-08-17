@@ -1,0 +1,44 @@
+[gd_scene load_steps=2 format=3 uid="uid://c8bzprobe000001"]
+
+[ext_resource type="Script" path="res://project/ui/probe/ProbeDialog.gd" id="1_script"]
+
+[node name="ProbeDialog" type="Window"]
+title = "Install probe"
+size = Vector2i(640, 420)
+visible = false
+script = ExtResource("1_script")
+
+[node name="Margin" type="MarginContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="Box" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Hint" type="Label" parent="Margin/Box"]
+layout_mode = 2
+text = "Found installs. Select a game entry and click Use this install."
+autowrap_mode = 3
+
+[node name="List" type="ItemList" parent="Margin/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Current" type="Label" parent="Margin/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Using: (none)"
+
+[node name="Use" type="Button" parent="Margin/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Use this install"

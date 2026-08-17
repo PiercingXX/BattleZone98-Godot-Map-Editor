@@ -237,6 +237,12 @@ def save_session(session_dir, out_dir, stem=None):
             identical.append(dest.name)
 
     # Derived-file note: we never invent a .lgt on an untouched save.
+    features = read_json(paths["features"]) if paths["features"].is_file() else {}
+    if features:
+        dest_feat = out_dir / "features.json"
+        shutil.copy2(paths["features"], dest_feat)
+        if dest_feat.name not in written:
+            written.append(dest_feat.name)
     return {
         "ok": True,
         "files": sorted(set(written)),
@@ -245,4 +251,5 @@ def save_session(session_dir, out_dir, stem=None):
         "warnings": warnings,
         "out": str(out_dir.resolve()),
         "stem": out_stem,
+        "features": features,
     }

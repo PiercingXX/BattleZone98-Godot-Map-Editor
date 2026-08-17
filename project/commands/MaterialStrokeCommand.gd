@@ -18,6 +18,10 @@ func setup(p_x0: int, p_z0: int, p_w: int, p_d: int, p_before: PackedInt32Array,
 	after = p_after
 
 
+func cost_bytes() -> int:
+	return (before.size() + after.size()) * 4
+
+
 func do() -> void:
 	MapState.write_materials_rect(x0, z0, width, depth, after)
 	MapState.mark_materials_dirty()

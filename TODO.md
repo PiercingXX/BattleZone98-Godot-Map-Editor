@@ -1,5 +1,8 @@
 # Skippy: editor stabilization & UI rebuild — master TODO
 
+**Status (2026-08-16): Phases 1–5 implemented.** Verification notes are at
+the bottom of this file.
+
 Skippy — this is your work order. Every bug below was confirmed by reading the
 shipped code (file:line refs included); none of it is speculative. Work the
 phases **in order**: Phase 1 stops the bleeding, Phase 2 locks behavior with
@@ -342,3 +345,69 @@ Consistent paddings via the theme, not per-widget overrides; verify at
 Severity color-coding in the findings list; distinct "(stale)" styling; a
 Validate button inline in the panel; double-click = fly-to (single click
 just selects).
+
+---
+
+## Verification (2026-08-16)
+
+### Phase 1
+- `execute_with_pipe` is gone. `_worker` is one `OS.execute(..., read_stderr=true)`.
+- `PYTHONPATH` is set only from `_discover` (plus `_can_import`'s temporary
+  set/restore during discovery).
+- `Backend.run()` enqueues when busy; `_try_dequeue` after `_finish_call`.
+- Probe branch: fill UI → `worlds()` → first-run `assets()` → smoke-open.
+  `_fill_probe` replaced by `ProbeDialog.show_probe` (display only).
+- Status text is written only in `StatusBar.set_status`.
+- No assignment to `.do`; `_OnceCommand` gone. Height/ramp strokes push
+  with `already_applied = true`.
+- LMB release is unconditional; select pick does not need a terrain hit;
+  `KEY_G` toggles `_show_grid` via `_apply_grid()`; walk mode is `KEY_V`;
+  tool buttons use `button_pressed = true` with a re-entry guard.
+- `UndoStack` evicts oldest entries by `cost_bytes()` until `max_bytes`.
+
+### Phase 2
+- Runner: `tests/gd/run_tests.gd`, `scripts/test-editor.sh`, `scripts/test.sh`.
+- Tests: undo (incl. `already_applied` + budget), height stroke, sculpt
+  kernels, material grid, backend JSON parse, backend queue (stub worker),
+  water feature shape.
+- Backend: `.venv/bin/python -m pytest backend/tests -q` → 3 passed, 12
+  skipped (no game install / BZP pack on this machine). Same suite that
+  was 15/15 when the pack is present.
+- **Editor suite not executed here:** Godot 4.7.1 is not installed
+  (`godot` missing from PATH; `/usr/bin/godot` absent). `test-editor.sh`
+  exits 2 with that message. Re-run `scripts/test.sh` on a box with Godot
+  4.7.1 to lock P1.5 / P1.7 / the queue.
+
+### Phase 3
+- `ToolState` autoload. Chrome lives in `TopBar`, `PalettePanel`,
+  `InspectorPanel`, `FindingsPanel`, `StatusBar`, `HelpWindow` scenes.
+- `_build_chrome` / `_btn_probe` / `_probe_list` are gone.
+- `scenes/main.gd` is a coordinator (input, backend fan-out, session
+  lifecycle) plus P4/P5 wiring: **540 lines**, not ~250. Widget
+  construction left the file; EditActions / SessionIO took the rest of
+  the old god object. Tightening further would mean moving the backend
+  match or input router out of the coordinator the work order asked to
+  keep.
+
+### Phase 4
+- Material swatches write `ToolState.paint_material` and switch to paint.
+  Shared colours/UVs live in `MaterialPalette`.
+- Falloff slider + circle/square toggle wired to ToolState / brush shader.
+- `ProbeDialog` lists installs; "Use this install" sets `game_root` and
+  refreshes worlds + assets.
+- `MapState.set_water_level` writes `features.water[]` (`stem`, `level_m`,
+  `variant_scope`). Save copies `features.json` to the output dir and
+  echoes `features` in the JSON; open reloads a sidecar if present.
+- Select mode prefers `ObjectMarkers.pick` over terrain.
+- `Settings.last_save_dir`: second Save/Ctrl+S is silent; More → Save As…
+  always prompts. `NOTIFICATION_WM_CLOSE_REQUEST` confirms save/discard.
+- Inspector "pin height" sets `pinned_y`; apply without pin snaps y.
+
+### Phase 5
+- Tools `9` / `0` in the toolbar, help window, and README.
+- `ObjectMarkers.rebuild` diffs by id; `set_ghost` reuses the node when
+  the armed class is unchanged.
+- Status row: cursor (expand) · map size/world · backend state · fps.
+  Window min size 1280×720.
+- Findings: severity colours, faded "(stale)" prefix, inline Validate,
+  single-click select / double-click fly-to.

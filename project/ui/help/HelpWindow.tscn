@@ -1,0 +1,28 @@
+[gd_scene load_steps=2 format=3 uid="uid://c8bzhelpwin0001"]
+
+[ext_resource type="Script" path="res://project/ui/help/HelpWindow.gd" id="1_script"]
+
+[node name="HelpWindow" type="Window"]
+title = "Hotkeys"
+size = Vector2i(520, 340)
+visible = false
+unresizable = false
+script = ExtResource("1_script")
+
+[node name="Margin" type="MarginContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="Body" type="RichTextLabel" parent="Margin"]
+unique_name_in_owner = true
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+scroll_active = false

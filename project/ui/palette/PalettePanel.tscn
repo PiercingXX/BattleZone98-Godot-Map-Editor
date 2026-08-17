@@ -1,0 +1,122 @@
+[gd_scene load_steps=3 format=3 uid="uid://c8bzpalette0001"]
+
+[ext_resource type="Script" path="res://project/ui/palette/PalettePanel.gd" id="1_script"]
+
+[sub_resource type="ButtonGroup" id="ShapeGroup"]
+
+[node name="PalettePanel" type="PanelContainer"]
+custom_minimum_size = Vector2(252, 0)
+script = ExtResource("1_script")
+
+[node name="Box" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PaletteLabel" type="Label" parent="Box"]
+layout_mode = 2
+text = "Palette"
+
+[node name="Search" type="LineEdit" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Search units…"
+
+[node name="ClassList" type="ItemList" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="BrushLabel" type="Label" parent="Box"]
+layout_mode = 2
+text = "Brush"
+
+[node name="RadiusRow" type="HBoxContainer" parent="Box"]
+layout_mode = 2
+
+[node name="RadiusName" type="Label" parent="Box/RadiusRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Radius"
+
+[node name="RadiusVal" type="Label" parent="Box/RadiusRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "40 m"
+
+[node name="Radius" type="HSlider" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 5.0
+max_value = 400.0
+value = 40.0
+
+[node name="StrengthRow" type="HBoxContainer" parent="Box"]
+layout_mode = 2
+
+[node name="StrengthName" type="Label" parent="Box/StrengthRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Strength"
+
+[node name="StrengthVal" type="Label" parent="Box/StrengthRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "45%"
+
+[node name="Strength" type="HSlider" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.05
+max_value = 1.0
+step = 0.05
+value = 0.45
+
+[node name="FalloffRow" type="HBoxContainer" parent="Box"]
+layout_mode = 2
+
+[node name="FalloffName" type="Label" parent="Box/FalloffRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Falloff"
+
+[node name="FalloffVal" type="Label" parent="Box/FalloffRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "65%"
+
+[node name="Falloff" type="HSlider" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 1.0
+step = 0.05
+value = 0.65
+
+[node name="ShapeRow" type="HBoxContainer" parent="Box"]
+layout_mode = 2
+
+[node name="ShapeCircle" type="Button" parent="Box/ShapeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+button_pressed = true
+button_group = SubResource("ShapeGroup")
+text = "Circle"
+
+[node name="ShapeSquare" type="Button" parent="Box/ShapeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+button_group = SubResource("ShapeGroup")
+text = "Square"
+
+[node name="MatsLabel" type="Label" parent="Box"]
+layout_mode = 2
+text = "Materials"
+
+[node name="Swatches" type="GridContainer" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+columns = 8

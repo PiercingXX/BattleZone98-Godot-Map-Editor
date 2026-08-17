@@ -7,6 +7,7 @@ signal session_changed()
 signal objects_mutated()
 signal materials_changed()
 signal dirty_changed()
+signal water_changed(level: float)
 
 var stem: String = ""
 var width_m: int = 0
@@ -87,6 +88,7 @@ func load_from_open(result: Dictionary) -> void:
 	findings_stale = false
 	UndoStack.clear()
 	session_changed.emit()
+	water_changed.emit(water_level())
 
 
 func persist() -> void:
@@ -124,6 +126,42 @@ func mark_terrain_dirty() -> void:
 	unsaved = true
 	findings_stale = true
 	dirty_changed.emit()
+
+
+func water_level() -> float:
+	var waters: Variant = features.get("water", [])
+	if typeof(waters) != TYPE_ARRAY or waters.is_empty():
+		return -1.0
+	if typeof(waters[0]) != TYPE_DICTIONARY:
+		return -1.0
+	return float(waters[0].get("level_m", -1.0))
+
+
+func set_water_level(v: float) -> void:
+	if v < 0.0:
+		features["water"] = []
+	else:
+		var waters: Array = []
+		var existing: Variant = features.get("water", [])
+		if typeof(existing) == TYPE_ARRAY:
+			waters = existing
+		if waters.is_empty() or typeof(waters[0]) != TYPE_DICTIONARY:
+			var wstem := stem if not stem.is_empty() else "map"
+			if wstem.length() > 7:
+				wstem = wstem.substr(0, 7)
+			waters = [{
+				"stem": wstem + "w",
+				"level_m": v,
+				"variant_scope": "all",
+			}]
+		else:
+			waters[0]["level_m"] = v
+		features["water"] = waters
+	dirty["features"] = true
+	unsaved = true
+	findings_stale = true
+	dirty_changed.emit()
+	water_changed.emit(v)
 
 
 func mark_materials_dirty() -> void:
