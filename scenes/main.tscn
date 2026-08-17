@@ -139,7 +139,7 @@ title = "Open map"
 ok_button_text = "Open"
 file_mode = 0
 access = 2
-filters = PackedStringArray("*.trn ; Terrain", "*.bzn ; Mission", "*.hg2 ; Heightmap", "* ; All files")
+filters = PackedStringArray("*.trn, *.TRN, *.bzn, *.BZN, *.hg2, *.HG2 ; BZ98 maps (.trn .bzn .hg2)")
 
 [node name="SaveDialog" type="FileDialog" parent="."]
 unique_name_in_owner = true
