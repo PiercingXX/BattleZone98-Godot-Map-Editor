@@ -213,12 +213,7 @@ tabs_rearrange_group = 1
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="SplitC" type="VSplitContainer" parent="Root/Body/Mid/Right/SplitB"]
-unique_name_in_owner = true
-layout_mode = 2
-split_offset = 260
-
-[node name="Dock3" type="TabContainer" parent="Root/Body/Mid/Right/SplitB/SplitC"]
+[node name="Dock3" type="TabContainer" parent="Root/Body/Mid/Right/SplitB"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 120)
 layout_mode = 2
@@ -226,22 +221,15 @@ size_flags_vertical = 3
 drag_to_rearrange_enabled = true
 tabs_rearrange_group = 1
 
-[node name="InspectorPanel" parent="Root/Body/Mid/Right/SplitB/SplitC/Dock3" instance=ExtResource("7_insp")]
+[node name="InspectorPanel" parent="Root/Body/Mid/Right/SplitB/Dock3" instance=ExtResource("7_insp")]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="PalettePanel" parent="Root/Body/Mid/Right/SplitB/SplitC/Dock3" instance=ExtResource("6_pal")]
+[node name="PalettePanel" parent="Root/Body/Mid/Right/SplitB/Dock3" instance=ExtResource("6_pal")]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="Dock4" type="TabContainer" parent="Root/Body/Mid/Right/SplitB/SplitC"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 120)
-layout_mode = 2
-drag_to_rearrange_enabled = true
-tabs_rearrange_group = 1
-
-[node name="FeaturesPanel" parent="Root/Body/Mid/Right/SplitB/SplitC/Dock4" instance=ExtResource("12_feat")]
+[node name="FeaturesPanel" parent="Root/Body/Mid/Right/SplitB/Dock3" instance=ExtResource("12_feat")]
 unique_name_in_owner = true
 layout_mode = 2
 

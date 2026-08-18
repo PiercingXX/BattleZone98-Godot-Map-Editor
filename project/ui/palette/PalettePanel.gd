@@ -2,7 +2,8 @@ extends PanelContainer
 ## Context-sensitive left rail: palette, brush, materials, selection.
 
 const _CATEGORY_ORDER: PackedStringArray = [
-	"craft", "building", "prop", "scrap", "geyser", "spawn", "environment", "other",
+	"craft", "building", "pilot", "scrap", "geyser", "spawn", "pickup",
+	"prop", "environment", "weapon", "other",
 ]
 const _PANEL_MIN_X := 294.0
 

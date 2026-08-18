@@ -26,10 +26,13 @@ const _ALWAYS_VERIFIED := {
 const _CATEGORY_COLORS := {
 	"craft": [60, 140, 80],
 	"building": [80, 90, 150],
+	"pilot": [190, 120, 170],
 	"prop": [130, 120, 90],
 	"scrap": [200, 160, 40],
 	"geyser": [210, 90, 40],
 	"spawn": [220, 200, 50],
+	"pickup": [90, 170, 180],
+	"weapon": [150, 80, 80],
 	"environment": [70, 130, 110],
 	"other": [110, 110, 115],
 }
@@ -209,21 +212,37 @@ static func _categorize(prjid: String, class_label: String) -> String:
 		return "geyser"
 	if cl.contains("spawn") or p.begins_with("pspwn"):
 		return "spawn"
+	if cl.contains("person") or cl.contains("pilot"):
+		return "pilot"
 	for token in ["i76building2", "i76building", "environment"]:
 		if cl.contains(token):
 			return "environment"
 	for token in [
 		"building", "factory", "recycler", "constructor", "silo",
 		"extractor", "powerplant", "armory", "barracks", "gun",
+		"depot", "commtower", "shieldtower", "hangar",
 	]:
 		if cl.contains(token):
 			return "building"
 	for token in [
 		"wingman", "craft", "hover", "tank", "walker", "turret",
 		"scout", "bomber", "apc", "tug", "howitzer",
+		"constructionrig", "scavenger", "minelayer", "sav",
 	]:
 		if cl.contains(token):
 			return "craft"
+	for token in ["ammopack", "repairkit", "camerapod", "daywrecker"]:
+		if cl.contains(token):
+			return "pickup"
+	for token in [
+		"explosion", "spraybomb", "bouncebomb", "wpnpower", "cannon",
+		"rocket", "tracer", "mortar", "planarexpl", "bolt", "grenade",
+		"beam", "blast", "bullet", "torpedo", "flamepuff", "missile",
+		"launcher", "damper", "flare", "magnet", "proximity", "torpedo",
+		"dispenser", "weapon",
+	]:
+		if cl.contains(token):
+			return "weapon"
 	return "prop"
 
 

@@ -268,6 +268,8 @@ static func view_group_for_category(category: String) -> String:
 			return VIEW_BUILDINGS
 		"craft":
 			return VIEW_UNITS
+		"pilot":
+			return VIEW_UNITS
 		_:
 			return VIEW_PROPS
 

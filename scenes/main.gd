@@ -597,7 +597,21 @@ func _on_lmb_down(p: Vector3, hit: Dictionary, shift: bool, alt: bool = false, c
 		_begin_mask_stroke(p, alt)
 		return
 	if ToolState.tool == "place" and not ToolState.armed.is_empty():
-		EditActions.place_at(p, hit.get("normal", Vector3.UP), shift, _log)
+		if shift:
+			# Shift+click removes the object under the cursor instead of
+			# stacking another one on top of it.
+			var mouse := _viewport.get_mouse_position()
+			var hit_id: String = _objects.pick(
+				_camera.project_ray_origin(mouse), _camera.project_ray_normal(mouse)
+			)
+			if hit_id.is_empty():
+				_log.call("nothing to delete here")
+			else:
+				MapState.selected_ids = [hit_id] as Array[String]
+				EditActions.delete_selected(_log)
+				_on_objects_mutated()
+			return
+		EditActions.place_at(p, hit.get("normal", Vector3.UP), true, _log)
 		return
 	if ToolState.tool == "clone" and ctrl:
 		ToolState.set_clone_source(p.x, p.z)
@@ -1677,7 +1691,6 @@ func _install_layout_persistence() -> void:
 		_mid_split,
 		_right_col,
 		find_child("SplitB", true, false),
-		find_child("SplitC", true, false),
 	]:
 		if split == null:
 			continue
@@ -1731,9 +1744,6 @@ func _flush_layout(persist: bool) -> void:
 		var split_b := find_child("SplitB", true, false) as SplitContainer
 		if split_b:
 			Settings.layout_split_upper = split_b.split_offset
-		var split_c := find_child("SplitC", true, false) as SplitContainer
-		if split_c:
-			Settings.layout_split_lower = split_c.split_offset
 		Settings.layout_docks = DockLayout.snapshot(_docks())
 	if persist:
 		Settings.save()
@@ -1771,9 +1781,6 @@ func _apply_split_offsets() -> void:
 	var split_b := find_child("SplitB", true, false) as SplitContainer
 	if split_b:
 		split_b.split_offset = Settings.layout_split_upper
-	var split_c := find_child("SplitC", true, false) as SplitContainer
-	if split_c:
-		split_c.split_offset = Settings.layout_split_lower
 
 
 func _on_more_selected(id: int) -> void:
@@ -1817,7 +1824,7 @@ func _install_size_link() -> void:
 
 func _docks() -> Dictionary:
 	var out := {}
-	for dock_name in ["Dock1", "Dock2", "Dock3", "Dock4"]:
+	for dock_name in ["Dock1", "Dock2", "Dock3"]:
 		out[dock_name] = find_child(dock_name, true, false) as TabContainer
 	return out
 

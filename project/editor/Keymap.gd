@@ -251,7 +251,8 @@ WASD fly     Q/E up down     Shift fast     Ctrl slow
 %s select  %s noise   %s qsel    %s rsel
 %s wand    %s clone
 [ ] radius     Shift+[ ] strength     Esc cancel / fly
-LMB sculpt / place / select     Shift+click keep placing
+LMB sculpt / select; place stays armed (Esc stops placing)
+Place: Shift+click deletes the object under the cursor
 Alt+LMB eyedropper (paint)
 Clone: Ctrl+click sets the source; paint copies height deltas.[/code]
 
