@@ -387,12 +387,15 @@ func _restore_3d_pose() -> void:
 
 
 func _apply_pose_transform(d: Dictionary) -> void:
+	# Rebuild the basis from scratch: map mode uses a mirrored
+	# (left-handed) basis, and assigning `rotation` alone would keep that
+	# mirror in the recomposed transform, garbling the restored 3D view.
+	transform.basis = Basis.from_euler(bookmark_rotation(d))
 	var pos := bookmark_position(d)
 	if is_inside_tree():
 		global_position = pos
 	else:
 		position = pos
-	rotation = bookmark_rotation(d)
 	pivot = bookmark_pivot(d)
 
 

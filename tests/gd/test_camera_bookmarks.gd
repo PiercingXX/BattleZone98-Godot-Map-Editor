@@ -51,6 +51,21 @@ func run(t) -> void:
 	t.near(cam.global_position.x, pos.x, 0.0001, "apply position")
 	t.near(cam.rotation.y, rot.y, 0.0001, "apply rotation")
 	t.near(cam.pivot.z, pivot.z, 0.0001, "apply pivot")
+	# 2D map mode uses a mirrored (left-handed) basis; leaving it must
+	# restore a clean right-handed 3D pose, not a flipped view.
+	cam.global_position = pos
+	cam.rotation = rot
+	cam.pivot = pivot
+	cam.set_map_mode(true)
+	t.near(cam.global_transform.basis.determinant(), -1.0, 0.001, "map basis is mirrored")
+	cam.set_map_mode(false)
+	t.near(
+		cam.global_transform.basis.determinant(), 1.0, 0.001,
+		"3D restore is right-handed again"
+	)
+	t.near(cam.rotation.x, rot.x, 0.0001, "3D restore pitch")
+	t.near(cam.rotation.y, rot.y, 0.0001, "3D restore yaw")
+	t.near(cam.global_position.y, pos.y, 0.0001, "3D restore height")
 	cam.queue_free()
 	await t.tree.process_frame
 

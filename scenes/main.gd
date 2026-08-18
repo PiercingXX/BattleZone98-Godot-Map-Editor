@@ -142,6 +142,7 @@ func _ready() -> void:
 	for size in [1280, 2560, 3840, 5120]:
 		_size_option.add_item("%s m" % size, size)
 		_size_z.add_item("%s m" % size, size)
+	_install_size_link()
 	_autosave = Timer.new()
 	_autosave.name = "Autosave"
 	_autosave.timeout.connect(_on_autosave)
@@ -1813,6 +1814,29 @@ func _on_autosave() -> void:
 	if MapState.has_session and MapState.unsaved:
 		MapState.persist()
 		_log.call("autosaved session")
+
+
+## GIMP/Photoshop-style link between the New-map size dropdowns: depth
+## follows width while "square" is checked (the common case; the engine
+## also loads rectangular maps, e.g. stock misn04 at 5120x3840).
+func _install_size_link() -> void:
+	if _size_option == null or _size_z == null:
+		return
+	var link := CheckBox.new()
+	link.name = "SizeLink"
+	link.text = "square"
+	link.button_pressed = true
+	link.focus_mode = Control.FOCUS_NONE
+	link.tooltip_text = "Depth follows width. Uncheck for a rectangular map."
+	var row := _size_z.get_parent()
+	row.add_child(link)
+	var sync := func() -> void:
+		if link.button_pressed:
+			_size_z.select(_size_option.selected)
+		_size_z.disabled = link.button_pressed
+	_size_option.item_selected.connect(func(_i: int) -> void: sync.call())
+	link.toggled.connect(func(_on: bool) -> void: sync.call())
+	sync.call()
 
 
 func _apply_autosave() -> void:
