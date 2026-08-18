@@ -62,6 +62,12 @@ func run(t) -> void:
 		if lo.heights[i] < 1:
 			break
 
+	# Removed "undefined" mode must not punch holes (old branch wrote 0).
+	var leftover := _flat(8, 8, 200)
+	MapState.field = leftover
+	sculpt.mode = "undefined"
+	t.eq(sculpt._apply_height(200, 1.0, 1, 1, leftover), 200, "dead undefined mode is a no-op")
+
 	MapState.field = saved
 
 

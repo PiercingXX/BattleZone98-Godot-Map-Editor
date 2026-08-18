@@ -5,7 +5,6 @@ extends RefCounted
 func run(t) -> void:
 	var saved_session := MapState.has_session
 	var saved_feat: Dictionary = MapState.features.duplicate(true)
-	var saved_unsaved := MapState.unsaved
 	var saved_dirty: Dictionary = MapState.dirty.duplicate(true)
 	var saved_stem := MapState.stem
 	var saved_sel: Array[String] = MapState.selected_ids.duplicate()
@@ -55,7 +54,7 @@ func run(t) -> void:
 
 	var applies: Array = []
 	var deletes: Array = []
-	insp.apply_requested.connect(func(b, a): applies.append({"before": b, "after": a}))
+	insp.apply_requested.connect(func(edits): applies.append(edits))
 	insp.delete_requested.connect(func(): deletes.append(1))
 
 	MapState.has_session = true
@@ -64,12 +63,17 @@ func run(t) -> void:
 	insp.show_object(pinned)
 	_btn(insp, "Apply").pressed.emit()
 	t.eq(applies.size(), 0, "Apply with no edits is a no-op")
+	t.ok(not insp.is_field_dirty("label"), "fill does not dirty fields")
 
 	insp.show_object(pinned)
 	(insp.find_child("Label", true, false) as LineEdit).text = "renamed"
+	t.ok(insp.is_field_dirty("label"), "label edit is dirty")
+	t.ok(not insp.is_field_dirty("x"), "untouched x stays clean")
 	_btn(insp, "Apply").pressed.emit()
 	t.eq(applies.size(), 1, "Apply emits when a field changed")
-	t.eq(applies[0]["after"].get("label"), "renamed")
+	t.eq(applies[0].size(), 1, "single-select apply is one edit")
+	t.eq(applies[0][0]["after"].get("label"), "renamed")
+	t.ok(not insp.is_field_dirty("label"), "apply clears dirty")
 
 	insp.show_object({
 		"id": "player-1", "prjid": "player", "label": "player",
@@ -92,6 +96,14 @@ func run(t) -> void:
 	MapState.selected_ids = ["obj-1", "obj-2"] as Array[String]
 	insp.show_object(rec)
 	t.ok("2 selected" in (insp.find_child("Mode", true, false) as Label).text)
+	t.ok("apply edits the first" not in (insp.find_child("Mode", true, false) as Label).text)
+	var label_edit: LineEdit = insp.find_child("Label", true, false)
+	t.ok(not label_edit.editable, "label locked on multi-select")
+	t.ok("one object" in label_edit.tooltip_text, "label tooltip says why")
+	t.ok("all 2 selected" in _btn(insp, "Apply").tooltip_text)
+	(insp.find_child("Team", true, false) as SpinBox).value = 7
+	t.ok(insp.is_field_dirty("team"), "team edit is dirty")
+	t.ok(not insp.is_field_dirty("x"), "untouched x stays clean on multi")
 
 	# Water live-preview + undoable commit.
 	insp.set_water(-1.0)
@@ -114,10 +126,11 @@ func run(t) -> void:
 	UndoStack.clear()
 	MapState.has_session = saved_session
 	MapState.features = saved_feat
-	MapState.unsaved = saved_unsaved
 	MapState.dirty = saved_dirty
 	MapState.stem = saved_stem
 	MapState.selected_ids = saved_sel
+	if saved_session:
+		MapState.mark_saved()
 
 
 func _btn(root: Node, name: String) -> Button:

@@ -34,6 +34,7 @@ func _status(t) -> void:
 	t.eq((bar.find_child("Cursor", true, false) as Label).text, "xz 1, 2")
 	bar.set_map_info("1280x1280  mars")
 	t.eq((bar.find_child("MapInfo", true, false) as Label).text, "1280x1280  mars")
+	t.ok("autosave" in bar.tooltip_text.to_lower(), "status tooltip mentions autosave")
 
 	var walk: Button = bar.find_child("Walk", true, false)
 	var grid: Button = bar.find_child("Grid", true, false)
@@ -116,6 +117,8 @@ func _help(t) -> void:
 	t.ok("G grid" in body.text, "help lists grid")
 	t.ok("Ctrl+Z" in body.text)
 	t.ok("9 select" in body.text)
+	t.ok("autosave" in body.text.to_lower(), "help mentions autosave")
+	t.ok("30s" in body.text, "help states the 30s interval")
 	help.popup_help()
 	help.hide()
 	help.queue_free()

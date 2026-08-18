@@ -21,6 +21,7 @@ func _ready() -> void:
 	_grid.toggled.connect(_on_grid)
 	_slope.toggled.connect(_on_slope)
 	_walk.set_pressed_no_signal(Settings.walk_mode)
+	tooltip_text = "Unsaved sessions autosave every 30s. A crash does not lose the session. Save (Ctrl+S) writes the map files."
 	set_status("info", "starting")
 
 

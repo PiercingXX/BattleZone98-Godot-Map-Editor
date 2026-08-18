@@ -2,6 +2,7 @@ extends PanelContainer
 ## Brand, map label, file actions, tools, variant, undo.
 
 signal open_requested
+signal recent_open_requested(path: String)
 signal new_requested
 signal save_requested
 signal save_as_requested
@@ -20,9 +21,11 @@ const MORE_PACK := 3
 const MORE_PROBE := 4
 const MORE_HELP := 5
 const MORE_SAVE_AS := 6
+const OPEN_BROWSE_ID := 0
 
 var _setting_tool: bool = false
 var _busy: bool = false
+var _open_menu: PopupMenu
 
 @onready var _map_label: Label = %MapLabel
 @onready var _variant: OptionButton = %Variant
@@ -38,7 +41,7 @@ var _busy: bool = false
 
 
 func _ready() -> void:
-	%Open.pressed.connect(func(): open_requested.emit())
+	_install_open_menu()
 	%New.pressed.connect(func(): new_requested.emit())
 	%Save.pressed.connect(func(): save_requested.emit())
 	%Validate.pressed.connect(func(): validate_requested.emit())
@@ -73,6 +76,64 @@ func _ready() -> void:
 	Backend.call_finished.connect(func(_v, _r): set_busy(false))
 	Backend.call_failed.connect(func(_v, _e): set_busy(false))
 	_refresh_actions()
+
+
+func _install_open_menu() -> void:
+	_open_menu = PopupMenu.new()
+	_open_menu.name = "OpenMenu"
+	_btn_open.add_child(_open_menu)
+	_btn_open.pressed.connect(_on_open_pressed)
+	_open_menu.id_pressed.connect(_on_open_menu_id)
+	_open_menu.about_to_popup.connect(refresh_open_menu)
+	refresh_open_menu()
+
+
+func _on_open_pressed() -> void:
+	if _busy:
+		EditorFeedback.log("Busy…")
+		return
+	refresh_open_menu()
+	var r := _btn_open.get_global_rect()
+	_open_menu.popup(Rect2i(int(r.position.x), int(r.position.y + r.size.y), 0, 0))
+
+
+func refresh_open_menu() -> void:
+	if _open_menu == null:
+		return
+	_open_menu.clear()
+	_open_menu.add_item("Browse…", OPEN_BROWSE_ID)
+	if Settings.recent_maps.is_empty():
+		return
+	_open_menu.add_separator()
+	var id := 1
+	for path in Settings.recent_maps:
+		var cleaned := str(path)
+		var label := cleaned.get_file()
+		if label.is_empty():
+			label = cleaned
+		_open_menu.add_item(label, id)
+		var idx := _open_menu.get_item_index(id)
+		_open_menu.set_item_metadata(idx, cleaned)
+		if FileAccess.file_exists(cleaned):
+			_open_menu.set_item_tooltip(idx, cleaned)
+		else:
+			_open_menu.set_item_disabled(idx, true)
+			_open_menu.set_item_tooltip(idx, "file moved")
+		id += 1
+
+
+func _on_open_menu_id(id: int) -> void:
+	if id == OPEN_BROWSE_ID:
+		open_requested.emit()
+		return
+	var idx := _open_menu.get_item_index(id)
+	if idx < 0:
+		return
+	var path := str(_open_menu.get_item_metadata(idx))
+	if path.is_empty() or _open_menu.is_item_disabled(idx) or not FileAccess.file_exists(path):
+		EditorFeedback.log("file moved")
+		return
+	recent_open_requested.emit(path)
 
 
 func _on_tool_button(tool_name: String) -> void:
@@ -143,6 +204,7 @@ func _refresh_actions() -> void:
 	var can_act := session and not _busy
 	if _btn_open:
 		_btn_open.disabled = _busy
+		_btn_open.tooltip_text = "Busy…" if _busy else "Open a map"
 	if _btn_new:
 		_btn_new.disabled = _busy
 	if _btn_save:

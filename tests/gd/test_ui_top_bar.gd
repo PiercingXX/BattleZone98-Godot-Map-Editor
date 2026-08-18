@@ -5,9 +5,13 @@ extends RefCounted
 func run(t) -> void:
 	var saved_session := MapState.has_session
 	var saved_root := Settings.game_root
+	var saved_recent: Array[String] = []
+	for recent_path in Settings.recent_maps:
+		saved_recent.append(recent_path)
 	UndoStack.clear()
 	MapState.has_session = false
 	Settings.game_root = ""
+	Settings.recent_maps.clear()
 
 	var bar: Node = load("res://project/ui/top_bar/TopBar.tscn").instantiate()
 	t.tree.root.add_child(bar)
@@ -18,6 +22,7 @@ func run(t) -> void:
 	t.ok(_btn(bar, "Frame").disabled, "Frame disabled with no map")
 	t.ok(_btn(bar, "Undo").disabled, "Undo disabled when stack empty")
 	t.ok(_btn(bar, "Redo").disabled, "Redo disabled when stack empty")
+	t.ok(_btn(bar, "Open") is Button, "Open stays a Button")
 	t.ok(not _btn(bar, "Open").disabled, "Open stays available")
 	t.ok(not _btn(bar, "New").disabled, "New stays available")
 	t.ok((bar.find_child("Variant", true, false) as OptionButton).disabled, "variant empty/disabled")
@@ -96,11 +101,58 @@ func run(t) -> void:
 	t.eq(more_ids, [bar.MORE_PROBE], "Save As is intercepted")
 	t.eq(save_as[0], 1)
 
+	var menu: PopupMenu = bar.find_child("OpenMenu", true, false)
+	t.ok(menu != null, "Open owns a recent-maps menu")
+	bar.refresh_open_menu()
+	t.eq(menu.get_item_text(0), "Browse…")
+	t.eq(menu.get_item_id(0), bar.OPEN_BROWSE_ID)
+	t.eq(menu.item_count, 1, "Browse… only when no recents")
+	var browsed := [0]
+	bar.open_requested.connect(func(): browsed[0] += 1)
+	menu.id_pressed.emit(bar.OPEN_BROWSE_ID)
+	t.eq(browsed[0], 1, "Browse… keeps open_requested")
+
+	var tmp := OS.get_temp_dir().path_join("bz_topbar_recent_%d" % Time.get_ticks_usec())
+	DirAccess.make_dir_recursive_absolute(tmp)
+	var keep := tmp.path_join("keep.trn")
+	var gone := tmp.path_join("gone.trn")
+	var kf := FileAccess.open(keep, FileAccess.WRITE)
+	kf.store_string("x")
+	kf.close()
+	Settings.recent_maps.clear()
+	Settings.recent_maps.append(keep)
+	Settings.recent_maps.append(gone)
+	bar.refresh_open_menu()
+	var keep_id := 1
+	var gone_id := 2
+	var keep_idx := menu.get_item_index(keep_id)
+	var gone_idx := menu.get_item_index(gone_id)
+	t.eq(menu.get_item_text(keep_idx), "keep.trn")
+	t.ok(not menu.is_item_disabled(keep_idx), "existing recent is enabled")
+	t.eq(menu.get_item_text(gone_idx), "gone.trn")
+	t.ok(menu.is_item_disabled(gone_idx), "missing recent is disabled")
+	t.eq(menu.get_item_tooltip(gone_idx), "file moved")
+	var recents: Array = []
+	bar.recent_open_requested.connect(func(p): recents.append(p))
+	menu.id_pressed.emit(keep_id)
+	t.eq(recents, [keep], "existing recent emits path")
+	menu.id_pressed.emit(gone_id)
+	t.eq(recents.size(), 1, "missing recent does not emit")
+
+	bar.set_busy(true)
+	t.eq(_btn(bar, "Open").tooltip_text, "Busy…")
+	bar.set_busy(false)
+
 	bar.queue_free()
 	await t.tree.process_frame
+	DirAccess.remove_absolute(keep)
+	DirAccess.remove_absolute(tmp)
 	UndoStack.clear()
 	MapState.has_session = saved_session
 	Settings.game_root = saved_root
+	Settings.recent_maps.clear()
+	for recent_path in saved_recent:
+		Settings.recent_maps.append(recent_path)
 
 
 func _btn(root: Node, name: String) -> Button:

@@ -4,8 +4,19 @@ class_name SessionIO
 
 const TopBarScript = preload("res://project/ui/top_bar/TopBar.gd")
 
+## Stock world ids used when an install has not been probed yet.
+const STOCK_WORLD_IDS: PackedStringArray = [
+	"achilles", "elysium", "europa", "ganymede", "io",
+	"mars", "moon", "titan", "venus",
+]
+
 var log: Callable
 var shell: Node
+## Path the user asked to open; recorded only after the open verb succeeds.
+var _pending_open_path: String = ""
+var _new_after_save := false
+## Stem to apply to the session once a template open completes.
+var template_stem := ""
 
 
 func _init(p_shell: Node, p_log: Callable) -> void:
@@ -76,14 +87,33 @@ func open_prompt() -> void:
 
 
 func open_file(path: String) -> void:
-	Settings.last_map_dir = path.get_base_dir()
+	var cleaned := path.strip_edges()
+	if cleaned.is_empty():
+		log.call("no map path to open")
+		return
+	if not FileAccess.file_exists(cleaned):
+		log.call("file moved — %s" % cleaned)
+		return
+	Settings.last_map_dir = cleaned.get_base_dir()
 	Settings.save()
-	Backend.open_map(path, MapState.new_session_dir())
+	_pending_open_path = cleaned
+	Backend.open_map(cleaned, MapState.new_session_dir())
 
 
-var _new_after_save := false
-## Stem to apply to the session once a template open completes.
-var template_stem := ""
+## Call after a successful `open` verb. No-ops if this open was not a user file pick
+## (template New, smoke-open).
+func record_open_if_pending() -> void:
+	if _pending_open_path.is_empty():
+		return
+	var path := _pending_open_path
+	_pending_open_path = ""
+	Settings.record_recent_map(path)
+	Settings.save()
+	log.call("opened %s" % path)
+
+
+func clear_pending_open() -> void:
+	_pending_open_path = ""
 
 
 func new_prompt() -> void:
@@ -106,9 +136,37 @@ func consume_new_after_save() -> bool:
 	return pending
 
 
+static func stock_worlds() -> Array:
+	var out: Array = []
+	for world_id in STOCK_WORLD_IDS:
+		out.append({"id": world_id, "label": String(world_id).capitalize()})
+	return out
+
+
+static func fill_world_dropdown(option: OptionButton, worlds: Array) -> void:
+	if option == null:
+		return
+	option.clear()
+	for world in worlds:
+		if typeof(world) != TYPE_DICTIONARY:
+			continue
+		var world_id := str(world.get("id", "")).strip_edges()
+		if world_id.is_empty():
+			continue
+		var label := str(world.get("label", world_id.capitalize()))
+		if label.is_empty():
+			label = world_id.capitalize()
+		option.add_item(label)
+		option.set_item_metadata(option.item_count - 1, world_id)
+
+
 func show_new_dialog() -> void:
-	if shell._world_option.item_count == 0 and not Settings.game_root.is_empty():
-		Backend.worlds(Settings.game_root)
+	if MapState.worlds.is_empty():
+		fill_world_dropdown(shell._world_option, stock_worlds())
+		if not Settings.game_root.is_empty():
+			Backend.worlds(Settings.game_root)
+	elif shell._world_option.item_count == 0:
+		fill_world_dropdown(shell._world_option, MapState.worlds)
 	_fill_templates()
 	shell._new_dialog.popup_centered()
 

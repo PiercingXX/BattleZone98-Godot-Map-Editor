@@ -1,9 +1,15 @@
 extends PanelContainer
 ## Class search, brush controls, material swatches.
 
+const _CATEGORY_ORDER: PackedStringArray = [
+	"craft", "building", "prop", "scrap", "geyser", "spawn", "environment", "other",
+]
+
 signal class_armed(rec: Dictionary)
 
 @onready var _search: LineEdit = %Search
+@onready var _category: OptionButton = %CategoryFilter
+@onready var _clone_safe: CheckBox = %CloneSafe
 @onready var _list: ItemList = %ClassList
 @onready var _radius: HSlider = %Radius
 @onready var _strength: HSlider = %Strength
@@ -23,7 +29,10 @@ var _syncing: bool = false
 
 
 func _ready() -> void:
+	_rebuild_category_items()
 	_search.text_changed.connect(func(t): _filter = t.strip_edges(); _fill())
+	_category.item_selected.connect(func(_i): _fill())
+	_clone_safe.toggled.connect(func(_on): _fill())
 	_list.item_selected.connect(_on_selected)
 	_radius.value_changed.connect(_on_radius)
 	_strength.value_changed.connect(_on_strength)
@@ -31,6 +40,7 @@ func _ready() -> void:
 	_shape_circle.pressed.connect(func(): _on_shape("circle"))
 	_shape_square.pressed.connect(func(): _on_shape("square"))
 	_build_swatches()
+	refresh_swatches()
 	_sync_from_state()
 	ToolState.brush_changed.connect(_sync_from_state)
 	ToolState.tool_changed.connect(_on_tool)
@@ -42,8 +52,18 @@ func _ready() -> void:
 func set_classes(index: Dictionary, pack_kind: String) -> void:
 	_index = index
 	_pack_kind = pack_kind
+	_rebuild_category_items()
 	_fill()
 	refresh_swatches()
+
+
+func sample_material(idx: int) -> String:
+	idx = clampi(idx, 0, 15)
+	ToolState.set_paint_material(idx)
+	_highlight_swatch()
+	var msg := "sampled mat %d (%s)" % [idx, MaterialPalette.type_name(idx)]
+	EditorFeedback.log(msg)
+	return msg
 
 
 func refresh_swatches() -> void:
@@ -98,6 +118,8 @@ func _fill() -> void:
 	_list.clear()
 	var classes: Array = _index.get("classes", [])
 	var q := _filter.to_lower()
+	var cat := _selected_category()
+	var clone_only := _clone_safe.button_pressed
 	var added := 0
 	for rec in classes:
 		if typeof(rec) != TYPE_DICTIONARY:
@@ -105,6 +127,10 @@ func _fill() -> void:
 		var prjid := str(rec.get("prjid", ""))
 		var label := str(rec.get("label", prjid))
 		if q != "" and q not in prjid.to_lower() and q not in label.to_lower():
+			continue
+		if cat != "" and str(rec.get("category", "")) != cat:
+			continue
+		if clone_only and rec.get("template_verified") != true:
 			continue
 		var source := str(rec.get("source", "game"))
 		var legal := source == "game" or _pack_kind == "bzp"
@@ -117,7 +143,7 @@ func _fill() -> void:
 		_list.set_item_disabled(i, not legal)
 		added += 1
 	if added == 0:
-		var empty := _empty_message(classes.size(), q)
+		var empty := _empty_message(classes.size())
 		var i := _list.add_item(empty)
 		_list.set_item_metadata(i, {})
 		_list.set_item_disabled(i, true)
@@ -126,13 +152,65 @@ func _fill() -> void:
 		_restore_armed_selection()
 
 
-func _empty_message(total: int, q: String) -> String:
-	if q != "" and total > 0:
-		return "No classes match “%s”" % q
+func _rebuild_category_items() -> void:
+	var present: Dictionary = {}
+	for rec in _index.get("classes", []):
+		if typeof(rec) != TYPE_DICTIONARY:
+			continue
+		var cat := str(rec.get("category", ""))
+		if cat != "":
+			present[cat] = true
+	var prev := _selected_category()
+	_category.clear()
+	_category.add_item("All")
+	_category.set_item_metadata(0, "")
+	for cat in _CATEGORY_ORDER:
+		if present.has(cat):
+			var i := _category.item_count
+			_category.add_item(cat)
+			_category.set_item_metadata(i, cat)
+			present.erase(cat)
+	var extra: Array = present.keys()
+	extra.sort()
+	for cat in extra:
+		var i := _category.item_count
+		_category.add_item(str(cat))
+		_category.set_item_metadata(i, str(cat))
+	var pick := 0
+	for i in _category.item_count:
+		if str(_category.get_item_metadata(i)) == prev:
+			pick = i
+			break
+	_category.select(pick)
+
+
+func _selected_category() -> String:
+	if _category == null or _category.item_count < 1:
+		return ""
+	var i := _category.selected
+	if i <= 0:
+		return ""
+	var meta = _category.get_item_metadata(i)
+	return str(meta) if meta != null else ""
+
+
+func _empty_message(total: int) -> String:
 	if total == 0:
 		if Settings.game_root.is_empty():
 			return "No classes. More → Re-probe, then Import assets."
 		return "No classes. More → Import assets."
+	var parts: PackedStringArray = []
+	var cat := _selected_category()
+	if cat != "":
+		parts.append("category: %s" % cat)
+	if _clone_safe.button_pressed:
+		parts.append("clone-safe")
+	if not _filter.is_empty():
+		if parts.is_empty():
+			return "No classes match “%s”" % _filter
+		parts.append("“%s”" % _filter)
+	if not parts.is_empty():
+		return "no matches — %s" % ", ".join(parts)
 	return "No classes."
 
 
@@ -202,7 +280,11 @@ func _on_armed() -> void:
 
 
 func _on_session() -> void:
+	# ToolState clears the armed class on session_changed; rebuild so the
+	# list does not keep a highlight from the previous map.
 	_fill()
+	if ToolState.armed.is_empty():
+		_list.deselect_all()
 
 
 func _sync_from_state() -> void:

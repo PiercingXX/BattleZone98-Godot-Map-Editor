@@ -67,7 +67,7 @@ func _ready() -> void:
 	add_child(autosave)
 	autosave.start()
 	_refresh_map_label()
-	_log.call("BattleZone 98 Godot Map Editor. F1 help. Open a map to sculpt and place.")
+	_log.call("BattleZone 98 Godot Map Editor. F1 help. Unsaved sessions autosave every 30s. Open a map to sculpt and place.")
 	Backend.probe()
 	_queue_smoke_open()
 
@@ -82,6 +82,7 @@ func _notification(what: int) -> void:
 
 func _wire() -> void:
 	_top.open_requested.connect(_io.open_prompt)
+	_top.recent_open_requested.connect(_io.open_file)
 	_top.new_requested.connect(_io.new_prompt)
 	_top.save_requested.connect(_io.save)
 	_top.save_as_requested.connect(func(): _save_as = true; _io.save(true))
@@ -99,8 +100,8 @@ func _wire() -> void:
 		ToolState.set_armed(rec)
 		_log.call("armed %s  %s  %s" % [rec.get("prjid"), rec.get("placement_mode"), rec.get("mesh_fidelity")])
 	)
-	_inspector.apply_requested.connect(func(before, after):
-		EditActions.apply_inspector(before, after)
+	_inspector.apply_requested.connect(func(edits):
+		EditActions.apply_inspector(edits)
 		_on_objects_mutated()
 	)
 	_inspector.delete_requested.connect(func():
@@ -175,7 +176,7 @@ func _process(_delta: float) -> void:
 		_status.set_cursor("xz %.1f, %.1f  h %.1f m  mat %d  %s   ·  RMB look  wheel zoom  MMB orbit  WASD fly" % [
 			p.x, p.z, p.y, MapState.material_at(p.x, p.z), ToolState.tool,
 		])
-		var sculpting := ToolState.tool in ["raise", "lower", "flatten", "smooth", "ramp", "noise", "undefined", "paint"]
+		var sculpting := ToolState.tool in ["raise", "lower", "flatten", "smooth", "ramp", "noise", "paint"]
 		if sculpting:
 			_terrain.set_brush(true, Vector2(p.x, p.z), ToolState.radius_m, ToolState.falloff, ToolState.shape == "square")
 		else:
@@ -240,6 +241,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			_terrain._show_slope = not _terrain._show_slope
 			_terrain.set_slope_overlay(_terrain._show_slope)
 			_log.call("slope overlay %s" % ("on" if _terrain._show_slope else "off"))
+	elif (
+		not k.ctrl_pressed
+		and not k.alt_pressed
+		and not EditActions.gui_text_focused(get_viewport())
+		and EditActions.try_select_transform(k.keycode, k.shift_pressed, _log)
+	):
+		_on_objects_mutated()
 	else:
 		handled = false
 	if handled:
@@ -256,6 +264,14 @@ func _on_view_gui_input(event: InputEvent) -> void:
 		if mb.button_index == MOUSE_BUTTON_LEFT:
 			if not mb.pressed:
 				_on_lmb_up()
+			elif ToolState.tool == "paint" and mb.alt_pressed:
+				# Eyedropper: sample only — never start a paint stroke.
+				var sample := _pick()
+				if sample.get("hit", false):
+					var p: Vector3 = sample["position"]
+					_palette.sample_material(MapState.material_at(p.x, p.z))
+				else:
+					_log.call("nothing to sample")
 			elif ToolState.tool == "select":
 				EditActions.select_click(_objects, _camera, _viewport, mb.shift_pressed)
 				_fill_inspector()
@@ -281,7 +297,7 @@ func _on_lmb_down(p: Vector3, hit: Dictionary, shift: bool) -> void:
 			EditActions.apply_ramp(_sculpt, _ramp_a, p, _log)
 			_ramp_a = Vector3.INF
 		return
-	if ToolState.tool in ["raise", "lower", "flatten", "smooth", "noise", "undefined", "paint"]:
+	if ToolState.tool in ["raise", "lower", "flatten", "smooth", "noise", "paint"]:
 		_sync_sculpt()
 		_sculpt.begin_stroke(MapState.field, p.x, p.z, ToolState.tool == "paint")
 		_stroking = true
@@ -384,21 +400,21 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 				Backend.open_map(path, MapState.new_session_dir())
 		"worlds":
 			MapState.worlds = result.get("worlds", [])
-			_world_option.clear()
-			for world in result.get("worlds", []):
-				if typeof(world) != TYPE_DICTIONARY:
-					continue
-				_world_option.add_item("%s" % world.get("label", world.get("id", "")))
-				_world_option.set_item_metadata(_world_option.item_count - 1, world.get("id", ""))
+			if MapState.worlds.is_empty():
+				SessionIO.fill_world_dropdown(_world_option, SessionIO.stock_worlds())
+			else:
+				SessionIO.fill_world_dropdown(_world_option, MapState.worlds)
 			if MapState.has_session and _terrain.has_method("refresh_materials"):
 				_terrain.refresh_materials()
 			_palette.refresh_swatches()
 		"open", "new":
 			MapState.load_from_open(result)
+			if verb == "open":
+				_io.record_open_if_pending()
 			if not _io.template_stem.is_empty():
 				MapState.stem = _io.template_stem
 				_io.template_stem = ""
-				MapState.unsaved = true
+				MapState.note_unsaved()
 				_refresh_map_label()
 			for w in result.get("warnings", []):
 				_log.call("warning: %s" % w)
@@ -411,7 +427,8 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 				else:
 					get_tree().quit(0)
 		"save":
-			MapState.unsaved = false
+			MapState.mark_saved()
+			_refresh_map_label()
 			_log.call("saved %d files to %s" % [
 				(result.get("files", []) as Array).size(), Settings.last_save_dir,
 			])
@@ -455,6 +472,8 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 
 
 func _on_call_failed(verb: String, error: Dictionary) -> void:
+	if verb == "open":
+		_io.clear_pending_open()
 	if verb == "save":
 		# A failed save must not leave quit / new-map / package intents
 		# armed for the next save that succeeds.

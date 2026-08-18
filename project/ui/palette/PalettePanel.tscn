@@ -21,6 +21,22 @@ unique_name_in_owner = true
 layout_mode = 2
 placeholder_text = "Search units…"
 
+[node name="FilterRow" type="HBoxContainer" parent="Box"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="CategoryFilter" type="OptionButton" parent="Box/FilterRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Filter the unit list by category"
+
+[node name="CloneSafe" type="CheckBox" parent="Box/FilterRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Show only clone-safe classes (template_verified)"
+text = "clone-safe only"
+
 [node name="ClassList" type="ItemList" parent="Box"]
 unique_name_in_owner = true
 layout_mode = 2

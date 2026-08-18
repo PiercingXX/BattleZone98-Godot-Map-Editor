@@ -4,6 +4,7 @@ extends RefCounted
 
 func run(t) -> void:
 	var saved_session := MapState.has_session
+	var saved_stem := MapState.stem
 	var saved_worker: Callable = Backend.test_worker
 	var saved_root := Settings.game_root
 	UndoStack.clear()
@@ -41,6 +42,8 @@ func run(t) -> void:
 	t.ok((findings.find_child("Validate", true, false) as Button).disabled)
 
 	t.ok(scene._io != null, "SessionIO constructed")
+	var console: TextEdit = scene.find_child("Console", true, false)
+	t.ok(console != null and "autosave" in console.text.to_lower(), "startup log mentions autosave")
 	t.ok(top.get_signal_connection_list("open_requested").size() > 0)
 	t.ok(top.get_signal_connection_list("save_requested").size() > 0)
 	t.ok(top.get_signal_connection_list("validate_requested").size() > 0)
@@ -74,9 +77,18 @@ func run(t) -> void:
 
 	# Session-shaped enablement without opening a real map.
 	MapState.has_session = true
+	MapState.stem = "foo"
+	UndoStack.clear()
+	MapState.mark_saved()
 	MapState.session_changed.emit()
 	t.ok(not (top.find_child("Save", true, false) as Button).disabled, "Save enables after session_changed")
 	t.ok(not (findings.find_child("Validate", true, false) as Button).disabled)
+	var map_label := top.find_child("MapLabel", true, false) as Label
+	t.eq(map_label.text, "foo", "clean session has no unsaved star")
+	UndoStack.push(_Nop.new())
+	t.eq(map_label.text, "foo*", "edit stars the map label")
+	UndoStack.undo()
+	t.eq(map_label.text, "foo", "undo back to open/save clears the star")
 
 	MapState.has_session = false
 	MapState.session_changed.emit()
@@ -93,9 +105,20 @@ func run(t) -> void:
 			break
 	Backend.test_worker = saved_worker
 	MapState.has_session = saved_session
+	MapState.stem = saved_stem
 	Settings.game_root = saved_root
 	UndoStack.clear()
+	if saved_session:
+		MapState.mark_saved()
 
 
 func _stub(_verb: String, _args: PackedStringArray) -> Dictionary:
 	return {"ok": true, "installs": [], "warnings": [], "worlds": [], "classes": []}
+
+
+class _Nop:
+	extends RefCounted
+	func do() -> void:
+		pass
+	func undo() -> void:
+		pass

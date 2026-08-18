@@ -30,12 +30,32 @@ var mat_image: Image
 var active_variant: String = ""
 var selected_ids: Array[String] = []
 var next_new_id: int = 1
-var unsaved: bool = false
+var _saved_generation: int = 0
 var ceiling_hit: bool = false
 var findings: Array = []
 var findings_stale: bool = false
 var asset_index: Dictionary = {}
 var worlds: Array = []
+
+## True when the undo-point generation differs from the last open/save.
+## Assigning `true` bumps a non-undoable dirty; `false` snapshots the save point.
+var unsaved: bool:
+	get:
+		return has_session and UndoStack.generation != _saved_generation
+	set(value):
+		if value:
+			note_unsaved()
+		else:
+			mark_saved()
+
+
+func mark_saved() -> void:
+	_saved_generation = UndoStack.generation
+
+
+func note_unsaved() -> void:
+	if has_session and UndoStack.generation == _saved_generation:
+		UndoStack.bump()
 
 
 func session_root() -> String:
@@ -82,11 +102,12 @@ func load_from_open(result: Dictionary) -> void:
 	active_variant = str(variants[0]) if not variants.is_empty() else ""
 	selected_ids.clear()
 	next_new_id = 1
-	unsaved = false
 	ceiling_hit = bool(manifest.get("height_over_ceiling", false))
 	findings.clear()
 	findings_stale = false
+	_saved_generation = 0
 	UndoStack.clear()
+	mark_saved()
 	session_changed.emit()
 	water_changed.emit(water_level())
 
@@ -117,13 +138,12 @@ func clear() -> void:
 	field = HeightFieldScript.new()
 	materials = PackedInt32Array()
 	has_session = false
-	unsaved = false
+	_saved_generation = 0
 	session_changed.emit()
 
 
 func mark_terrain_dirty() -> void:
 	dirty["terrain"] = true
-	unsaved = true
 	findings_stale = true
 	dirty_changed.emit()
 
@@ -158,7 +178,6 @@ func set_water_level(v: float) -> void:
 			waters[0]["level_m"] = v
 		features["water"] = waters
 	dirty["features"] = true
-	unsaved = true
 	findings_stale = true
 	dirty_changed.emit()
 	water_changed.emit(v)
@@ -166,7 +185,6 @@ func set_water_level(v: float) -> void:
 
 func mark_materials_dirty() -> void:
 	dirty["materials"] = true
-	unsaved = true
 	findings_stale = true
 	dirty_changed.emit()
 	materials_changed.emit()
@@ -181,7 +199,6 @@ func touch_object(variant: String, object_id: String) -> void:
 	var ids: Array = per[variant]
 	if object_id not in ids:
 		ids.append(object_id)
-	unsaved = true
 	findings_stale = true
 	dirty_changed.emit()
 

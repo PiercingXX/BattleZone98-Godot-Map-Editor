@@ -5,7 +5,7 @@ extends RefCounted
 func run(t) -> void:
 	var saved_feat: Dictionary = MapState.features.duplicate(true)
 	var saved_stem: String = MapState.stem
-	var saved_unsaved: bool = MapState.unsaved
+	var saved_session := MapState.has_session
 	var saved_dirty: Dictionary = MapState.dirty.duplicate(true)
 	MapState.stem = "testmap"
 	MapState.features = {"water": [], "plants": []}
@@ -16,12 +16,25 @@ func run(t) -> void:
 	t.eq(waters[0].get("level_m"), 92.0)
 	t.eq(waters[0].get("variant_scope"), "all")
 	t.ok(str(waters[0].get("stem", "")).length() <= 8, "stem fits engine 8-char cap")
-	t.ok(MapState.unsaved)
 	t.eq(MapState.dirty.get("features"), true)
+	# unsaved is generation-derived; a live write is committed via WaterCommand.
+	MapState.has_session = true
+	UndoStack.clear()
+	MapState.mark_saved()
+	var cmd := WaterCommand.new()
+	cmd.before = -1.0
+	cmd.after = 92.0
+	UndoStack.push(cmd, true)
+	t.ok(MapState.unsaved, "water command dirties")
+	UndoStack.undo()
+	t.ok(not MapState.unsaved, "undo water returns to saved generation")
 	MapState.set_water_level(-1.0)
 	t.eq(MapState.features.get("water"), [])
 	t.near(MapState.water_level(), -1.0, 0.001)
+	UndoStack.clear()
 	MapState.features = saved_feat
 	MapState.stem = saved_stem
-	MapState.unsaved = saved_unsaved
+	MapState.has_session = saved_session
 	MapState.dirty = saved_dirty
+	if saved_session:
+		MapState.mark_saved()

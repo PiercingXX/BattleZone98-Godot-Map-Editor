@@ -25,9 +25,9 @@ func run(t) -> void:
 
 	var index := {
 		"classes": [
-			{"prjid": "avapc", "label": "APC", "source": "game", "category": "craft", "placement_mode": "clone"},
-			{"prjid": "player", "label": "Player", "source": "game", "category": "craft", "placement_mode": "clone"},
-			{"prjid": "packonly", "label": "Other", "source": "workshop", "category": "building", "placement_mode": "runtime"},
+			{"prjid": "avapc", "label": "APC", "source": "game", "category": "craft", "placement_mode": "clone", "template_verified": true},
+			{"prjid": "player", "label": "Player", "source": "game", "category": "craft", "placement_mode": "clone", "template_verified": false},
+			{"prjid": "packonly", "label": "Other", "source": "workshop", "category": "building", "placement_mode": "runtime", "template_verified": true},
 		],
 	}
 	pal.set_classes(index, "base")
@@ -58,6 +58,7 @@ func run(t) -> void:
 	search.text_changed.emit("zzzz")
 	t.eq(list.item_count, 1, "no-match placeholder")
 	t.ok(list.is_item_disabled(0))
+	t.eq(list.get_item_text(0), "No classes match “zzzz”")
 	search.text = ""
 	search.text_changed.emit("")
 	t.eq(list.item_count, 3)
@@ -93,8 +94,57 @@ func run(t) -> void:
 	t.eq(ToolState.tool, "place")
 	var apc_i := _index_of(list, "avapc")
 	t.ok(apc_i >= 0 and list.is_selected(apc_i), "armed class stays highlighted")
+	MapState.session_changed.emit()
+	t.ok(ToolState.armed.is_empty(), "session_changed clears the armed class")
+	t.eq(list.get_selected_items().size(), 0, "palette deselects when the session changes")
+	ToolState.set_armed({"prjid": "avapc"})
+	apc_i = _index_of(list, "avapc")
+	t.ok(apc_i >= 0 and list.is_selected(apc_i), "re-arm highlights again")
 	ToolState.clear_armed()
 	t.eq(list.get_selected_items().size(), 0, "Esc/clear_armed deselects the list")
+
+	var cat: OptionButton = pal.find_child("CategoryFilter", true, false)
+	var clone: CheckBox = pal.find_child("CloneSafe", true, false)
+	t.ok(cat != null and clone != null, "filter controls exist")
+	t.eq(cat.get_item_text(0), "All")
+	t.eq(cat.item_count, 3, "All + categories present in the index")
+	t.ok(_select_option(cat, "craft") >= 0)
+	t.eq(list.item_count, 2, "category craft → avapc + player")
+	t.ok(_index_of(list, "avapc") >= 0 and _index_of(list, "player") >= 0)
+	t.ok(_select_option(cat, "building") >= 0)
+	t.eq(list.item_count, 1, "category building → packonly")
+	t.ok(_index_of(list, "packonly") >= 0)
+
+	_select_option(cat, "All")
+	clone.button_pressed = true
+	t.eq(list.item_count, 2, "clone-safe only → verified avapc + packonly")
+	t.ok(_index_of(list, "avapc") >= 0)
+	t.ok(_index_of(list, "packonly") >= 0)
+	t.eq(_index_of(list, "player"), -1, "unverified player hidden")
+
+	_select_option(cat, "craft")
+	t.eq(list.item_count, 1, "craft + clone-safe → avapc")
+	t.ok(_index_of(list, "avapc") >= 0)
+
+	search.text = "player"
+	search.text_changed.emit("player")
+	t.eq(list.item_count, 1, "craft + clone-safe + search player → empty")
+	t.ok(list.is_item_disabled(0))
+	t.eq(list.get_item_text(0), "no matches — category: craft, clone-safe, “player”")
+
+	search.text = ""
+	search.text_changed.emit("")
+	pal.set_classes({
+		"classes": [
+			{"prjid": "player", "label": "Player", "source": "game", "category": "craft", "placement_mode": "clone", "template_verified": false},
+		],
+	}, "base")
+	_select_option(cat, "craft")
+	clone.button_pressed = true
+	t.eq(list.get_item_text(0), "no matches — category: craft, clone-safe")
+
+	_select_option(cat, "All")
+	clone.button_pressed = false
 
 	pal.queue_free()
 	await t.tree.process_frame
@@ -115,5 +165,14 @@ func _index_of(list: ItemList, prjid: String) -> int:
 	for i in list.item_count:
 		var rec = list.get_item_metadata(i)
 		if typeof(rec) == TYPE_DICTIONARY and str(rec.get("prjid", "")) == prjid:
+			return i
+	return -1
+
+
+func _select_option(btn: OptionButton, label: String) -> int:
+	for i in btn.item_count:
+		if btn.get_item_text(i) == label:
+			btn.select(i)
+			btn.item_selected.emit(i)
 			return i
 	return -1

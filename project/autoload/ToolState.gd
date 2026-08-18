@@ -14,6 +14,17 @@ var paint_material: int = 0
 var armed: Dictionary = {}
 
 
+func _ready() -> void:
+	MapState.session_changed.connect(_on_session_changed)
+
+
+func _on_session_changed() -> void:
+	if armed.is_empty():
+		return
+	clear_armed()
+	EditorFeedback.log("disarmed (map changed)")
+
+
 func set_tool(name: String) -> void:
 	if tool == name:
 		return

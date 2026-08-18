@@ -61,6 +61,30 @@ func run(t) -> void:
 	UndoStack.clear()
 	UndoStack.max_bytes = saved_max
 
+	# Generation / position: push assigns, undo rewinds, bump survives undo.
+	UndoStack.clear()
+	var g0: int = UndoStack.generation
+	t.eq(UndoStack.position, g0, "position aliases generation")
+	UndoStack.push(_Cmd.new(log, "gen-a"))
+	var g1: int = UndoStack.generation
+	t.ok(g1 != g0, "push advances generation")
+	UndoStack.push(_Cmd.new(log, "gen-b"))
+	var g2: int = UndoStack.generation
+	t.ok(g2 != g1, "second push advances again")
+	UndoStack.undo()
+	t.eq(UndoStack.generation, g1, "undo rewinds to previous generation")
+	UndoStack.undo()
+	t.eq(UndoStack.generation, g0, "full undo returns to the clear generation")
+	UndoStack.redo()
+	t.eq(UndoStack.generation, g1, "redo restores the command generation")
+	UndoStack.bump()
+	var bumped: int = UndoStack.generation
+	t.ok(bumped != g1, "bump advances generation")
+	UndoStack.undo()
+	t.ok(UndoStack.generation != g0, "bump survives undo back through the stack")
+	UndoStack.clear()
+	t.eq(UndoStack.generation, 0, "clear resets generation")
+
 
 class _Cmd:
 	extends RefCounted

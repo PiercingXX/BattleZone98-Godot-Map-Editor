@@ -8,7 +8,7 @@ const MaterialStrokeCommandScript = preload("res://project/commands/MaterialStro
 const RAW_MIN := 1
 const RAW_MAX := 4095
 
-var mode: String = "raise" # raise, lower, flatten, smooth, ramp, noise, undefined, paint
+var mode: String = "raise" # raise, lower, flatten, smooth, ramp, noise, paint
 var shape: String = "circle"
 var radius_m: float = 40.0
 var falloff: float = 0.65
@@ -169,15 +169,13 @@ func _apply_height(cur: int, w: float, x: int, z: int, field: HeightField) -> in
 		"noise":
 			var nse := (sin(float(x) * 0.35 + float(z) * 0.21) + sin(float(x) * 0.11 - float(z) * 0.17)) * 0.5
 			return _clamp_write(cur + int(round(nse * 60.0 * strength * w)))
-		"undefined":
-			return 0
 		_:
 			return cur
 
 
 func _clamp_write(v: int) -> int:
 	if v <= 0:
-		return RAW_MIN if mode != "undefined" else 0
+		return RAW_MIN
 	if v > RAW_MAX:
 		return RAW_MAX
 	return v
