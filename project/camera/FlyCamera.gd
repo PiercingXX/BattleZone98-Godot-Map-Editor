@@ -95,8 +95,9 @@ func handle_event(event: InputEvent) -> void:
 			# Shift/Ctrl also modulate WASD speed; never hijack mid-flight.
 			pass
 		elif mm.button_mask == 0 and mm.ctrl_pressed:
-			# Buttonless Ctrl+move orbits the pivot, deliberately slow.
-			_orbit(mm.relative * 0.25)
+			# Buttonless Ctrl+move orbits the pivot, deliberately slow
+			# (~1/16 of drag-orbit speed).
+			_orbit(mm.relative * 0.06)
 		elif mm.button_mask == 0 and mm.alt_pressed:
 			# Buttonless Alt+move pans the camera tripod-style.
 			rotate_y(look_yaw_delta(mm.relative.x, _look_sens))
