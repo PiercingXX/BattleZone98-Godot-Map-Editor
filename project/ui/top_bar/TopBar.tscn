@@ -3,86 +3,90 @@
 [ext_resource type="Script" path="res://project/ui/top_bar/TopBar.gd" id="1_script"]
 
 [node name="TopBar" type="PanelContainer"]
-custom_minimum_size = Vector2(0, 44)
+custom_minimum_size = Vector2(0, 72)
 script = ExtResource("1_script")
 
-[node name="Inner" type="HBoxContainer" parent="."]
+[node name="Rows" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Inner" type="HBoxContainer" parent="Rows"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Brand" type="Label" parent="Inner"]
+[node name="Brand" type="Label" parent="Rows/Inner"]
 layout_mode = 2
 text = "BZ98"
 
-[node name="MapLabel" type="Label" parent="Inner"]
+[node name="MapLabel" type="Label" parent="Rows/Inner"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "no map"
 
-[node name="Sep1" type="ColorRect" parent="Inner"]
+[node name="Sep1" type="ColorRect" parent="Rows/Inner"]
 custom_minimum_size = Vector2(1, 18)
 layout_mode = 2
 size_flags_vertical = 4
 color = Color(1, 1, 1, 0.1)
 
-[node name="Open" type="Button" parent="Inner"]
+[node name="Open" type="Button" parent="Rows/Inner"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Open"
 
-[node name="New" type="Button" parent="Inner"]
+[node name="New" type="Button" parent="Rows/Inner"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "New"
 
-[node name="Save" type="Button" parent="Inner"]
+[node name="Save" type="Button" parent="Rows/Inner"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Save"
 
-[node name="Validate" type="Button" parent="Inner"]
+[node name="Validate" type="Button" parent="Rows/Inner"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Validate"
 
-[node name="More" type="MenuButton" parent="Inner"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "More"
-
-[node name="View" type="MenuButton" parent="Inner"]
+[node name="View" type="MenuButton" parent="Rows/Inner"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "View"
 
-[node name="Sep2" type="ColorRect" parent="Inner"]
+[node name="Sep2" type="ColorRect" parent="Rows/Inner"]
 custom_minimum_size = Vector2(1, 18)
 layout_mode = 2
 size_flags_vertical = 4
 color = Color(1, 1, 1, 0.1)
 
-[node name="Sep3" type="ColorRect" parent="Inner"]
+[node name="Sep3" type="ColorRect" parent="Rows/Inner"]
 custom_minimum_size = Vector2(1, 18)
 layout_mode = 2
 size_flags_vertical = 4
 color = Color(1, 1, 1, 0.1)
 
-[node name="Variant" type="OptionButton" parent="Inner"]
+[node name="Variant" type="OptionButton" parent="Rows/Inner"]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Active variant"
 
-[node name="Undo" type="Button" parent="Inner"]
+[node name="Undo" type="Button" parent="Rows/Inner"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Undo"
 
-[node name="Redo" type="Button" parent="Inner"]
+[node name="Redo" type="Button" parent="Rows/Inner"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Redo"
 
-[node name="Frame" type="Button" parent="Inner"]
+[node name="Frame" type="Button" parent="Rows/Inner"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Frame"
+
+[node name="Row2" type="HBoxContainer" parent="Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4

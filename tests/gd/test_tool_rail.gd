@@ -45,6 +45,32 @@ func run(t) -> void:
 	rail.refresh_keymap()
 	t.eq(_btn(rail, "Raise").tooltip_text, "Raise  (W)", "tooltips follow the active scheme")
 
+	# View toggles live below the tools, past a separator.
+	var saved_walk: bool = Settings.walk_mode
+	var walk := _btn(rail, "Walk")
+	var grid := _btn(rail, "Grid")
+	var slope := _btn(rail, "Slope")
+	var log_btn := _btn(rail, "Log")
+	t.ok(walk and grid and slope and log_btn, "rail hosts walk/grid/slope/log")
+	t.ok(rail.find_child("ToggleSep", true, false) != null, "separator before toggles")
+	t.ok(walk.toggle_mode and grid.toggle_mode and slope.toggle_mode and log_btn.toggle_mode)
+	grid.button_pressed = true
+	t.ok(not grid.button_pressed, "Grid reverts without an editor shell")
+	slope.button_pressed = true
+	t.ok(not slope.button_pressed, "Slope reverts without an editor shell")
+	var want_walk: bool = not saved_walk
+	walk.button_pressed = want_walk
+	t.eq(Settings.walk_mode, want_walk, "Walk writes Settings")
+	Settings.walk_mode = saved_walk
+	Settings.save()
+	var logs: Array = []
+	rail.log_toggled.connect(func(on): logs.append(on))
+	log_btn.button_pressed = true
+	t.eq(logs, [true], "Log toggle emits")
+	rail.set_log_visible(false)
+	t.ok(not log_btn.button_pressed)
+	t.eq(logs, [true], "set_log_visible does not re-emit")
+
 	rail.queue_free()
 	await t.tree.process_frame
 	Settings.keymap_scheme = saved_scheme

@@ -1,3 +1,94 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-	<path fill="#ffffff" fill-rule="evenodd" d="M4 4h11v3.2H7.2V15H4V4zm5 5h11v11H9V9zm2.4 2.4v6.2h6.2v-6.2h-6.2z"/>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:osb="http://www.openswatchbook.org/uri/2009/osb"
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   viewBox="0 0 16 16"
+   id="svg7384"
+   height="24"
+   width="24"
+   version="1.1"
+   inkscape:version="0.92.2 2405546, 2018-03-11"
+   sodipodi:docname="gimp-tool-clone-symbolic.svg">
+  <sodipodi:namedview
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1"
+     objecttolerance="10"
+     gridtolerance="10"
+     guidetolerance="10"
+     inkscape:pageopacity="0"
+     inkscape:pageshadow="2"
+     inkscape:window-width="1366"
+     inkscape:window-height="741"
+     id="namedview1509"
+     showgrid="false"
+     inkscape:zoom="20.891296"
+     inkscape:cx="3.2296367"
+     inkscape:cy="12.433561"
+     inkscape:window-x="0"
+     inkscape:window-y="27"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg7384"
+     fit-margin-top="0"
+     fit-margin-left="0"
+     fit-margin-right="0"
+     fit-margin-bottom="0" />
+  <metadata
+     id="metadata90">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+        <dc:contributor>
+          <cc:Agent>
+            <dc:title>Barbara Muraus, Jakub Steiner, Klaus Staedtler</dc:title>
+          </cc:Agent>
+        </dc:contributor>
+        <dc:description>Images originally created as the &quot;Art Libre&quot; icon set. Extended and adopted for GIMP</dc:description>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  
+  <g
+     style="display:inline"
+     id="gimp-tool-clone"
+     inkscape:label="gimp-tool-clone"
+     transform="matrix(1,0,0,1.0015171,-81.000198,-237.35955)">
+    <rect
+       ry="0"
+       rx="0.75"
+       y="237"
+       x="81.000198"
+       height="15.975763"
+       width="16.000002"
+       id="rect5537"
+       style="opacity:0;fill:none;fill-opacity:1;stroke:none" />
+    <path
+       inkscape:connector-curvature="0"
+       id="rect5543"
+       d="m 83.0002,248 v 3 h 6 l -2,-3 z m 6,3 h 6 v -3 h -4 z"
+       style="fill:#ffffff;fill-opacity:1;stroke:none" />
+    <path
+       sodipodi:nodetypes="ccccccc"
+       inkscape:connector-curvature="0"
+       id="rect5545"
+       d="m 84.000198,247.22414 c 0,0 4.000002,0 4.000002,-3.87931 1,-0.77586 2,0 2,0 0,3.87931 3.999998,3.87931 3.999998,3.87931 V 248 h -10 z"
+       style="fill:#ffffff;fill-opacity:1;stroke:none" />
+    <path
+       inkscape:connector-curvature="0"
+       transform="matrix(0.57142911,0,0,1,175.57171,218)"
+       style="fill:#ffffff;fill-opacity:1;stroke:none"
+       d="m -148,24 a 3.5,2 0 0 1 -3.5,2 3.5,2 0 0 1 -3.5,-2 3.5,2 0 0 1 3.5,-2 3.5,2 0 0 1 3.5,2 z"
+       id="path5547" />
+  </g>
 </svg>

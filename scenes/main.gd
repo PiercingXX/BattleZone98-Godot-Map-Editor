@@ -220,7 +220,7 @@ func _wire() -> void:
 	_findings.finding_selected.connect(_on_finding_select)
 	_findings.finding_activated.connect(_on_finding_fly)
 	_findings.validate_requested.connect(_io.validate)
-	_status.log_toggled.connect(_on_console_toggled)
+	_rail.log_toggled.connect(_on_console_toggled)
 	_wire_panel_collapse()
 	_probe.install_chosen.connect(_io.choose_install)
 	_quit_dialog.confirmed.connect(_io.quit_save)
@@ -1671,7 +1671,7 @@ func _set_console_visible(on: bool, persist: bool) -> void:
 	if _console:
 		_console.visible = on
 	if _status:
-		_status.set_log_visible(on)
+		_rail.set_log_visible(on)
 
 
 func _toggle_focus_mode() -> void:
@@ -1691,13 +1691,13 @@ func _apply_focus_mode() -> void:
 		if _console:
 			_console.visible = false
 		if _status:
-			_status.set_log_visible(false)
+			_rail.set_log_visible(false)
 	else:
 		_apply_split_offsets()
 		if _console:
 			_console.visible = Settings.console_visible
 		if _status:
-			_status.set_log_visible(Settings.console_visible)
+			_rail.set_log_visible(Settings.console_visible)
 
 
 func _install_layout_persistence() -> void:

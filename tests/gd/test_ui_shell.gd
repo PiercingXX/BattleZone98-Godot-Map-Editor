@@ -90,9 +90,11 @@ func run(t) -> void:
 	t.ok(findings.get_signal_connection_list("validate_requested").size() > 0)
 	t.ok(probe.get_signal_connection_list("install_chosen").size() > 0)
 
-	var walk: Button = status.find_child("Walk", true, false)
-	var grid: Button = status.find_child("Grid", true, false)
-	var slope: Button = status.find_child("Slope", true, false)
+	var rail: Node = scene.find_child("ToolRail", true, false)
+	t.ok(rail != null, "shell hosts the tool rail")
+	var walk: Button = rail.find_child("Walk", true, false)
+	var grid: Button = rail.find_child("Grid", true, false)
+	var slope: Button = rail.find_child("Slope", true, false)
 	t.ok(walk != null and grid != null and slope != null)
 
 	grid.set_pressed_no_signal(false)

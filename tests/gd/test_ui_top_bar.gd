@@ -47,14 +47,14 @@ func run(t) -> void:
 	t.ok(_btn(bar, "Test").icon != null)
 	t.eq(_btn(bar, "Test").text, "Test")
 	t.ok((bar.find_child("Variant", true, false) as OptionButton).disabled, "variant empty/disabled")
-	var more0: PopupMenu = (bar.find_child("More", true, false) as MenuButton).get_popup()
-	t.eq(more0.get_item_text(more0.get_item_index(bar.MORE_PUBLISH)), "Publish for workshop…")
-	t.ok(more0.is_item_disabled(more0.get_item_index(bar.MORE_PUBLISH)), "Publish needs a session")
-	t.eq(more0.get_item_tooltip(more0.get_item_index(bar.MORE_PUBLISH)), "Open a map first")
-	t.eq(more0.get_item_text(more0.get_item_index(bar.MORE_SCREENSHOT)), "Screenshot viewport")
-	t.ok(not more0.is_item_disabled(more0.get_item_index(bar.MORE_SCREENSHOT)), "Screenshot stays available")
-	t.eq(more0.get_item_text(more0.get_item_index(bar.MORE_PREFS)), "Preferences…")
-	t.ok(not more0.is_item_disabled(more0.get_item_index(bar.MORE_PREFS)), "Preferences stays available")
+	# Former "More" menu items live on the always-visible action row.
+	t.ok(bar.find_child("More", true, false) == null, "the ... menu is gone")
+	t.ok(_btn(bar, "Publish").disabled, "Publish needs a session")
+	t.eq(_btn(bar, "Publish").tooltip_text, "Open a map first")
+	t.ok(not _btn(bar, "Screenshot").disabled, "Screenshot stays available")
+	t.ok(not _btn(bar, "Prefs").disabled, "Preferences stays available")
+	t.ok(_btn(bar, "SaveAs").disabled, "Save As needs a session")
+	t.ok(_btn(bar, "ExportPng").disabled, "Export PNG needs a heightmap")
 
 	var framed := [0]
 	bar.frame_requested.connect(func(): framed[0] += 1)
@@ -125,27 +125,24 @@ func run(t) -> void:
 	bar.set_busy(false)
 	t.ok(not _btn(bar, "Save").disabled, "Save re-enabled after busy, session still open")
 
-	var pop: PopupMenu = (bar.find_child("More", true, false) as MenuButton).get_popup()
-	t.ok(pop.is_item_disabled(pop.get_item_index(bar.MORE_IMPORT)), "Import disabled without game_root")
-	t.ok(not pop.is_item_disabled(pop.get_item_index(bar.MORE_RENDER)), "Render enabled with session")
-	t.ok(pop.is_item_disabled(pop.get_item_index(bar.MORE_INSTALL)), "Install needs game_root")
-	t.ok(not pop.is_item_disabled(pop.get_item_index(bar.MORE_PACK)))
-	t.ok(not pop.is_item_disabled(pop.get_item_index(bar.MORE_PUBLISH)), "Publish enabled with session")
+	t.ok(_btn(bar, "Assets").disabled, "Import disabled without game_root")
+	t.ok(not _btn(bar, "Thumbnail").disabled, "Render enabled with session")
+	t.ok(_btn(bar, "Install").disabled, "Install needs game_root")
+	t.ok(not _btn(bar, "Pack").disabled)
+	t.ok(not _btn(bar, "Publish").disabled, "Publish enabled with session")
 	bar.set_busy(true)
-	t.ok(pop.is_item_disabled(pop.get_item_index(bar.MORE_PUBLISH)), "Publish disabled while busy")
-	t.eq(pop.get_item_tooltip(pop.get_item_index(bar.MORE_PUBLISH)), "Busy…")
+	t.ok(_btn(bar, "Publish").disabled, "Publish disabled while busy")
+	t.eq(_btn(bar, "Publish").tooltip_text, "Busy…")
 	bar.set_busy(false)
-	t.ok(not pop.is_item_disabled(pop.get_item_index(bar.MORE_SAVE_AS)))
-	t.eq(pop.get_item_text(pop.get_item_index(bar.MORE_EXPORT_HEIGHTMAP)), "Export heightmap PNG…")
-	t.eq(pop.get_item_text(pop.get_item_index(bar.MORE_IMPORT_HEIGHTMAP)), "Import heightmap PNG…")
-	t.ok(not pop.is_item_disabled(pop.get_item_index(bar.MORE_EXPORT_HEIGHTMAP)), "Export heightmap enabled with grid")
-	t.ok(not pop.is_item_disabled(pop.get_item_index(bar.MORE_IMPORT_HEIGHTMAP)), "Import heightmap enabled with grid")
-	t.ok(not pop.is_item_disabled(pop.get_item_index(bar.MORE_HELP)))
+	t.ok(not _btn(bar, "SaveAs").disabled)
+	t.ok(not _btn(bar, "ExportPng").disabled, "Export heightmap enabled with grid")
+	t.ok(not _btn(bar, "ImportPng").disabled, "Import heightmap enabled with grid")
+	t.ok(not _btn(bar, "Hotkeys").disabled)
 
-	Settings.game_root = "/tmp/fake-bz"
+	Settings.game_root = "/tmp/bz-fake-root-for-test"
 	bar._refresh_actions()
-	t.ok(not pop.is_item_disabled(pop.get_item_index(bar.MORE_IMPORT)), "Import enables with game_root")
-	t.ok(not pop.is_item_disabled(pop.get_item_index(bar.MORE_INSTALL)), "Install enables with session+root")
+	t.ok(not _btn(bar, "Assets").disabled, "Import enables with game_root")
+	t.ok(not _btn(bar, "Install").disabled, "Install enables with session+root")
 	t.ok(not _btn(bar, "Test").disabled, "Test enables with session+root")
 	var tested := [0]
 	bar.test_requested.connect(func(): tested[0] += 1)
@@ -156,34 +153,33 @@ func run(t) -> void:
 	var save_as := [0]
 	bar.more_selected.connect(func(id): more_ids.append(id))
 	bar.save_as_requested.connect(func(): save_as[0] += 1)
-	pop.id_pressed.emit(bar.MORE_PROBE)
-	pop.id_pressed.emit(bar.MORE_SAVE_AS)
-	t.eq(more_ids, [bar.MORE_PROBE], "Save As is intercepted")
+	_btn(bar, "Probe").pressed.emit()
+	_btn(bar, "SaveAs").pressed.emit()
+	t.eq(more_ids, [bar.MORE_PROBE], "Save As emits its own signal, not more_selected")
 	t.eq(save_as[0], 1)
-	pop.id_pressed.emit(bar.MORE_PREFS)
+	_btn(bar, "Prefs").pressed.emit()
 	t.eq(more_ids, [bar.MORE_PROBE, bar.MORE_PREFS], "Preferences emits more_selected")
 
-	var has_scheme := false
-	for i in pop.item_count:
-		if pop.get_item_text(i) == "Keyboard scheme":
-			has_scheme = true
-	t.ok(has_scheme, "More menu lists Keyboard scheme")
-	var scheme_menu: PopupMenu = bar.find_child("KeymapScheme", true, false)
-	t.ok(scheme_menu != null, "More owns a Keyboard scheme submenu")
-	t.ok(scheme_menu.get_item_index(bar.MORE_SCHEME_GODOT) >= 0)
-	t.ok(scheme_menu.get_item_index(bar.MORE_SCHEME_GIMP) >= 0)
+	var scheme_opt: OptionButton = bar.find_child("KeymapScheme", true, false)
+	t.ok(scheme_opt != null, "action row owns the keyboard scheme selector")
+	t.ok(scheme_opt.get_item_index(bar.MORE_SCHEME_GODOT) >= 0)
+	t.ok(scheme_opt.get_item_index(bar.MORE_SCHEME_GIMP) >= 0)
 	bar.refresh_keymap()
-	t.ok(scheme_menu.is_item_checked(scheme_menu.get_item_index(bar.MORE_SCHEME_GODOT)), "Godot checked by default")
-	t.ok(not scheme_menu.is_item_checked(scheme_menu.get_item_index(bar.MORE_SCHEME_GIMP)))
+	t.eq(
+		scheme_opt.get_item_id(scheme_opt.selected), bar.MORE_SCHEME_GODOT,
+		"Godot selected by default"
+	)
 	Settings.keymap_scheme = "gimp"
 	bar.refresh_keymap()
-	t.ok(scheme_menu.is_item_checked(scheme_menu.get_item_index(bar.MORE_SCHEME_GIMP)), "GIMP checks after scheme flip")
-	t.ok(not scheme_menu.is_item_checked(scheme_menu.get_item_index(bar.MORE_SCHEME_GODOT)))
-	scheme_menu.id_pressed.emit(bar.MORE_SCHEME_GODOT)
+	t.eq(
+		scheme_opt.get_item_id(scheme_opt.selected), bar.MORE_SCHEME_GIMP,
+		"GIMP selects after scheme flip"
+	)
+	scheme_opt.item_selected.emit(scheme_opt.get_item_index(bar.MORE_SCHEME_GODOT))
 	t.eq(
 		more_ids,
 		[bar.MORE_PROBE, bar.MORE_PREFS, bar.MORE_SCHEME_GODOT],
-		"scheme submenu emits more_selected"
+		"scheme selector emits more_selected"
 	)
 	Settings.keymap_scheme = "godot"
 	bar.refresh_keymap()

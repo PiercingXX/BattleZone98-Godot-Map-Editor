@@ -31,30 +31,3 @@ unique_name_in_owner = true
 layout_mode = 2
 text = ""
 
-[node name="Walk" type="Button" parent="Inner"]
-unique_name_in_owner = true
-layout_mode = 2
-toggle_mode = true
-tooltip_text = "Walk-the-surface  (V)"
-text = "Walk"
-
-[node name="Grid" type="Button" parent="Inner"]
-unique_name_in_owner = true
-layout_mode = 2
-toggle_mode = true
-tooltip_text = "Terrain grid  (G)"
-text = "Grid"
-
-[node name="Slope" type="Button" parent="Inner"]
-unique_name_in_owner = true
-layout_mode = 2
-toggle_mode = true
-tooltip_text = "Slope tint  (H)"
-text = "Slope"
-
-[node name="Log" type="Button" parent="Inner"]
-unique_name_in_owner = true
-layout_mode = 2
-toggle_mode = true
-tooltip_text = "Toggle console  (`)"
-text = "Log"

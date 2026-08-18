@@ -2,7 +2,6 @@ extends PanelContainer
 class_name StatusBar
 ## Single owner of the status label, plus cursor / map / fps / log / view toggles.
 
-signal log_toggled(on: bool)
 signal goto_submitted(text: String)
 
 var _kind: String = "info"
@@ -19,20 +18,11 @@ const _SPIN_FRAMES: PackedStringArray = ["◐", "◓", "◑", "◒"]
 @onready var _map: Label = %MapInfo
 @onready var _status: Label = %Status
 @onready var _debug: Label = %Debug
-@onready var _log: Button = %Log
-@onready var _walk: Button = %Walk
-@onready var _grid: Button = %Grid
-@onready var _slope: Button = %Slope
 var _sel: Label
 var _tsel: Label
 
 
 func _ready() -> void:
-	_log.toggled.connect(func(on): log_toggled.emit(on))
-	_walk.toggled.connect(_on_walk)
-	_grid.toggled.connect(_on_grid)
-	_slope.toggled.connect(_on_slope)
-	_walk.set_pressed_no_signal(Settings.walk_mode)
 	_refresh_autosave_tooltip()
 	_install_activity()
 	Backend.call_started.connect(_on_backend_started)
@@ -78,16 +68,6 @@ func _process(delta: float) -> void:
 			_spin_i = (_spin_i + 1) % _SPIN_FRAMES.size()
 			if _activity_spin:
 				_activity_spin.text = _SPIN_FRAMES[_spin_i]
-	if _walk and _walk.button_pressed != Settings.walk_mode:
-		_walk.set_pressed_no_signal(Settings.walk_mode)
-	var shell := _shell()
-	if shell == null:
-		return
-	if _grid:
-		_grid.set_pressed_no_signal(bool(shell.get("_show_grid")))
-	if _slope and shell.get("_terrain") != null:
-		var terrain: Object = shell.get("_terrain")
-		_slope.set_pressed_no_signal(bool(terrain.get("_show_slope")))
 
 
 func _install_activity() -> void:
@@ -231,48 +211,6 @@ func _refresh_terrain_selection() -> void:
 		],
 		true,
 	)
-
-
-func set_log_visible(on: bool) -> void:
-	_log.set_pressed_no_signal(on)
-
-
-func _on_walk(on: bool) -> void:
-	if Settings.walk_mode == on:
-		return
-	Settings.walk_mode = on
-	Settings.save()
-	EditorFeedback.log("walk mode %s" % on)
-
-
-func _on_grid(on: bool) -> void:
-	var shell := _shell()
-	if shell == null:
-		_grid.set_pressed_no_signal(false)
-		return
-	if bool(shell.get("_show_grid")) == on:
-		return
-	shell.set("_show_grid", on)
-	if shell.has_method("_apply_grid"):
-		shell.call("_apply_grid")
-	Settings.view_grid = on
-	Settings.save()
-	EditorFeedback.log("grid %s" % ("on" if on else "off"))
-
-
-func _on_slope(on: bool) -> void:
-	var shell := _shell()
-	if shell == null or shell.get("_terrain") == null:
-		_slope.set_pressed_no_signal(false)
-		return
-	var terrain: Object = shell.get("_terrain")
-	if bool(terrain.get("_show_slope")) == on:
-		return
-	if terrain.has_method("set_slope_overlay"):
-		terrain.call("set_slope_overlay", on)
-	Settings.view_slope = on
-	Settings.save()
-	EditorFeedback.log("slope overlay %s" % ("on" if on else "off"))
 
 
 func _on_goto_submitted(text: String) -> void:

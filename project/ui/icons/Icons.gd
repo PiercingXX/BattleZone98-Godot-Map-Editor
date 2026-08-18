@@ -9,6 +9,7 @@ const NAMES: PackedStringArray = [
 	"select", "noise", "qsel", "rsel", "wand", "clone",
 	"open", "new", "save", "validate", "test", "undo", "redo", "frame", "more",
 	"search", "filter", "eyedropper", "water", "plants", "view", "team",
+	"walk", "grid", "slope", "log",
 ]
 
 const TOOL_ICONS := {

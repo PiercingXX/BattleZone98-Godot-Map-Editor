@@ -49,11 +49,13 @@ const VIEW_AIPATHS := 11
 var _busy: bool = false
 var _testing: bool = false
 var _open_menu: PopupMenu
-var _scheme_menu: PopupMenu
 var _view_menu: PopupMenu
 var _btn_test: Button
 var _btn_map: Button
 var _map_mode: bool = false
+## id → Button for the secondary action row (former "More" menu).
+var _actions: Dictionary = {}
+var _scheme_opt: OptionButton
 
 @onready var _map_label: Label = %MapLabel
 @onready var _variant: OptionButton = %Variant
@@ -64,7 +66,7 @@ var _map_mode: bool = false
 @onready var _btn_undo: Button = %Undo
 @onready var _btn_redo: Button = %Redo
 @onready var _btn_frame: Button = %Frame
-@onready var _more: MenuButton = %More
+@onready var _row2: HBoxContainer = %Row2
 @onready var _view: MenuButton = %View
 
 
@@ -80,34 +82,7 @@ func _ready() -> void:
 	%Redo.pressed.connect(_on_redo)
 	%Frame.pressed.connect(_on_frame)
 	_variant.item_selected.connect(func(_i): variant_changed.emit())
-	var pop: PopupMenu = _more.get_popup()
-	pop.add_item("Import assets", MORE_IMPORT)
-	pop.add_item("Render thumbnail", MORE_RENDER)
-	pop.add_item("Screenshot viewport", MORE_SCREENSHOT)
-	pop.add_item("Install into game (addon)", MORE_INSTALL)
-	pop.add_item("Assemble pack", MORE_PACK)
-	pop.add_item("Publish for workshop…", MORE_PUBLISH)
-	pop.add_separator()
-	pop.add_item("Re-probe install", MORE_PROBE)
-	pop.add_item("Save As…", MORE_SAVE_AS)
-	pop.add_item("Export heightmap PNG…", MORE_EXPORT_HEIGHTMAP)
-	pop.add_item("Import heightmap PNG…", MORE_IMPORT_HEIGHTMAP)
-	pop.add_item("Hotkeys  F1", MORE_HELP)
-	pop.add_item("Preferences…", MORE_PREFS)
-	_scheme_menu = PopupMenu.new()
-	_scheme_menu.name = "KeymapScheme"
-	_scheme_menu.add_radio_check_item("Godot", MORE_SCHEME_GODOT)
-	_scheme_menu.add_radio_check_item("GIMP", MORE_SCHEME_GIMP)
-	pop.add_child(_scheme_menu)
-	pop.add_submenu_item("Keyboard scheme", _scheme_menu.name)
-	_scheme_menu.id_pressed.connect(func(id): more_selected.emit(id))
-	pop.id_pressed.connect(func(id):
-		if id == MORE_SAVE_AS:
-			save_as_requested.emit()
-		else:
-			more_selected.emit(id)
-	)
-	pop.about_to_popup.connect(_refresh_more)
+	_install_action_row()
 	_apply_chrome_icons()
 	MapState.session_changed.connect(_refresh_actions)
 	MapState.features_changed.connect(_refresh_view_menu)
@@ -117,6 +92,59 @@ func _ready() -> void:
 	Backend.call_finished.connect(func(_v, _r): set_busy(false))
 	Backend.call_failed.connect(func(_v, _e): set_busy(false))
 	_refresh_actions()
+
+
+## Secondary action row: everything the old "More" menu hid, grouped
+## file / capture / game / system, always visible.
+func _install_action_row() -> void:
+	if _row2 == null:
+		return
+	_action_button("SaveAs", "Save As…", MORE_SAVE_AS, "save")
+	_action_button("ImportPng", "Import PNG", MORE_IMPORT_HEIGHTMAP, "")
+	_action_button("ExportPng", "Export PNG", MORE_EXPORT_HEIGHTMAP, "")
+	_row2_sep()
+	_action_button("Assets", "Assets", MORE_IMPORT, "open")
+	_action_button("Thumbnail", "Thumbnail", MORE_RENDER, "frame")
+	_action_button("Screenshot", "Screenshot", MORE_SCREENSHOT, "view")
+	_row2_sep()
+	_action_button("Install", "Install", MORE_INSTALL, "test")
+	_action_button("Pack", "Pack", MORE_PACK, "")
+	_action_button("Publish", "Publish", MORE_PUBLISH, "")
+	_row2_sep()
+	_action_button("Probe", "Probe", MORE_PROBE, "")
+	_scheme_opt = OptionButton.new()
+	_scheme_opt.name = "KeymapScheme"
+	_scheme_opt.focus_mode = Control.FOCUS_NONE
+	_scheme_opt.add_item("Keys: Godot", MORE_SCHEME_GODOT)
+	_scheme_opt.add_item("Keys: GIMP", MORE_SCHEME_GIMP)
+	_scheme_opt.tooltip_text = "Keyboard scheme"
+	_scheme_opt.item_selected.connect(func(i: int) -> void:
+		more_selected.emit(_scheme_opt.get_item_id(i))
+	)
+	_row2.add_child(_scheme_opt)
+	_action_button("Hotkeys", "Hotkeys", MORE_HELP, "")
+	_action_button("Prefs", "Prefs", MORE_PREFS, "")
+	_refresh_action_row()
+
+
+func _action_button(node_name: String, label: String, id: int, icon: String) -> void:
+	var b := Button.new()
+	b.name = node_name
+	b.text = label
+	b.focus_mode = Control.FOCUS_NONE
+	if not icon.is_empty():
+		EditorIcons.apply_button(b, icon, true)
+	if id == MORE_SAVE_AS:
+		b.pressed.connect(func() -> void: save_as_requested.emit())
+	else:
+		b.pressed.connect(func() -> void: more_selected.emit(id))
+	_row2.add_child(b)
+	_actions[id] = b
+
+
+func _row2_sep() -> void:
+	var sep := VSeparator.new()
+	_row2.add_child(sep)
 
 
 func _install_test_button() -> void:
@@ -511,14 +539,12 @@ func _refresh_actions() -> void:
 		_btn_frame.disabled = not session
 		_btn_frame.tooltip_text = "Frame the map  (%s)" % Keymap.format_action(Keymap.ACTION_FRAME) if session else "Open a map first"
 	_refresh_map_button()
-	if _more:
-		_more.tooltip_text = "More"
 	if _view:
 		_view.tooltip_text = "View filters"
 	if _variant:
 		_variant.disabled = not session or _variant.item_count == 0
 		_variant.tooltip_text = "Active variant (DM / _S / _ST / _SW)" if session else "Open a map first"
-	_refresh_more()
+	_refresh_action_row()
 	_refresh_view_menu()
 
 
@@ -548,57 +574,52 @@ func _refresh_test_button(session: bool) -> void:
 	)
 
 
-func _refresh_more() -> void:
-	if _more == null:
-		return
-	var pop: PopupMenu = _more.get_popup()
-	if pop.get_item_count() == 0:
+func _refresh_action_row() -> void:
+	if _actions.is_empty():
 		return
 	var session := MapState.has_session
 	var root := not Settings.game_root.is_empty()
-	_set_more_item(pop, MORE_IMPORT, not _busy and root, "Probe an install first" if not root else "Import / refresh the asset index")
-	_set_more_item(pop, MORE_RENDER, not _busy and session, "Open a map first")
-	_set_more_item(pop, MORE_SCREENSHOT, not _busy, "Busy…")
-	_set_more_item(pop, MORE_INSTALL, not _busy and session and root, "Needs an open map and a game install")
-	_set_more_item(pop, MORE_PACK, not _busy and session, "Open a map first")
-	var pub_ok := not _busy and session
-	var pub_tip := "Busy…" if _busy else "Open a map first"
-	_set_more_item(pop, MORE_PUBLISH, pub_ok, pub_tip)
-	_set_more_item(pop, MORE_PROBE, not _busy, "Busy…")
-	_set_more_item(pop, MORE_SAVE_AS, not _busy and session, "Open a map first")
+	_set_action(MORE_IMPORT, not _busy and root, "Probe an install first" if not root else "Busy…", "Import / refresh the asset index")
+	_set_action(MORE_RENDER, not _busy and session, "Open a map first", "Render a map thumbnail")
+	_set_action(MORE_SCREENSHOT, not _busy, "Busy…", "Screenshot the viewport")
+	_set_action(MORE_INSTALL, not _busy and session and root, "Needs an open map and a game install", "Install into the game (addon)")
+	_set_action(MORE_PACK, not _busy and session, "Open a map first", "Assemble a distributable pack")
+	_set_action(MORE_PUBLISH, not _busy and session, "Busy…" if _busy else "Open a map first", "Publish for workshop")
+	_set_action(MORE_PROBE, not _busy, "Busy…", "Re-probe the game install")
+	_set_action(MORE_SAVE_AS, not _busy and session, "Open a map first", "Save a copy elsewhere")
 	var hmap_ok := not _busy and session and MapState.has_heightmap()
 	var hmap_tip := "Busy…" if _busy else ("Open a map first" if not session else "Map has no heightmap")
-	_set_more_item(pop, MORE_EXPORT_HEIGHTMAP, hmap_ok, hmap_tip)
-	_set_more_item(pop, MORE_IMPORT_HEIGHTMAP, hmap_ok, hmap_tip)
-	_set_more_item(pop, MORE_HELP, true, "Keyboard reference  (%s)" % Keymap.format_action(Keymap.ACTION_HELP))
-	_set_more_item(pop, MORE_PREFS, true, "Editor preferences")
-	_refresh_scheme_menu()
+	_set_action(MORE_EXPORT_HEIGHTMAP, hmap_ok, hmap_tip, "Export the heightmap as 16-bit PNG")
+	_set_action(MORE_IMPORT_HEIGHTMAP, hmap_ok, hmap_tip, "Import a 16-bit PNG heightmap")
+	_set_action(MORE_HELP, true, "", "Keyboard reference  (%s)" % Keymap.format_action(Keymap.ACTION_HELP))
+	_set_action(MORE_PREFS, true, "", "Editor preferences")
+	_refresh_scheme_opt()
 
 
-func _set_more_item(pop: PopupMenu, id: int, enabled: bool, disabled_tip: String) -> void:
-	var idx := pop.get_item_index(id)
-	if idx < 0:
+func _set_action(id: int, enabled: bool, disabled_tip: String, ok_tip: String) -> void:
+	var b: Button = _actions.get(id)
+	if b == null:
 		return
-	pop.set_item_disabled(idx, not enabled)
-	pop.set_item_tooltip(idx, disabled_tip if not enabled else "")
+	b.disabled = not enabled
+	b.tooltip_text = ok_tip if enabled else disabled_tip
 
 
 func refresh_keymap() -> void:
-	_refresh_scheme_menu()
 	_refresh_map_button()
-	_refresh_more()
+	_refresh_action_row()
 
 
-func _refresh_scheme_menu() -> void:
-	if _scheme_menu == null:
+func _refresh_scheme_opt() -> void:
+	if _scheme_opt == null:
 		return
-	var scheme := Keymap.active_scheme()
-	var godot_idx := _scheme_menu.get_item_index(MORE_SCHEME_GODOT)
-	var gimp_idx := _scheme_menu.get_item_index(MORE_SCHEME_GIMP)
-	if godot_idx >= 0:
-		_scheme_menu.set_item_checked(godot_idx, scheme == Keymap.SCHEME_GODOT)
-	if gimp_idx >= 0:
-		_scheme_menu.set_item_checked(gimp_idx, scheme == Keymap.SCHEME_GIMP)
+	var want := (
+		MORE_SCHEME_GIMP
+		if Keymap.active_scheme() == Keymap.SCHEME_GIMP
+		else MORE_SCHEME_GODOT
+	)
+	var idx := _scheme_opt.get_item_index(want)
+	if idx >= 0 and _scheme_opt.selected != idx:
+		_scheme_opt.select(idx)
 
 
 func _apply_chrome_icons() -> void:
@@ -611,9 +632,6 @@ func _apply_chrome_icons() -> void:
 	EditorIcons.apply_button(_btn_undo, "undo", false)
 	EditorIcons.apply_button(_btn_redo, "redo", false)
 	EditorIcons.apply_button(_btn_frame, "frame", false)
-	if _more:
-		EditorIcons.apply_button(_more, "more", false)
-		_more.tooltip_text = "More"
 	if _view:
 		EditorIcons.apply_button(_view, "view", false)
 		_view.tooltip_text = "View filters"

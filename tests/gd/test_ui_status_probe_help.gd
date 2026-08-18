@@ -14,15 +14,6 @@ func _status(t) -> void:
 	t.tree.root.add_child(bar)
 	await t.tree.process_frame
 
-	var logs: Array = []
-	bar.log_toggled.connect(func(on): logs.append(on))
-	var log_btn: Button = bar.find_child("Log", true, false)
-	log_btn.button_pressed = true
-	t.eq(logs, [true], "Log toggle emits")
-	bar.set_log_visible(false)
-	t.ok(not log_btn.button_pressed)
-	t.eq(logs, [true], "set_log_visible does not re-emit")
-
 	bar.set_status("error", "boom")
 	t.eq((bar.find_child("Status", true, false) as Label).text, "boom")
 	bar.set_status("transient", "cam 80 m/s")
@@ -60,18 +51,7 @@ func _status(t) -> void:
 	t.eq(StatusBar.verb_activity_text("assets"), "importing assets…")
 	t.eq(StatusBar.verb_activity_text("save"), "saving…")
 
-	var walk: Button = bar.find_child("Walk", true, false)
-	var grid: Button = bar.find_child("Grid", true, false)
-	var slope: Button = bar.find_child("Slope", true, false)
-	t.ok(walk.toggle_mode and grid.toggle_mode and slope.toggle_mode)
-	grid.button_pressed = true
-	t.ok(not grid.button_pressed, "Grid reverts without an editor shell")
-	slope.button_pressed = true
-	t.ok(not slope.button_pressed, "Slope reverts without an editor shell")
-
-	var want_walk := not saved_walk
-	walk.button_pressed = want_walk
-	t.eq(Settings.walk_mode, want_walk, "Walk writes Settings")
+	t.ok(bar.find_child("Walk", true, false) == null, "toggles moved to the tool rail")
 	Settings.walk_mode = saved_walk
 	Settings.save()
 

@@ -9,7 +9,14 @@ func run(t) -> void:
 		t.ok(FileAccess.file_exists(path), "%s.svg exists" % name)
 		var raw := FileAccess.get_file_as_string(path)
 		t.ok(raw.contains("<svg"), "%s is SVG" % name)
-		t.ok(raw.contains('viewBox="0 0 24 24"'), "%s is 24×24" % name)
+		t.ok(
+			raw.contains('viewBox="0 0 24 24"') or raw.contains('viewBox="0 0 16'),
+			"%s draws on a 24 or 16 grid" % name
+		)
+		t.ok(
+			raw.contains('width="24"') and raw.contains('height="24"'),
+			"%s renders at 24 px" % name
+		)
 		t.ok("#ffffff" in raw.to_lower(), "%s uses #ffffff fill" % name)
 		t.ok(not raw.contains("<image"), "%s has no embedded raster" % name)
 		t.ok(not raw.contains("xlink:href"), "%s has no external href" % name)

@@ -15,7 +15,7 @@
    width="24"
    version="1.1"
    inkscape:version="0.91 r13725"
-   sodipodi:docname="gimp-tool-paintbrush.svg">
+   sodipodi:docname="gimp-grid.svg">
   <sodipodi:namedview
      pagecolor="#ffffff"
      bordercolor="#666666"
@@ -27,11 +27,11 @@
      inkscape:pageshadow="2"
      inkscape:window-width="640"
      inkscape:window-height="480"
-     id="namedview1509"
+     id="namedview1507"
      showgrid="false"
-     inkscape:zoom="14.750007"
-     inkscape:cx="-155.21063"
-     inkscape:cy="-46.369966"
+     inkscape:zoom="14.74975"
+     inkscape:cx="-413.17814"
+     inkscape:cy="71.366095"
      inkscape:window-x="0"
      inkscape:window-y="27"
      inkscape:window-maximized="0"
@@ -56,27 +56,18 @@
   </metadata>
   
   <g
-     transform="translate(66.422852,-256.0432)"
+     transform="translate(-84.366788,59.75414)"
      style="display:inline"
-     id="tools">
+     id="stock">
     <g
-       transform="translate(-127.42305,79.021454)"
-       id="gimp-tool-paintbrush"
-       style="display:inline">
-      <g
-         id="g9272"
-         transform="matrix(0.8746234,0,0,0.89178327,86.926967,167.56161)"
-         style="fill:#ffffff;fill-opacity:1;stroke:none">
-        <path
-           d="m -28.5,27.5711 c 3.111145,0.0011 2.79359,-3.323359 4.304166,-4.248979 1.750479,-1.072622 3.284496,0.256475 3.590759,1.350292 0.386445,1.380184 -0.337829,2.508685 -1.300323,3.118949 -1.846361,1.170674 -6.300039,0.898712 -6.594602,-0.220262 z"
-           id="path9274"
-           style="fill:#ffffff;fill-opacity:1;stroke:none"
-           inkscape:connector-curvature="0" />
-      </g>
+       id="gimp-grid"
+       style="display:inline"
+       transform="translate(-36.632602,-438.75414)">
       <path
+         id="rect6300"
+         transform="translate(-340.04163,269.44363)"
+         d="m 461.04102,109.55664 0,1 0,4 0,1 0,4 0,1 0,5 1,0 15,0 0,-1 0,-9 0,-1 0,-5 -15,0 z m 1,1 4,0 0,4 -4,0 z m 5,0 4,0 0,4 -4,0 z m 5,0 4,0 0,4 -4,0 z m -10,5 4,0 0,4 -4,0 z m 5,0 4,0 0,4 -4,0 z m 5,0 4,0 0,4 -4,0 z m -10,5 4,0 0,4 -4,0 z m 5,0 4,0 0,4 -4,0 z m 5,0 4,0 0,4 -4,0 z"
          style="fill:#ffffff;fill-opacity:1;stroke:none"
-         d="m 76.416523,178.35668 c 0.308363,-0.6658 -0.16372,-0.92113 -0.732422,-0.35668 -3.998739,3.96884 -4.683901,4 -8.423828,9.14967 1.00355,0.0377 1.86506,0.68644 2.3125,1.62279 4.427427,-4.77246 4.92644,-7.33336 6.84375,-10.41578 z"
-         id="path9264"
          inkscape:connector-curvature="0" />
     </g>
   </g>
