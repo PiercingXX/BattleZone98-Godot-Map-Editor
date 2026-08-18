@@ -38,7 +38,11 @@ void vertex() {
 	v_uv = uv_origin + UV * uv_scale;
 	float h = texture(height_tex, v_uv).r;
 	VERTEX.y = h;
-	v_world = VERTEX;
+	// True world position (chunks share one local-space mesh and are
+	// placed by node transform). Everything planar-projected off this —
+	// brush ring, grid lines, hatch — stays seamless across chunk
+	// boundaries instead of restarting at each seam.
+	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 void fragment() {
