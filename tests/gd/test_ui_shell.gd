@@ -9,6 +9,7 @@ func run(t) -> void:
 	var saved_root := Settings.game_root
 	UndoStack.clear()
 	MapState.has_session = false
+	Settings.game_root = ""
 	Backend.test_worker = _stub
 
 	var scene: Node = load("res://scenes/main.tscn").instantiate()
@@ -26,17 +27,21 @@ func run(t) -> void:
 	var inspector: Node = scene.find_child("InspectorPanel", true, false)
 	var features: Node = scene.find_child("FeaturesPanel", true, false)
 	var findings: Node = scene.find_child("FindingsPanel", true, false)
+	var history: Node = scene.find_child("HistoryPanel", true, false)
 	var status: Node = scene.find_child("StatusBar", true, false)
 	var probe: Node = scene.find_child("ProbeDialog", true, false)
 	var help: Node = scene.find_child("HelpWindow", true, false)
 	t.ok(top != null and palette != null and inspector != null)
 	t.ok(features != null, "Features panel is in the right column")
 	t.ok(findings != null and status != null and probe != null and help != null)
+	t.ok(history != null, "History panel sits under Findings")
+	t.ok(history.find_child("List", true, false) is ItemList)
 	t.ok((features.find_child("AddWater", true, false) as Button).disabled, "Features Add off with no map")
 	t.ok((features.find_child("PaintRegion", true, false) as Button).disabled)
 
 	t.ok((top.find_child("Save", true, false) as Button).disabled, "shell Save off with no map")
 	t.ok((top.find_child("Validate", true, false) as Button).disabled)
+	t.ok((top.find_child("Test", true, false) as Button).disabled, "shell Test off with no map")
 	t.ok((top.find_child("Frame", true, false) as Button).disabled)
 	t.ok((top.find_child("Undo", true, false) as Button).disabled)
 	t.eq((top.find_child("MapLabel", true, false) as Label).text, "no map open")
@@ -47,11 +52,18 @@ func run(t) -> void:
 	t.ok((findings.find_child("Validate", true, false) as Button).disabled)
 
 	t.ok(scene._io != null, "SessionIO constructed")
+	t.ok(scene._game_test != null, "GameTest constructed")
+	t.ok(scene._workshop != null, "WorkshopPublish constructed")
 	var console: TextEdit = scene.find_child("Console", true, false)
 	t.ok(console != null and "autosave" in console.text.to_lower(), "startup log mentions autosave")
 	t.ok(top.get_signal_connection_list("open_requested").size() > 0)
+	t.ok(top.get_signal_connection_list("gallery_requested").size() > 0)
+	var gallery: Node = scene.find_child("MapGalleryDialog", true, false)
+	t.ok(gallery != null, "gallery dialog is hosted")
+	t.ok(gallery.get_signal_connection_list("map_open_requested").size() > 0)
 	t.ok(top.get_signal_connection_list("save_requested").size() > 0)
 	t.ok(top.get_signal_connection_list("validate_requested").size() > 0)
+	t.ok(top.get_signal_connection_list("test_requested").size() > 0)
 	t.ok(top.get_signal_connection_list("more_selected").size() > 0)
 	t.ok(top.get_signal_connection_list("save_as_requested").size() > 0)
 	t.ok(findings.get_signal_connection_list("validate_requested").size() > 0)
@@ -88,6 +100,10 @@ func run(t) -> void:
 	MapState.session_changed.emit()
 	t.ok(not (top.find_child("Save", true, false) as Button).disabled, "Save enables after session_changed")
 	t.ok(not (findings.find_child("Validate", true, false) as Button).disabled)
+	t.ok((top.find_child("Test", true, false) as Button).disabled, "Test still needs a game root")
+	Settings.game_root = "/tmp/fake-bz"
+	top._refresh_actions()
+	t.ok(not (top.find_child("Test", true, false) as Button).disabled, "Test enables with session+root")
 	var map_label := top.find_child("MapLabel", true, false) as Label
 	t.eq(map_label.text, "foo", "clean session has no unsaved star")
 	UndoStack.push(_Nop.new())

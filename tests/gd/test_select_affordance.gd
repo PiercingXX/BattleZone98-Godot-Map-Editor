@@ -147,6 +147,12 @@ func _status_and_help(t) -> void:
 	bar.set_selection_count(1, false)
 	t.ok(not sel.visible)
 	t.eq(sel.text, "")
+	var tsel: Label = bar.find_child("TerrainSelection", true, false)
+	t.ok(tsel != null, "status bar has a terrain selection label")
+	t.ok(not tsel.visible, "terrain selection hidden when empty")
+	bar.set_terrain_selection_text("selection: 4 cells (~100 m²)", true)
+	t.ok(tsel.visible)
+	t.eq(tsel.text, "selection: 4 cells (~100 m²)")
 	bar.queue_free()
 	await t.tree.process_frame
 
@@ -159,6 +165,10 @@ func _status_and_help(t) -> void:
 	t.ok("shift" in text, "help mentions Shift-add")
 	t.ok("team" in text, "help mentions team assign")
 	t.ok("view" in text, "help mentions view filters")
+	t.ok("class:<glob>" in text, "help documents query class glob")
+	t.ok("replace class" in text, "help documents batch replace")
+	t.ok("terrain selection" in text, "help documents terrain selection")
+	t.ok("wand" in text, "help documents magic wand")
 	help.queue_free()
 	await t.tree.process_frame
 

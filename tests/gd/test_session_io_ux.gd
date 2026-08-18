@@ -1,6 +1,8 @@
 extends RefCounted
 ## SessionIO: stock world prefill, recent-open recorded only after success.
 
+const TopBarScript = preload("res://project/ui/top_bar/TopBar.gd")
+
 
 func run(t) -> void:
 	var snap := _snapshot_settings()
@@ -65,6 +67,20 @@ func run(t) -> void:
 	t.eq(shell._world_option.item_count, 1, "empty dropdown fills from MapState.worlds")
 	t.eq(str(shell._world_option.get_item_metadata(0)), "zzmod")
 	shell._new_dialog.hide()
+
+	io.test_in_game()
+	t.ok("not wired" in logs[logs.size() - 1], "Test with no GameTest is logged")
+	io.gallery_prompt()
+	t.ok("gallery dialog missing" in logs[logs.size() - 1], "Gallery with no dialog is logged")
+
+	var saved_session := MapState.has_session
+	MapState.has_session = false
+	io.handle_more(TopBarScript.MORE_PUBLISH)
+	t.ok("open a map" in logs[logs.size() - 1], "Publish without a session is logged")
+	MapState.has_session = true
+	io.handle_more(TopBarScript.MORE_PUBLISH)
+	t.ok("not wired" in logs[logs.size() - 1], "Publish with no WorkshopPublish is logged")
+	MapState.has_session = saved_session
 
 	io.open_file("")
 	t.eq(io._pending_open_path, "", "empty path is not pending")

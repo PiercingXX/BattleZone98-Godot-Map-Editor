@@ -9,7 +9,9 @@ signal materials_changed()
 signal dirty_changed()
 signal water_changed(level: float)
 signal features_changed()
+signal aipaths_changed()
 signal mask_changed()
+signal selection_changed()
 
 var stem: String = ""
 var width_m: int = 0
@@ -22,6 +24,10 @@ var dirty: Dictionary = {}
 var objects: Dictionary = {}
 var meta: Dictionary = {}
 var features: Dictionary = {}
+## Session sidecar: {paths:[...], variants:{"":{paths:[...]}}}. Residue is untouched.
+var aipaths: Dictionary = {}
+var selected_path_index: int = -1
+var selected_point_index: int = -1
 var has_session: bool = false
 var field = HeightFieldScript.new()
 var materials: PackedInt32Array = PackedInt32Array()
@@ -33,6 +39,15 @@ var mat_image: Image
 var masks: Dictionary = {}
 var mask_texture: ImageTexture
 var mask_image: Image
+## View-only terrain selection at heightfield resolution (not persisted).
+## Empty array = no selection = every cell editable (Photoshop semantics).
+var terrain_selection: PackedByteArray = PackedByteArray()
+var selection_texture: ImageTexture
+var selection_image: Image
+var _selection_count: int = 0
+const SEL_REPLACE := "replace"
+const SEL_ADD := "add"
+const SEL_SUBTRACT := "subtract"
 var active_variant: String = ""
 var selected_ids: Array[String] = []
 var next_new_id: int = 1
@@ -95,9 +110,15 @@ func load_from_open(result: Dictionary) -> void:
 	if features.is_empty():
 		features = {"water": [], "plants": []}
 	_ensure_feature_groups()
+	aipaths = _read_json(session_dir.path_join("aipaths.json"))
+	if aipaths.is_empty():
+		aipaths = _fallback_parse_aipaths()
+	_ensure_aipaths_dirty_slot()
+	clear_aipath_selection()
 	masks.clear()
 	mask_texture = null
 	mask_image = null
+	_reset_terrain_selection(true)
 	var gx := int(manifest.get("grid_x", 0))
 	var gz := int(manifest.get("grid_z", 0))
 	var r16 := session_dir.path_join("terrain.r16")
@@ -131,6 +152,7 @@ func persist() -> void:
 	_write_json(session_dir.path_join("objects.json"), objects)
 	_write_masks()
 	_write_json(session_dir.path_join("features.json"), features)
+	_write_json(session_dir.path_join("aipaths.json"), aipaths)
 	_write_json(session_dir.path_join("dirty.json"), dirty)
 	_write_json(session_dir.path_join("meta.json"), meta)
 
@@ -147,9 +169,12 @@ func clear() -> void:
 	objects = {}
 	meta = {}
 	features = {}
+	aipaths = {}
+	clear_aipath_selection()
 	masks.clear()
 	mask_texture = null
 	mask_image = null
+	_reset_terrain_selection(true)
 	field = HeightFieldScript.new()
 	materials = PackedInt32Array()
 	has_session = false
@@ -213,6 +238,137 @@ func mark_features_dirty() -> void:
 	findings_stale = true
 	dirty_changed.emit()
 	mask_changed.emit()
+
+
+func paths_for_variant(variant: String) -> Array:
+	return BzOpen.paths_of(aipaths, variant)
+
+
+func active_paths() -> Array:
+	return BzOpen.paths_of(aipaths, active_variant)
+
+
+func replace_variant_paths(variant: String, recs: Array) -> void:
+	_ensure_aipaths_bundle()
+	var by: Dictionary = aipaths.get("variants", {})
+	by[variant] = {"paths": _dup_paths(recs)}
+	aipaths["variants"] = by
+	if variant == "":
+		aipaths["paths"] = _dup_paths(recs)
+	elif not aipaths.has("paths") or typeof(aipaths.get("paths", null)) != TYPE_ARRAY:
+		aipaths["paths"] = _dup_paths(recs)
+	mark_aipaths_dirty(variant)
+	aipaths_changed.emit()
+
+
+func mark_aipaths_dirty(variant: String = "") -> void:
+	_ensure_aipaths_dirty_slot()
+	var slot: Variant = dirty.get("aipaths")
+	if typeof(slot) != TYPE_DICTIONARY:
+		dirty["aipaths"] = {}
+		slot = dirty["aipaths"]
+	(slot as Dictionary)[variant] = true
+	findings_stale = true
+	dirty_changed.emit()
+
+
+func clear_aipath_selection() -> void:
+	selected_path_index = -1
+	selected_point_index = -1
+	aipaths_changed.emit()
+
+
+func select_aipath(path_i: int, point_i: int = -1) -> void:
+	selected_path_index = path_i
+	selected_point_index = point_i
+	aipaths_changed.emit()
+
+
+func has_aipath_selection() -> bool:
+	return selected_path_index >= 0
+
+
+func path_record(path_i: int, variant: String = "") -> Dictionary:
+	var recs: Array = BzOpen.paths_of(aipaths, variant)
+	if path_i < 0 or path_i >= recs.size():
+		return {}
+	if typeof(recs[path_i]) != TYPE_DICTIONARY:
+		return {}
+	return recs[path_i]
+
+
+func alloc_path_name(variant: String = "") -> String:
+	var recs: Array = BzOpen.paths_of(aipaths, variant)
+	var used := {}
+	for rec_v in recs:
+		if typeof(rec_v) == TYPE_DICTIONARY:
+			used[str((rec_v as Dictionary).get("name", "")).to_lower()] = true
+	var i := 1
+	while used.has("path_%d" % i):
+		i += 1
+	return "path_%d" % i
+
+
+func default_new_path(variant: String = "", x: float = -1.0, z: float = -1.0) -> Dictionary:
+	var recs: Array = BzOpen.paths_of(aipaths, variant)
+	var cx := x
+	var cz := z
+	if cx < 0.0 or cz < 0.0:
+		cx = float(width_m) * 0.5 if width_m > 0 else 640.0
+		cz = float(depth_m) * 0.5 if depth_m > 0 else 640.0
+	return {
+		"name": alloc_path_name(variant),
+		"points": [[cx, cz], [cx + 80.0, cz + 80.0]],
+		"old_ptr": BzOpen.next_old_ptr(recs),
+		"pathType": "00000000",
+		"has_label": true,
+		"size": 0,
+		"pointCount": 2,
+	}
+
+
+func _fallback_parse_aipaths() -> Dictionary:
+	if session_dir.is_empty():
+		return {"paths": [], "variants": {}}
+	var source: String = session_dir.path_join("residue").path_join("source")
+	var variants: Array = manifest.get("variants", [""])
+	if typeof(variants) != TYPE_ARRAY or variants.is_empty():
+		variants = [""]
+	return BzOpen.collect_session_aipaths(source, stem, variants)
+
+
+func _ensure_aipaths_bundle() -> void:
+	if typeof(aipaths.get("variants", null)) != TYPE_DICTIONARY:
+		var by := {}
+		var existing: Array = aipaths.get("paths", []) if typeof(aipaths.get("paths", null)) == TYPE_ARRAY else []
+		by[active_variant] = {"paths": existing}
+		aipaths["variants"] = by
+		if not aipaths.has("paths"):
+			aipaths["paths"] = existing
+	if typeof(aipaths.get("paths", null)) != TYPE_ARRAY:
+		aipaths["paths"] = []
+
+
+func _ensure_aipaths_dirty_slot() -> void:
+	if typeof(dirty.get("aipaths", null)) == TYPE_DICTIONARY:
+		return
+	var slot := {}
+	var variants: Array = manifest.get("variants", [""])
+	if typeof(variants) != TYPE_ARRAY or variants.is_empty():
+		variants = [""]
+	for v in variants:
+		slot[str(v)] = false
+	dirty["aipaths"] = slot
+
+
+func _dup_paths(recs: Array) -> Array:
+	var out: Array = []
+	for rec_v in recs:
+		if typeof(rec_v) == TYPE_DICTIONARY:
+			out.append((rec_v as Dictionary).duplicate(true))
+		else:
+			out.append(rec_v)
+	return out
 
 
 func has_heightmap() -> bool:
@@ -829,6 +985,391 @@ func _write_json(path: String, data: Dictionary) -> void:
 	if file == null:
 		return
 	file.store_string(JSON.stringify(data, "  "))
+
+
+## True when no terrain selection is active (every cell is editable).
+func selection_empty() -> bool:
+	return terrain_selection.is_empty() or _selection_count <= 0
+
+
+func clear_selection() -> void:
+	if terrain_selection.is_empty() and _selection_count == 0:
+		return
+	_reset_terrain_selection(true)
+
+
+func selection_cell_count() -> int:
+	if terrain_selection.is_empty():
+		return 0
+	return _selection_count
+
+
+func selection_area_m2() -> float:
+	var cell := HeightField.CELL_M
+	return float(selection_cell_count()) * cell * cell
+
+
+## 1.0 when empty (PS: no selection = all editable). Else mask/255 at the cell.
+func selection_factor(x: int, z: int) -> float:
+	if terrain_selection.is_empty() or field == null:
+		return 1.0
+	var gx := field.grid_x
+	var gz := field.grid_z
+	if gx < 1 or gz < 1 or terrain_selection.size() != gx * gz:
+		return 1.0
+	if x < 0 or z < 0 or x >= gx or z >= gz:
+		return 0.0
+	return float(terrain_selection[z * gx + x]) / 255.0
+
+
+func selection_factor_world(x_m: float, z_m: float) -> float:
+	if terrain_selection.is_empty() or field == null:
+		return 1.0
+	var cell := HeightField.CELL_M
+	return selection_factor(int(floor(x_m / cell)), int(floor(z_m / cell)))
+
+
+func select_all_terrain() -> void:
+	if not has_heightmap():
+		return
+	var n := field.grid_x * field.grid_z
+	terrain_selection.resize(n)
+	terrain_selection.fill(255)
+	_selection_count = n
+	upload_terrain_selection()
+	selection_changed.emit()
+
+
+func invert_terrain_selection() -> void:
+	if not has_heightmap():
+		return
+	if selection_empty():
+		select_all_terrain()
+		return
+	var n := field.grid_x * field.grid_z
+	if terrain_selection.size() != n:
+		select_all_terrain()
+		return
+	var count := 0
+	for i in n:
+		var v := 255 - int(terrain_selection[i])
+		terrain_selection[i] = v
+		if v > 0:
+			count += 1
+	if count == 0:
+		_reset_terrain_selection(true)
+		return
+	_selection_count = count
+	upload_terrain_selection()
+	selection_changed.emit()
+
+
+func feather_terrain_selection(radius_m: float) -> void:
+	if selection_empty() or not has_heightmap():
+		return
+	var r := maxi(1, int(round(radius_m / HeightField.CELL_M)))
+	var gx := field.grid_x
+	var gz := field.grid_z
+	var n := gx * gz
+	if terrain_selection.size() != n:
+		return
+	var tmp := PackedInt32Array()
+	tmp.resize(n)
+	var k := 2 * r + 1
+	for z in gz:
+		for x in gx:
+			var acc := 0
+			for dx in range(-r, r + 1):
+				var xx := clampi(x + dx, 0, gx - 1)
+				acc += int(terrain_selection[z * gx + xx])
+			tmp[z * gx + x] = acc
+	var count := 0
+	for x in gx:
+		for z in gz:
+			var acc := 0
+			for dz in range(-r, r + 1):
+				var zz := clampi(z + dz, 0, gz - 1)
+				acc += tmp[zz * gx + x]
+			var v := int(round(float(acc) / float(k * k)))
+			v = clampi(v, 0, 255)
+			terrain_selection[z * gx + x] = v
+			if v > 0:
+				count += 1
+	if count == 0:
+		_reset_terrain_selection(true)
+		return
+	_selection_count = count
+	upload_terrain_selection()
+	selection_changed.emit()
+
+
+func grow_terrain_selection(cells: int) -> void:
+	_morph_terrain_selection(maxi(0, cells), true)
+
+
+func shrink_terrain_selection(cells: int) -> void:
+	_morph_terrain_selection(maxi(0, cells), false)
+
+
+func stamp_terrain_selection(
+	cx_m: float,
+	cz_m: float,
+	radius_m: float,
+	falloff: float,
+	shape: String,
+	mode: String
+) -> void:
+	if not has_heightmap():
+		return
+	if mode == SEL_SUBTRACT and selection_empty():
+		return
+	var gx := field.grid_x
+	var gz := field.grid_z
+	var cell := HeightField.CELL_M
+	var r_cells := int(ceil(radius_m / cell))
+	var cx := int(floor(cx_m / cell))
+	var cz := int(floor(cz_m / cell))
+	var x0 := maxi(0, cx - r_cells)
+	var z0 := maxi(0, cz - r_cells)
+	var x1 := mini(gx - 1, cx + r_cells)
+	var z1 := mini(gz - 1, cz + r_cells)
+	if x1 < x0 or z1 < z0:
+		return
+	if terrain_selection.is_empty():
+		if mode == SEL_SUBTRACT:
+			return
+		terrain_selection.resize(gx * gz)
+		terrain_selection.fill(0)
+		_selection_count = 0
+	var n := gx * gz
+	if terrain_selection.size() != n:
+		terrain_selection.resize(n)
+		terrain_selection.fill(0)
+		_selection_count = 0
+	for z in range(z0, z1 + 1):
+		for x in range(x0, x1 + 1):
+			var wx := (float(x) + 0.5) * cell
+			var wz := (float(z) + 0.5) * cell
+			var w := SculptTool.brush_weight(cx_m, cz_m, wx, wz, radius_m, falloff, shape)
+			if w <= 0.0:
+				continue
+			var idx := z * gx + x
+			var add_v := int(round(w * 255.0))
+			terrain_selection[idx] = _combine_sel(int(terrain_selection[idx]), add_v, mode)
+	_recount_and_commit()
+
+
+func rect_terrain_selection(x0: int, z0: int, x1: int, z1: int, mode: String) -> void:
+	if not has_heightmap():
+		return
+	if mode == SEL_SUBTRACT and selection_empty():
+		return
+	var gx := field.grid_x
+	var gz := field.grid_z
+	var xa := clampi(mini(x0, x1), 0, gx - 1)
+	var xb := clampi(maxi(x0, x1), 0, gx - 1)
+	var za := clampi(mini(z0, z1), 0, gz - 1)
+	var zb := clampi(maxi(z0, z1), 0, gz - 1)
+	var src := PackedByteArray()
+	src.resize(gx * gz)
+	src.fill(0)
+	for z in range(za, zb + 1):
+		for x in range(xa, xb + 1):
+			src[z * gx + x] = 255
+	_merge_selection(src, mode)
+
+
+func wand_terrain_selection(sx: int, sz: int, tolerance_m: float, mode: String) -> void:
+	if not has_heightmap():
+		return
+	if mode == SEL_SUBTRACT and selection_empty():
+		return
+	var gx := field.grid_x
+	var gz := field.grid_z
+	sx = clampi(sx, 0, gx - 1)
+	sz = clampi(sz, 0, gz - 1)
+	var src := flood_fill_height(field, sx, sz, tolerance_m)
+	_merge_selection(src, mode)
+
+
+func select_terrain_by_material(mat_id: int, mode: String = SEL_REPLACE) -> void:
+	if not has_heightmap() or mat_grid_x < 1 or mat_grid_z < 1:
+		return
+	if mode == SEL_SUBTRACT and selection_empty():
+		return
+	var gx := field.grid_x
+	var gz := field.grid_z
+	var src := PackedByteArray()
+	src.resize(gx * gz)
+	src.fill(0)
+	var want := mat_id & 0xF
+	var cell := HeightField.CELL_M
+	for z in gz:
+		for x in gx:
+			var xm := (float(x) + 0.5) * cell
+			var zm := (float(z) + 0.5) * cell
+			if material_at(xm, zm) == want:
+				src[z * gx + x] = 255
+	_merge_selection(src, mode)
+
+
+## Iterative 4-connected flood. Matching cells are 255. Safe on 1024×1024.
+static func flood_fill_height(field: HeightField, sx: int, sz: int, tolerance_m: float) -> PackedByteArray:
+	var out := PackedByteArray()
+	if field == null or field.grid_x < 1 or field.grid_z < 1:
+		return out
+	var gx := field.grid_x
+	var gz := field.grid_z
+	var n := gx * gz
+	out.resize(n)
+	out.fill(0)
+	sx = clampi(sx, 0, gx - 1)
+	sz = clampi(sz, 0, gz - 1)
+	var seed_h := field.height_m(sx, sz)
+	var tol := maxf(0.0, tolerance_m)
+	var seen := PackedByteArray()
+	seen.resize(n)
+	seen.fill(0)
+	var q := PackedInt32Array()
+	q.resize(n)
+	var head := 0
+	var tail := 0
+	var start := sz * gx + sx
+	q[tail] = start
+	tail += 1
+	seen[start] = 1
+	var dxs := PackedInt32Array([-1, 1, 0, 0])
+	var dzs := PackedInt32Array([0, 0, -1, 1])
+	while head < tail:
+		var idx: int = q[head]
+		head += 1
+		var x := idx % gx
+		var z := int(idx / gx)
+		if absf(field.height_m(x, z) - seed_h) > tol:
+			continue
+		out[idx] = 255
+		for i in 4:
+			var nx := x + dxs[i]
+			var nz := z + dzs[i]
+			if nx < 0 or nz < 0 or nx >= gx or nz >= gz:
+				continue
+			var nidx := nz * gx + nx
+			if seen[nidx] != 0:
+				continue
+			seen[nidx] = 1
+			q[tail] = nidx
+			tail += 1
+	return out
+
+
+func upload_terrain_selection() -> void:
+	if not has_heightmap() or terrain_selection.is_empty():
+		selection_image = null
+		selection_texture = null
+		return
+	var gx := field.grid_x
+	var gz := field.grid_z
+	var n := gx * gz
+	if terrain_selection.size() != n:
+		return
+	selection_image = Image.create_from_data(gx, gz, false, Image.FORMAT_R8, terrain_selection)
+	if selection_texture == null or selection_texture.get_width() != gx or selection_texture.get_height() != gz:
+		selection_texture = ImageTexture.create_from_image(selection_image)
+	else:
+		selection_texture.update(selection_image)
+
+
+func _reset_terrain_selection(emit_change: bool) -> void:
+	var had := not terrain_selection.is_empty() or _selection_count > 0
+	terrain_selection = PackedByteArray()
+	selection_texture = null
+	selection_image = null
+	_selection_count = 0
+	if emit_change and had:
+		selection_changed.emit()
+
+
+func _merge_selection(src: PackedByteArray, mode: String) -> void:
+	if not has_heightmap():
+		return
+	var gx := field.grid_x
+	var gz := field.grid_z
+	var n := gx * gz
+	if src.size() != n:
+		return
+	if mode == SEL_SUBTRACT and selection_empty():
+		return
+	if mode == SEL_REPLACE or terrain_selection.is_empty():
+		if mode == SEL_SUBTRACT:
+			return
+		terrain_selection = src.duplicate()
+	else:
+		if terrain_selection.size() != n:
+			terrain_selection.resize(n)
+			terrain_selection.fill(0)
+		for i in n:
+			terrain_selection[i] = _combine_sel(int(terrain_selection[i]), int(src[i]), mode)
+	_recount_and_commit()
+
+
+func _combine_sel(old_v: int, new_v: int, mode: String) -> int:
+	match mode:
+		SEL_ADD:
+			return maxi(old_v, new_v)
+		SEL_SUBTRACT:
+			return clampi(old_v - new_v, 0, 255)
+		_:
+			return clampi(new_v, 0, 255)
+
+
+func _morph_terrain_selection(cells: int, dilate: bool) -> void:
+	if cells < 1 or selection_empty() or not has_heightmap():
+		return
+	var gx := field.grid_x
+	var gz := field.grid_z
+	var n := gx * gz
+	if terrain_selection.size() != n:
+		return
+	var tmp := PackedByteArray()
+	tmp.resize(n)
+	for z in gz:
+		for x in gx:
+			var acc := 0 if dilate else 255
+			for dx in range(-cells, cells + 1):
+				var xx := clampi(x + dx, 0, gx - 1)
+				var v := int(terrain_selection[z * gx + xx])
+				acc = maxi(acc, v) if dilate else mini(acc, v)
+			tmp[z * gx + x] = acc
+	var count := 0
+	for x in gx:
+		for z in gz:
+			var acc := 0 if dilate else 255
+			for dz in range(-cells, cells + 1):
+				var zz := clampi(z + dz, 0, gz - 1)
+				var v := int(tmp[zz * gx + x])
+				acc = maxi(acc, v) if dilate else mini(acc, v)
+			terrain_selection[z * gx + x] = acc
+			if acc > 0:
+				count += 1
+	if count == 0:
+		_reset_terrain_selection(true)
+		return
+	_selection_count = count
+	upload_terrain_selection()
+	selection_changed.emit()
+
+
+func _recount_and_commit() -> void:
+	var count := 0
+	for i in terrain_selection.size():
+		if terrain_selection[i] > 0:
+			count += 1
+	if count == 0:
+		_reset_terrain_selection(true)
+		return
+	_selection_count = count
+	upload_terrain_selection()
+	selection_changed.emit()
 
 
 func _uuid4() -> String:

@@ -9,6 +9,10 @@ var before: PackedInt32Array
 var after: PackedInt32Array
 
 
+func describe() -> String:
+	return "paint stroke"
+
+
 func setup(p_x0: int, p_z0: int, p_w: int, p_d: int, p_before: PackedInt32Array, p_after: PackedInt32Array) -> void:
 	x0 = p_x0
 	z0 = p_z0

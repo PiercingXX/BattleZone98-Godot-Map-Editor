@@ -193,6 +193,12 @@ static func open_map(path: String, session_dir: String) -> Dictionary:
 	wr = _write_json(str(paths["objects"]), objects)
 	if BzErrors.is_err(wr):
 		return wr
+	var aipaths_payload: Dictionary = collect_session_aipaths(
+		str(paths["source"]), stem, present_variants
+	)
+	wr = _write_json(str(paths["aipaths"]), aipaths_payload)
+	if BzErrors.is_err(wr):
+		return wr
 	wr = _write_json(str(paths["features"]), features)
 	if BzErrors.is_err(wr):
 		return wr
@@ -496,6 +502,7 @@ static func _session_paths(session_dir: String) -> Dictionary:
 		"terrain": session_dir.path_join("terrain.r16"),
 		"materials": session_dir.path_join("materials.u16"),
 		"objects": session_dir.path_join("objects.json"),
+		"aipaths": session_dir.path_join("aipaths.json"),
 		"features": session_dir.path_join("features.json"),
 		"meta": session_dir.path_join("meta.json"),
 		"dirty": session_dir.path_join("dirty.json"),
@@ -569,13 +576,354 @@ static func _empty_dirty(variants: Variant = null) -> Dictionary:
 	var objects := {}
 	for v in list:
 		objects[str(v)] = []
+	var aipaths := {}
+	for v2 in list:
+		aipaths[str(v2)] = false
 	return {
 		"terrain": false,
 		"materials": false,
 		"objects": objects,
 		"features": false,
 		"meta": [],
+		"aipaths": aipaths,
 	}
+
+
+# -- AiPaths (F3 §4; grammar pinned on workshop + template BZNs) --------------
+#
+# Observed on xtcnymad / xtoasis1 / xtgulch1 / xtchanls_S / templates:
+#   [AiPaths]
+#   count [1] =
+#   <n>
+#   [AiPath]
+#   old_ptr = <8 hex>          # NOT always zeros (F3 is wrong here)
+#   size [1] =
+#   <label character count>
+#   label = <name>
+#   pointCount [1] =
+#   <n>
+#   points [<n>] =
+#     x [1] =
+#   <x>
+#     z [1] =
+#   <z>
+#   pathType = 00000000
+# Points are x/z only. CRLF. Two-space indent on x/z keys, values unindented.
+# Residue is never rewritten; this parse is a sidecar.
+
+
+static func collect_session_aipaths(
+	source_dir: String, stem: String, variants: Array
+) -> Dictionary:
+	## Per-variant parse of residue BZNs. ``paths`` mirrors the default variant.
+	var by_variant := {}
+	var default_paths: Array = []
+	var have_default := false
+	for variant in variants:
+		var v: String = str(variant)
+		var bzn_path: String = _find_source_file(source_dir, stem, _variant_bzn_suffix(v))
+		var parsed: Dictionary = parse_aipaths_file(bzn_path)
+		var recs: Array = parsed.get("paths", [])
+		by_variant[v] = {"paths": recs}
+		if v == "":
+			default_paths = recs
+			have_default = true
+	if not have_default and not variants.is_empty():
+		var first: String = str(variants[0])
+		if by_variant.has(first):
+			default_paths = (by_variant[first] as Dictionary).get("paths", [])
+	return {"paths": default_paths, "variants": by_variant}
+
+
+static func parse_aipaths_file(path: String) -> Dictionary:
+	if path.is_empty() or not FileAccess.file_exists(path):
+		return {"ok": true, "paths": [], "count": 0}
+	return parse_aipaths_text(_read_text_replace(path))
+
+
+static func parse_aipaths_text(text: String) -> Dictionary:
+	## Sidecar parse. Never fails the open; incomplete blocks are skipped.
+	var lines: PackedStringArray = _splitlines(text)
+	var start: int = -1
+	for i in lines.size():
+		if lines[i].strip_edges() == "[AiPaths]":
+			start = i
+			break
+	if start < 0:
+		return {"ok": true, "paths": [], "count": 0}
+	var declared: int = 0
+	var i: int = start + 1
+	if i < lines.size() and lines[i].strip_edges().begins_with("count"):
+		var cv: Variant = _aipath_value_at(lines, i)
+		if cv != null:
+			declared = str(cv).to_int()
+		i = _aipath_after_value(lines, i)
+	var paths: Array = []
+	while i < lines.size():
+		var stripped: String = lines[i].strip_edges()
+		if stripped.begins_with("[") and stripped != "[AiPath]":
+			break
+		if stripped != "[AiPath]":
+			i += 1
+			continue
+		var parsed: Dictionary = _parse_one_aipath(lines, i + 1)
+		paths.append(parsed["path"])
+		i = int(parsed["next"])
+	return {"ok": true, "paths": paths, "count": declared}
+
+
+static func paths_of(data: Dictionary, variant: String = "") -> Array:
+	## Accepts the session bundle or a flat ``{paths:[...]}``.
+	if data.has("variants") and typeof(data["variants"]) == TYPE_DICTIONARY:
+		var by: Dictionary = data["variants"]
+		if by.has(variant) and typeof(by[variant]) == TYPE_DICTIONARY:
+			var recs: Variant = (by[variant] as Dictionary).get("paths", [])
+			if typeof(recs) == TYPE_ARRAY:
+				return recs
+	if data.has(variant) and typeof(data[variant]) == TYPE_DICTIONARY:
+		var recs2: Variant = (data[variant] as Dictionary).get("paths", [])
+		if typeof(recs2) == TYPE_ARRAY:
+			return recs2
+	if (variant == "" or variant.is_empty()) and data.has("paths") and typeof(data["paths"]) == TYPE_ARRAY:
+		return data["paths"]
+	return []
+
+
+static func emit_aipaths_block(paths: Array, eol: String = "\r\n") -> String:
+	## Re-emit F3 §4 / corpus grammar. Used only when aipaths are dirty.
+	var lines: PackedStringArray = PackedStringArray()
+	lines.append("[AiPaths]")
+	lines.append("count [1] =")
+	lines.append(str(paths.size()))
+	for rec_v in paths:
+		if typeof(rec_v) != TYPE_DICTIONARY:
+			continue
+		var rec: Dictionary = rec_v
+		var name: String = str(rec.get("name", ""))
+		var has_label: bool = bool(rec.get("has_label", not name.is_empty()))
+		var pts: Array = rec.get("points", []) if typeof(rec.get("points", [])) == TYPE_ARRAY else []
+		var old_ptr: String = str(rec.get("old_ptr", "00000000")).strip_edges()
+		if old_ptr.is_empty():
+			old_ptr = "00000000"
+		var path_type: String = str(rec.get("pathType", "00000000")).strip_edges()
+		if path_type.is_empty():
+			path_type = "00000000"
+		lines.append("[AiPath]")
+		lines.append("old_ptr = %s" % old_ptr)
+		if has_label:
+			lines.append("size [1] =")
+			lines.append(str(name.length()))
+			lines.append("label = %s" % name)
+		lines.append("pointCount [1] =")
+		lines.append(str(pts.size()))
+		lines.append("points [%d] =" % pts.size())
+		for pt_v in pts:
+			var xz: Array = _aipath_point(pt_v)
+			lines.append("  x [1] =")
+			lines.append(BzBzn._fmt_float(float(xz[0])))
+			lines.append("  z [1] =")
+			lines.append(BzBzn._fmt_float(float(xz[1])))
+		lines.append("pathType = %s" % path_type)
+	return eol.join(lines) + eol
+
+
+static func splice_aipaths_text(text: String, paths: Array) -> String:
+	## Replace the ``[AiPaths]`` section; leave ``[AiMission]`` / ``[AOIs]`` alone.
+	var eol: String = "\r\n" if text.contains("\r\n") else "\n"
+	var block: String = emit_aipaths_block(paths, eol)
+	var start: int = text.find("[AiPaths]")
+	if start < 0:
+		var out: String = text
+		if not out.ends_with(eol):
+			out += eol
+		return out + block
+	var end: int = _aipaths_section_end(text, start)
+	return text.substr(0, start) + block + text.substr(end)
+
+
+static func aipaths_invariants(paths: Array) -> PackedStringArray:
+	var problems := PackedStringArray()
+	for i in paths.size():
+		var rec_v: Variant = paths[i]
+		if typeof(rec_v) != TYPE_DICTIONARY:
+			problems.append("path %d is not an object" % i)
+			continue
+		var rec: Dictionary = rec_v
+		var name: String = str(rec.get("name", ""))
+		var has_label: bool = bool(rec.get("has_label", not name.is_empty()))
+		if has_label and int(rec.get("size", name.length())) != name.length():
+			problems.append(
+				"path %d size %s != label length %d" % [i, str(rec.get("size", "")), name.length()]
+			)
+		var pts: Variant = rec.get("points", [])
+		if typeof(pts) != TYPE_ARRAY:
+			problems.append("path %d points is not an array" % i)
+			continue
+		if rec.has("pointCount") and int(rec["pointCount"]) != (pts as Array).size():
+			problems.append(
+				"path %d pointCount %s != %d points" % [i, str(rec["pointCount"]), (pts as Array).size()]
+			)
+	return problems
+
+
+static func is_respawn_path_name(name: String) -> bool:
+	## F3 respawn convention: ``<name>_<seconds>_<sequence>``. Naming only.
+	var parts: PackedStringArray = name.split("_")
+	if parts.size() < 3:
+		return false
+	return _is_digit_str(parts[parts.size() - 1]) and _is_digit_str(parts[parts.size() - 2])
+
+
+static func next_old_ptr(paths: Array) -> String:
+	var max_v: int = 0x10
+	for rec_v in paths:
+		if typeof(rec_v) != TYPE_DICTIONARY:
+			continue
+		var raw: String = str((rec_v as Dictionary).get("old_ptr", "")).strip_edges()
+		if raw.is_empty():
+			continue
+		var n: int = raw.hex_to_int()
+		if n > max_v:
+			max_v = n
+	return "%08x" % (max_v + 1)
+
+
+static func _parse_one_aipath(lines: PackedStringArray, start: int) -> Dictionary:
+	var rec := {
+		"name": "",
+		"points": [],
+		"old_ptr": "00000000",
+		"pathType": "00000000",
+		"has_label": false,
+		"size": 0,
+		"pointCount": 0,
+	}
+	var i: int = start
+	while i < lines.size():
+		var stripped: String = lines[i].strip_edges()
+		if stripped == "[AiPath]" or (stripped.begins_with("[") and stripped != "[AiPath]"):
+			break
+		if stripped.begins_with("old_ptr"):
+			var v: Variant = _aipath_value_at(lines, i)
+			if v != null:
+				rec["old_ptr"] = str(v)
+			i = _aipath_after_value(lines, i)
+			continue
+		if stripped.begins_with("pathType"):
+			var pv: Variant = _aipath_value_at(lines, i)
+			if pv != null:
+				rec["pathType"] = str(pv)
+			i = _aipath_after_value(lines, i)
+			continue
+		if stripped.begins_with("size") and stripped.contains("["):
+			var sv: Variant = _aipath_value_at(lines, i)
+			if sv != null:
+				rec["size"] = str(sv).to_int()
+			i = _aipath_after_value(lines, i)
+			continue
+		if stripped.begins_with("label"):
+			var lv: Variant = _aipath_value_at(lines, i)
+			rec["name"] = "" if lv == null else str(lv)
+			rec["has_label"] = true
+			i = _aipath_after_value(lines, i)
+			continue
+		if stripped.begins_with("pointCount"):
+			var pc: Variant = _aipath_value_at(lines, i)
+			if pc != null:
+				rec["pointCount"] = str(pc).to_int()
+			i = _aipath_after_value(lines, i)
+			continue
+		if stripped.begins_with("points") and stripped.contains("["):
+			var pair: Dictionary = _parse_aipath_points(lines, i)
+			rec["points"] = pair["points"]
+			i = int(pair["next"])
+			continue
+		i += 1
+	return {"path": rec, "next": i}
+
+
+static func _parse_aipath_points(lines: PackedStringArray, header_i: int) -> Dictionary:
+	var points: Array = []
+	var i: int = header_i + 1
+	var pending_x: Variant = null
+	while i < lines.size():
+		var stripped: String = lines[i].strip_edges()
+		if stripped.begins_with("[") or stripped.begins_with("pathType"):
+			break
+		if stripped == "x [1] =" or stripped.begins_with("x [1]"):
+			pending_x = _aipath_value_at(lines, i)
+			i = _aipath_after_value(lines, i)
+			continue
+		if stripped == "z [1] =" or stripped.begins_with("z [1]"):
+			var z_v: Variant = _aipath_value_at(lines, i)
+			var x_f: float = 0.0 if pending_x == null else str(pending_x).to_float()
+			var z_f: float = 0.0 if z_v == null else str(z_v).to_float()
+			points.append([x_f, z_f])
+			pending_x = null
+			i = _aipath_after_value(lines, i)
+			continue
+		i += 1
+	return {"points": points, "next": i}
+
+
+static func _aipath_value_at(lines: PackedStringArray, key_i: int) -> Variant:
+	if key_i < 0 or key_i >= lines.size():
+		return null
+	var line: String = lines[key_i]
+	if line.contains("="):
+		var after: String = line.substr(line.find("=") + 1).strip_edges()
+		if not after.is_empty():
+			return after
+	if key_i + 1 < lines.size():
+		var nxt: String = lines[key_i + 1]
+		if not nxt.strip_edges().contains("=") and not nxt.strip_edges().begins_with("["):
+			return nxt.strip_edges()
+	return ""
+
+
+static func _aipath_after_value(lines: PackedStringArray, key_i: int) -> int:
+	if key_i < 0 or key_i >= lines.size():
+		return key_i + 1
+	var line: String = lines[key_i]
+	if line.contains("="):
+		var after: String = line.substr(line.find("=") + 1).strip_edges()
+		if not after.is_empty():
+			return key_i + 1
+	if key_i + 1 < lines.size():
+		var nxt: String = lines[key_i + 1]
+		if not nxt.strip_edges().contains("=") and not nxt.strip_edges().begins_with("["):
+			return key_i + 2
+	return key_i + 1
+
+
+static func _aipath_point(pt_v: Variant) -> Array:
+	if typeof(pt_v) == TYPE_ARRAY and (pt_v as Array).size() >= 2:
+		return [float((pt_v as Array)[0]), float((pt_v as Array)[1])]
+	if typeof(pt_v) == TYPE_DICTIONARY:
+		var d: Dictionary = pt_v
+		return [float(d.get("x", 0.0)), float(d.get("z", 0.0))]
+	return [0.0, 0.0]
+
+
+static func _aipaths_section_end(text: String, start: int) -> int:
+	## First ``[Section]`` after ``[AiPaths]`` that is not ``[AiPath]``, or EOF.
+	var search_from: int = start + 1
+	while true:
+		var br: int = text.find("\n[", search_from)
+		if br < 0:
+			return text.length()
+		var line_start: int = br + 1
+		var nl: int = text.find("\n", line_start)
+		var line: String = text.substr(
+			line_start, (text.length() if nl < 0 else nl) - line_start
+		).strip_edges()
+		if line.ends_with("\r"):
+			line = line.substr(0, line.length() - 1)
+		if line == "[AiPath]" or line == "[AiPaths]":
+			search_from = line_start + 1
+			continue
+		return line_start
+	return text.length()
 
 
 static func _grid_words(grid: Variant) -> PackedInt32Array:

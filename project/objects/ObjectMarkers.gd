@@ -9,6 +9,10 @@ const VIEW_BUILDINGS := "buildings"
 const VIEW_UNITS := "units"
 const VIEW_PROPS := "props"
 
+## When true, objects on non-active variants stay in the viewport as
+## unpickable onion-skin ghosts. Session-only (Settings is not the owner).
+static var ghost_other_variants: bool = false
+
 var _box: BoxMesh
 var _ghost: Node3D
 var _by_id: Dictionary = {}
@@ -59,11 +63,14 @@ func rebuild(objects: Dictionary, field: HeightField) -> void:
 		var records: Variant = objects[variant]
 		if typeof(records) != TYPE_ARRAY:
 			continue
-		var ghosted := str(variant) != MapState.active_variant
+		var vname := str(variant)
+		var ghosted := is_variant_ghosted(vname)
 		for rec in records:
 			if typeof(rec) != TYPE_DICTIONARY:
 				continue
-			live[str(rec.get("id", ""))] = {"rec": rec, "ghosted": ghosted}
+			live[str(rec.get("id", ""))] = {
+				"rec": rec, "ghosted": ghosted, "variant": vname,
+			}
 	for id in _by_id.keys():
 		if id in live:
 			continue
@@ -74,10 +81,11 @@ func rebuild(objects: Dictionary, field: HeightField) -> void:
 	for id in live.keys():
 		var rec: Dictionary = live[id]["rec"]
 		var ghosted: bool = live[id]["ghosted"]
+		var vname := str(live[id]["variant"])
 		if _by_id.has(id):
-			_update_placed(_by_id[id], rec, field, ghosted)
+			_update_placed(_by_id[id], rec, field, ghosted, vname)
 		else:
-			_place(rec, field, ghosted, str(id))
+			_place(rec, field, ghosted, vname)
 
 
 func set_ghost(visible: bool, rec: Dictionary, field: HeightField, normal: Vector3) -> void:
@@ -128,7 +136,20 @@ func apply_visibility() -> void:
 		var inst: Node3D = _by_id[id] as Node3D
 		if inst == null:
 			continue
+		var rec := MapState.find_object(str(id))
+		var variant := str(inst.get_meta("variant", MapState.find_object_variant(str(id))))
+		var ghosted := is_variant_ghosted(variant)
+		inst.set_meta("ghosted", ghosted)
 		inst.visible = is_id_visible(str(id))
+		if rec.is_empty():
+			continue
+		if ghosted:
+			_apply_ghost_look(inst, rec, variant)
+		else:
+			_apply_team_accent(inst, rec)
+			_apply_fade(inst, false)
+		_sync_variant_tag(inst, rec, variant, ghosted)
+	_refresh_styles()
 
 
 static func classify_record(rec: Dictionary) -> String:
@@ -167,7 +188,45 @@ static func is_record_visible(rec: Dictionary) -> bool:
 func is_id_visible(id: String) -> bool:
 	if id.is_empty():
 		return false
-	return is_record_visible(MapState.find_object(id))
+	var rec := MapState.find_object(id)
+	if rec.is_empty() or not is_record_visible(rec):
+		return false
+	var variant := MapState.find_object_variant(id)
+	if variant == MapState.active_variant:
+		return true
+	return ghost_other_variants
+
+
+## True when this variant should draw as an onion-skin ghost of the active one.
+static func is_variant_ghosted(variant: String) -> bool:
+	return ghost_other_variants and str(variant) != MapState.active_variant
+
+
+## Click / marquee / hover may only hit the active variant. Ghosts never pick.
+static func is_id_pickable(id: String) -> bool:
+	if id.is_empty():
+		return false
+	var rec := MapState.find_object(id)
+	if rec.is_empty() or not is_record_visible(rec):
+		return false
+	return MapState.find_object_variant(id) == MapState.active_variant
+
+
+static func variant_display_name(variant: String) -> String:
+	return "DM" if variant == "" else variant
+
+
+static func variant_tint(variant: String) -> Color:
+	match str(variant):
+		"":
+			return Color(0.40, 0.72, 1.00)
+		"_S":
+			return Color(0.98, 0.72, 0.22)
+		"_ST":
+			return Color(0.78, 0.42, 0.95)
+		"_SW":
+			return Color(0.28, 0.90, 0.62)
+	return Color(0.70, 0.74, 0.80)
 
 
 static func team_color(team: int) -> Color:
@@ -207,7 +266,7 @@ func screen_points(camera: Camera3D) -> Dictionary:
 		var inst: Node3D = _by_id[id]
 		if inst == null or not inst.visible:
 			continue
-		if MapState.find_object_variant(str(id)) != MapState.active_variant:
+		if not is_id_pickable(str(id)):
 			continue
 		var rec := MapState.find_object(str(id))
 		if rec.is_empty():
@@ -224,6 +283,8 @@ func _refresh_styles() -> void:
 	for id in _by_id.keys():
 		var inst: Node3D = _by_id[id]
 		if inst == null:
+			continue
+		if bool(inst.get_meta("ghosted", false)):
 			continue
 		var selected := _selected_set.has(id)
 		var hovered := str(id) == _hover_id and not selected
@@ -280,6 +341,8 @@ func _style_mats(node: Node, selected: bool, hovered: bool) -> void:
 			mat.emission_energy_multiplier = 1.0
 			mat.next_pass = null
 	for child in node.get_children():
+		if str(child.name) == "VariantTag":
+			continue
 		_style_mats(child, selected, hovered)
 
 
@@ -302,10 +365,10 @@ func pick(origin: Vector3, direction: Vector3) -> String:
 		var inst: Node3D = _by_id[id]
 		if inst == null or not inst.visible:
 			continue
+		if not is_id_pickable(str(id)):
+			continue
 		var rec := MapState.find_object(str(id))
 		if rec.is_empty():
-			continue
-		if MapState.find_object_variant(str(id)) != MapState.active_variant:
 			continue
 		var size := _size_for(str(rec.get("prjid", "")))
 		# inst.position is the object's base; the visual extends size.y up.
@@ -317,14 +380,14 @@ func pick(origin: Vector3, direction: Vector3) -> String:
 	return best
 
 
-func _place(rec: Dictionary, field: HeightField, ghost: bool, _variant: String) -> void:
-	var inst := _make_visual(rec, ghost)
-	_update_placed(inst, rec, field, ghost)
+func _place(rec: Dictionary, field: HeightField, ghosted: bool, variant: String) -> void:
+	var inst := _make_visual(rec, ghosted)
+	_update_placed(inst, rec, field, ghosted, variant)
 	add_child(inst)
 	_by_id[str(rec.get("id", ""))] = inst
 
 
-func _update_placed(inst: Node3D, rec: Dictionary, field: HeightField, ghosted: bool) -> void:
+func _update_placed(inst: Node3D, rec: Dictionary, field: HeightField, ghosted: bool, variant: String) -> void:
 	var x := float(rec.get("x", 0.0))
 	var z := float(rec.get("z", 0.0))
 	var y := float(rec.get("y", 0.0))
@@ -332,9 +395,18 @@ func _update_placed(inst: Node3D, rec: Dictionary, field: HeightField, ghosted: 
 		y = field.height_at(x, z)
 	inst.position = Vector3(x, y, z)
 	inst.rotation.y = deg_to_rad(float(rec.get("yaw_deg", 0.0)))
-	inst.visible = is_record_visible(rec)
-	_apply_team_accent(inst, rec)
-	_apply_fade(inst, ghosted)
+	inst.set_meta("variant", variant)
+	inst.set_meta("ghosted", ghosted)
+	var shown := is_record_visible(rec)
+	if shown and variant != MapState.active_variant:
+		shown = ghost_other_variants
+	inst.visible = shown
+	if ghosted:
+		_apply_ghost_look(inst, rec, variant)
+	else:
+		_apply_team_accent(inst, rec)
+		_apply_fade(inst, false)
+	_sync_variant_tag(inst, rec, variant, ghosted)
 
 
 func _apply_fade(node: Node, faded: bool) -> void:
@@ -344,11 +416,85 @@ func _apply_fade(node: Node, faded: bool) -> void:
 		if mat:
 			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA if faded else BaseMaterial3D.TRANSPARENCY_DISABLED
 			var c: Color = mat.get_meta("base_albedo", mat.albedo_color)
-			c.a = 0.22 if faded else 1.0
+			c.a = 0.28 if faded else 1.0
 			mat.albedo_color = c
 			mat.set_meta("base_albedo", c)
 	for child in node.get_children():
+		if str(child.name) == "VariantTag":
+			continue
 		_apply_fade(child, faded)
+
+
+func _apply_ghost_look(root: Node, rec: Dictionary, variant: String) -> void:
+	var tint := variant_tint(variant)
+	tint.a = 0.28
+	_paint_ghost_mats(root, tint)
+	# Keep a whisper of team so stacked ghosts of different sides still read.
+	var team := int(rec.get("team", 0))
+	if team > 0:
+		var accent := team_color(team)
+		accent.a = 0.28
+		_tint_ghost_toward(root, accent, 0.28)
+
+
+func _paint_ghost_mats(node: Node, col: Color) -> void:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		var mat := mi.material_override as StandardMaterial3D
+		if mat == null:
+			mat = StandardMaterial3D.new()
+			mi.material_override = mat
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.albedo_color = col
+		mat.set_meta("base_albedo", col)
+		mat.emission_enabled = true
+		mat.emission = Color(col.r, col.g, col.b)
+		mat.emission_energy_multiplier = 0.35
+	for child in node.get_children():
+		if str(child.name) == "VariantTag":
+			continue
+		_paint_ghost_mats(child, col)
+
+
+func _tint_ghost_toward(node: Node, accent: Color, weight: float) -> void:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		var mat := mi.material_override as StandardMaterial3D
+		if mat:
+			var mixed := mat.albedo_color.lerp(accent, weight)
+			mixed.a = mat.albedo_color.a
+			mat.albedo_color = mixed
+			mat.set_meta("base_albedo", mixed)
+	for child in node.get_children():
+		if str(child.name) == "VariantTag":
+			continue
+		_tint_ghost_toward(child, accent, weight)
+
+
+func _sync_variant_tag(inst: Node3D, rec: Dictionary, variant: String, ghosted: bool) -> void:
+	var tag := inst.get_node_or_null("VariantTag") as Label3D
+	if not ghosted:
+		if tag:
+			tag.visible = false
+		return
+	if tag == null:
+		tag = Label3D.new()
+		tag.name = "VariantTag"
+		tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		tag.no_depth_test = true
+		tag.font_size = 28
+		tag.pixel_size = 0.045
+		tag.outline_size = 6
+		tag.outline_modulate = Color(0.02, 0.02, 0.04, 0.9)
+		tag.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		inst.add_child(tag)
+	tag.visible = true
+	tag.text = variant_display_name(variant)
+	var tint := variant_tint(variant)
+	tint.a = 0.92
+	tag.modulate = tint
+	var size := _size_for(str(rec.get("prjid", "")))
+	tag.position = Vector3(0.0, size.y + 1.15, 0.0)
 
 
 func _make_visual(rec: Dictionary, faded: bool) -> Node3D:
@@ -396,6 +542,8 @@ func _paint_accent(node: Node, col: Color) -> void:
 		mat.albedo_color = painted
 		mat.set_meta("base_albedo", painted)
 	for child in node.get_children():
+		if str(child.name) == "VariantTag":
+			continue
 		_paint_accent(child, col)
 
 

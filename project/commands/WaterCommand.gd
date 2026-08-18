@@ -6,6 +6,10 @@ var before: float = -1.0
 var after: float = -1.0
 
 
+func describe() -> String:
+	return "water level"
+
+
 func do() -> void:
 	MapState.set_water_level(after)
 

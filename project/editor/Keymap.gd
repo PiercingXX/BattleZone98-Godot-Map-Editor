@@ -13,9 +13,16 @@ class_name Keymap
 ##   Warp Transform            W          tool.raise
 ##   Warp inverse (pair)       Shift+W    tool.lower        GIMP has no inverse-warp key; pair with raise
 ##   Flip (flatten analog)     Shift+F    tool.flatten
-##   (ramp analog)             K          tool.ramp         R / Shift+R rotate the selection (EditActions)
+##   (ramp analog)             K          tool.ramp         R / Shift+R rotate objects when tool.select
 ##   Pencil                    N          tool.noise
 ##   Ink                       I          tool.place
+##   Quick Mask analog         Q          tool.qsel         paint the terrain selection
+##   Rectangle Select          R          tool.rsel         object-select still eats R to rotate
+##   Fuzzy Select              U          tool.wand
+##   Clone                     C          tool.clone
+##   Select All                Ctrl+A     select.all
+##   Select None               Ctrl+D     select.none
+##   Invert Selection          Ctrl+Shift+I  select.invert
 ##   (cancel)                  Escape     tool.fly
 ##
 ## Godot scheme is the original number-row bindings plus the existing
@@ -34,6 +41,13 @@ const ACTION_PAINT := "tool.paint"
 const ACTION_PLACE := "tool.place"
 const ACTION_SELECT := "tool.select"
 const ACTION_NOISE := "tool.noise"
+const ACTION_QSEL := "tool.qsel"
+const ACTION_RSEL := "tool.rsel"
+const ACTION_WAND := "tool.wand"
+const ACTION_CLONE := "tool.clone"
+const ACTION_SELECT_ALL := "select.all"
+const ACTION_DESELECT := "select.none"
+const ACTION_INVERT := "select.invert"
 const ACTION_FRAME := "frame"
 const ACTION_TOP_DOWN := "top_down"
 const ACTION_SLOPE := "slope_overlay"
@@ -51,10 +65,21 @@ const ACTION_TEAM_4 := "team.4"
 const ACTION_TEAM_5 := "team.5"
 const ACTION_TEAM_6 := "team.6"
 const ACTION_TEAM_7 := "team.7"
+const ACTION_BOOKMARK_STORE_1 := "bookmark.store.1"
+const ACTION_BOOKMARK_STORE_2 := "bookmark.store.2"
+const ACTION_BOOKMARK_STORE_3 := "bookmark.store.3"
+const ACTION_BOOKMARK_STORE_4 := "bookmark.store.4"
+const ACTION_BOOKMARK_STORE_5 := "bookmark.store.5"
+const ACTION_BOOKMARK_RECALL_1 := "bookmark.recall.1"
+const ACTION_BOOKMARK_RECALL_2 := "bookmark.recall.2"
+const ACTION_BOOKMARK_RECALL_3 := "bookmark.recall.3"
+const ACTION_BOOKMARK_RECALL_4 := "bookmark.recall.4"
+const ACTION_BOOKMARK_RECALL_5 := "bookmark.recall.5"
 
 const TOOL_ACTIONS: PackedStringArray = [
 	ACTION_FLY, ACTION_RAISE, ACTION_LOWER, ACTION_FLATTEN, ACTION_SMOOTH,
 	ACTION_RAMP, ACTION_PAINT, ACTION_PLACE, ACTION_SELECT, ACTION_NOISE,
+	ACTION_QSEL, ACTION_RSEL, ACTION_WAND, ACTION_CLONE,
 ]
 
 const TEAM_ACTIONS: PackedStringArray = [
@@ -62,20 +87,41 @@ const TEAM_ACTIONS: PackedStringArray = [
 	ACTION_TEAM_4, ACTION_TEAM_5, ACTION_TEAM_6, ACTION_TEAM_7,
 ]
 
+const BOOKMARK_STORE_ACTIONS: PackedStringArray = [
+	ACTION_BOOKMARK_STORE_1, ACTION_BOOKMARK_STORE_2, ACTION_BOOKMARK_STORE_3,
+	ACTION_BOOKMARK_STORE_4, ACTION_BOOKMARK_STORE_5,
+]
+
+const BOOKMARK_RECALL_ACTIONS: PackedStringArray = [
+	ACTION_BOOKMARK_RECALL_1, ACTION_BOOKMARK_RECALL_2, ACTION_BOOKMARK_RECALL_3,
+	ACTION_BOOKMARK_RECALL_4, ACTION_BOOKMARK_RECALL_5,
+]
+
 const NON_TOOL_ACTIONS: PackedStringArray = [
 	ACTION_FRAME, ACTION_TOP_DOWN, ACTION_SLOPE, ACTION_GRID, ACTION_WALK,
 	ACTION_HELP, ACTION_UNDO, ACTION_REDO, ACTION_SAVE,
+	ACTION_SELECT_ALL, ACTION_DESELECT, ACTION_INVERT,
 	ACTION_TEAM_0, ACTION_TEAM_1, ACTION_TEAM_2, ACTION_TEAM_3,
 	ACTION_TEAM_4, ACTION_TEAM_5, ACTION_TEAM_6, ACTION_TEAM_7,
+	ACTION_BOOKMARK_STORE_1, ACTION_BOOKMARK_STORE_2, ACTION_BOOKMARK_STORE_3,
+	ACTION_BOOKMARK_STORE_4, ACTION_BOOKMARK_STORE_5,
+	ACTION_BOOKMARK_RECALL_1, ACTION_BOOKMARK_RECALL_2, ACTION_BOOKMARK_RECALL_3,
+	ACTION_BOOKMARK_RECALL_4, ACTION_BOOKMARK_RECALL_5,
 ]
 
 const ALL_ACTIONS: PackedStringArray = [
 	ACTION_FLY, ACTION_RAISE, ACTION_LOWER, ACTION_FLATTEN, ACTION_SMOOTH,
 	ACTION_RAMP, ACTION_PAINT, ACTION_PLACE, ACTION_SELECT, ACTION_NOISE,
+	ACTION_QSEL, ACTION_RSEL, ACTION_WAND, ACTION_CLONE,
 	ACTION_FRAME, ACTION_TOP_DOWN, ACTION_SLOPE, ACTION_GRID, ACTION_WALK,
 	ACTION_HELP, ACTION_UNDO, ACTION_REDO, ACTION_SAVE,
+	ACTION_SELECT_ALL, ACTION_DESELECT, ACTION_INVERT,
 	ACTION_TEAM_0, ACTION_TEAM_1, ACTION_TEAM_2, ACTION_TEAM_3,
 	ACTION_TEAM_4, ACTION_TEAM_5, ACTION_TEAM_6, ACTION_TEAM_7,
+	ACTION_BOOKMARK_STORE_1, ACTION_BOOKMARK_STORE_2, ACTION_BOOKMARK_STORE_3,
+	ACTION_BOOKMARK_STORE_4, ACTION_BOOKMARK_STORE_5,
+	ACTION_BOOKMARK_RECALL_1, ACTION_BOOKMARK_RECALL_2, ACTION_BOOKMARK_RECALL_3,
+	ACTION_BOOKMARK_RECALL_4, ACTION_BOOKMARK_RECALL_5,
 ]
 
 static var _warned: bool = false
@@ -193,10 +239,17 @@ WASD fly     Q/E up down     Shift fast     Ctrl slow
 %s grid     Delete remove selected
 %s fly   %s raise   %s lower   %s flatten   %s smooth   %s ramp
 %s paint   %s place   %s select   %s noise
-Select: arrows nudge 1 m (Shift 5 m)     R rotate +15° (Shift+R +90°)
+%s qsel   %s rsel   %s wand   %s clone
+Select: arrows nudge 1 m (Shift 5 m)     R rotate +15° (Shift+R +90°) when object-select
+Terrain select: QSel paints (LMB add, Alt subtract). RSel drag (Shift add, Alt subtract, plain replace). Wand click (Shift add, Alt subtract; tolerance in the panel). Select-by-material uses the active swatch.
+%s select all     %s deselect     %s invert     Feather / Grow / Shrink in the panel
+Empty selection = everything editable. While a selection exists, sculpt and paint multiply by the mask.
+Clone: Ctrl+click sets the source; paint copies height deltas (optional materials).
 [ ] radius     Shift+[ ] strength     Esc cancel / fly
 %s undo     %s redo     %s save     ` log     %s this
 Shift+0…7 set team on the selection
+Alt+1…5 recall camera bookmark     Ctrl+Alt+1…5 store
+Select + hold M and drag to measure
 LMB sculpt / place / select     Shift+click keep placing
 Alt+LMB eyedropper (paint)
 Autosave     every 30s while unsaved (a crash does not lose the session; %s writes the map files)
@@ -207,6 +260,8 @@ Other scheme (%s): %s[/code]""" % [
 		L.call(ACTION_FLY), L.call(ACTION_RAISE), L.call(ACTION_LOWER),
 		L.call(ACTION_FLATTEN), L.call(ACTION_SMOOTH), L.call(ACTION_RAMP),
 		L.call(ACTION_PAINT), L.call(ACTION_PLACE), L.call(ACTION_SELECT), L.call(ACTION_NOISE),
+		L.call(ACTION_QSEL), L.call(ACTION_RSEL), L.call(ACTION_WAND), L.call(ACTION_CLONE),
+		L.call(ACTION_SELECT_ALL), L.call(ACTION_DESELECT), L.call(ACTION_INVERT),
 		L.call(ACTION_UNDO), L.call(ACTION_REDO), L.call(ACTION_SAVE), L.call(ACTION_HELP),
 		L.call(ACTION_SAVE),
 		scheme_label(other), "   ".join(other_tools),
@@ -217,6 +272,23 @@ static func team_from_action(action: String) -> int:
 	if not action.begins_with("team."):
 		return -1
 	return int(action.get_slice(".", 1))
+
+
+static func bookmark_slot(action: String) -> int:
+	if not action.begins_with("bookmark."):
+		return 0
+	var n := int(action.get_slice(".", 2))
+	if n < 1 or n > 5:
+		return 0
+	return n
+
+
+static func is_bookmark_store(action: String) -> bool:
+	return action.begins_with("bookmark.store.")
+
+
+static func is_bookmark_recall(action: String) -> bool:
+	return action.begins_with("bookmark.recall.")
 
 
 static func make_binding(keycode: int, ctrl: bool = false, shift: bool = false, alt: bool = false) -> Dictionary:
@@ -242,6 +314,13 @@ static func _godot_bindings() -> Dictionary:
 		ACTION_PLACE: make_binding(KEY_8),
 		ACTION_SELECT: make_binding(KEY_9),
 		ACTION_NOISE: make_binding(KEY_0),
+		ACTION_QSEL: make_binding(KEY_B),
+		ACTION_RSEL: make_binding(KEY_R),
+		ACTION_WAND: make_binding(KEY_U),
+		ACTION_CLONE: make_binding(KEY_C),
+		ACTION_SELECT_ALL: make_binding(KEY_A, true),
+		ACTION_DESELECT: make_binding(KEY_D, true),
+		ACTION_INVERT: make_binding(KEY_I, true, true),
 		ACTION_FRAME: make_binding(KEY_F),
 		ACTION_TOP_DOWN: make_binding(KEY_SPACE),
 		ACTION_SLOPE: make_binding(KEY_H),
@@ -259,6 +338,16 @@ static func _godot_bindings() -> Dictionary:
 		ACTION_TEAM_5: make_binding(KEY_5, false, true),
 		ACTION_TEAM_6: make_binding(KEY_6, false, true),
 		ACTION_TEAM_7: make_binding(KEY_7, false, true),
+		ACTION_BOOKMARK_STORE_1: make_binding(KEY_1, true, false, true),
+		ACTION_BOOKMARK_STORE_2: make_binding(KEY_2, true, false, true),
+		ACTION_BOOKMARK_STORE_3: make_binding(KEY_3, true, false, true),
+		ACTION_BOOKMARK_STORE_4: make_binding(KEY_4, true, false, true),
+		ACTION_BOOKMARK_STORE_5: make_binding(KEY_5, true, false, true),
+		ACTION_BOOKMARK_RECALL_1: make_binding(KEY_1, false, false, true),
+		ACTION_BOOKMARK_RECALL_2: make_binding(KEY_2, false, false, true),
+		ACTION_BOOKMARK_RECALL_3: make_binding(KEY_3, false, false, true),
+		ACTION_BOOKMARK_RECALL_4: make_binding(KEY_4, false, false, true),
+		ACTION_BOOKMARK_RECALL_5: make_binding(KEY_5, false, false, true),
 	}
 
 
@@ -274,6 +363,10 @@ static func _gimp_bindings() -> Dictionary:
 	table[ACTION_PLACE] = make_binding(KEY_I)
 	table[ACTION_SELECT] = make_binding(KEY_M)
 	table[ACTION_NOISE] = make_binding(KEY_N)
+	table[ACTION_QSEL] = make_binding(KEY_Q)
+	table[ACTION_RSEL] = make_binding(KEY_R)
+	table[ACTION_WAND] = make_binding(KEY_U)
+	table[ACTION_CLONE] = make_binding(KEY_C)
 	return table
 
 

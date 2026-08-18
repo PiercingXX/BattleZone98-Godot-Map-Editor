@@ -85,6 +85,25 @@ func run(t) -> void:
 	UndoStack.clear()
 	t.eq(UndoStack.generation, 0, "clear resets generation")
 
+	# jump_to walks undo/redo; describe_command uses describe() when present.
+	log.clear()
+	UndoStack.clear()
+	UndoStack.push(_Cmd.new(log, "a"))
+	UndoStack.push(_Cmd.new(log, "b"))
+	UndoStack.push(_Cmd.new(log, "c"))
+	t.eq(UndoStack.command_count(), 3)
+	t.eq(UndoStack.current_index(), 2)
+	t.eq(UndoStack.describe_command(UndoStack.command_at(1)), "RefCounted")
+	UndoStack.jump_to(0)
+	t.eq(UndoStack.current_index(), 0)
+	t.eq(log, ["do:a", "do:b", "do:c", "undo:c", "undo:b"])
+	UndoStack.jump_to(2)
+	t.eq(UndoStack.current_index(), 2)
+	t.eq(log, ["do:a", "do:b", "do:c", "undo:c", "undo:b", "do:b", "do:c"])
+	UndoStack.jump_to(2)
+	t.eq(log.size(), 7, "jump to current is a no-op")
+	UndoStack.clear()
+
 
 class _Cmd:
 	extends RefCounted

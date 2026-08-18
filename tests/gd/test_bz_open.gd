@@ -263,6 +263,12 @@ func _test_open_success(t, tmp: String) -> void:
 	t.eq((feat.get("water", []) as Array).size(), 1)
 	t.eq(feat["water"][0].get("stem"), "w1")
 
+	t.ok(FileAccess.file_exists(sess.path_join("aipaths.json")), "aipaths.json sidecar")
+	var aip: Variant = _read_json(sess.path_join("aipaths.json"))
+	t.ok(typeof(aip) == TYPE_DICTIONARY, "aipaths.json is an object")
+	t.eq((aip.get("paths", ["x"]) as Array).size(), 0, "fixture has empty AiPaths")
+	t.eq(bool((dirty.get("aipaths", {}) as Dictionary).get("", true)), false, "aipaths not dirty")
+
 	# Directory input resolves the same stem.
 	var sess_dir: String = tmp.path_join("syn_sess_dir")
 	var via_dir: Dictionary = BzOpen.open_map(src, sess_dir)
@@ -389,6 +395,7 @@ func _test_open_save_if_present(t, tmp: String) -> void:
 	t.ok(FileAccess.file_exists(sess.path_join("terrain.r16")), "session terrain.r16")
 	t.ok(FileAccess.file_exists(sess.path_join("materials.u16")), "session materials.u16")
 	t.ok(FileAccess.file_exists(sess.path_join("objects.json")), "session objects.json")
+	t.ok(FileAccess.file_exists(sess.path_join("aipaths.json")), "session aipaths.json")
 	t.ok(FileAccess.file_exists(sess.path_join("manifest.json")), "session manifest.json")
 
 

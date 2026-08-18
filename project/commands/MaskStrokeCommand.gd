@@ -11,6 +11,12 @@ var before: PackedByteArray
 var after: PackedByteArray
 
 
+func describe() -> String:
+	if stem.is_empty():
+		return "mask stroke"
+	return "mask %s" % stem
+
+
 func setup(
 	p_stem: String,
 	p_x0: int,

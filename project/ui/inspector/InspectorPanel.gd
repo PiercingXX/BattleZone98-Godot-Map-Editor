@@ -26,6 +26,8 @@ var _water_before: float = -1.0
 var _water_pending: bool = false
 var _water_timer: Timer
 var _dirty: Dictionary = {}
+var _copy_btn: Button
+var _copy_menu: PopupMenu
 
 
 func _ready() -> void:
@@ -41,8 +43,10 @@ func _ready() -> void:
 	_yaw.value_changed.connect(func(_v: float) -> void: _mark_dirty("yaw"))
 	_team.value_changed.connect(func(_v: float) -> void: _mark_dirty("team"))
 	_install_team_buttons()
+	_install_copy_to_variant()
 	MapState.water_changed.connect(_on_water_state)
 	MapState.session_changed.connect(_on_session)
+	MapState.objects_mutated.connect(_refresh_copy_button)
 	_water_timer = Timer.new()
 	_water_timer.one_shot = true
 	_water_timer.wait_time = 0.35
@@ -419,3 +423,58 @@ func _refresh_fields() -> void:
 	_water.tooltip_text = "Water line (−1 = none)" if session else "Open a map first"
 	if _prj:
 		_prj.editable = false
+	_refresh_copy_button()
+
+
+func _install_copy_to_variant() -> void:
+	if _apply == null:
+		return
+	var row := _apply.get_parent()
+	if row == null:
+		return
+	var box := row.get_parent()
+	if box == null:
+		return
+	_copy_btn = Button.new()
+	_copy_btn.name = "CopyToVariant"
+	_copy_btn.text = "Copy to variant…"
+	_copy_btn.focus_mode = Control.FOCUS_NONE
+	_copy_btn.pressed.connect(_on_copy_to_variant)
+	_copy_menu = PopupMenu.new()
+	_copy_menu.name = "CopyToVariantMenu"
+	_copy_btn.add_child(_copy_menu)
+	_copy_menu.id_pressed.connect(_on_copy_variant_picked)
+	box.add_child(_copy_btn)
+	box.move_child(_copy_btn, row.get_index() + 1)
+
+
+func _refresh_copy_button() -> void:
+	if _copy_btn == null:
+		return
+	var why := EditActions.copy_to_variant_block_reason()
+	_copy_btn.disabled = not why.is_empty()
+	if why.is_empty():
+		_copy_btn.tooltip_text = "Copy the selection into another variant (new ids, one undo)"
+	else:
+		_copy_btn.tooltip_text = why[0].to_upper() + why.substr(1)
+
+
+func _on_copy_to_variant() -> void:
+	var why := EditActions.copy_to_variant_block_reason()
+	if not why.is_empty():
+		EditorFeedback.log(why)
+		return
+	EditActions.fill_variant_picker(_copy_menu)
+	if _copy_menu.get_item_count() == 0:
+		EditorFeedback.log("no other variants")
+		return
+	var r := _copy_btn.get_global_rect()
+	_copy_menu.popup(Rect2i(int(r.position.x), int(r.position.y + r.size.y), 0, 0))
+
+
+func _on_copy_variant_picked(id: int) -> void:
+	var idx := _copy_menu.get_item_index(id)
+	if idx < 0:
+		return
+	var dest := str(_copy_menu.get_item_metadata(idx))
+	EditActions.copy_selection_to_variant(dest, EditorFeedback.log)

@@ -12,6 +12,7 @@ var _show_water: bool = true
 var _mask_on: bool = false
 var _mask_tint: Color = Color(0.12, 0.32, 0.62)
 var _mask_water_level: float = -1.0
+var _sel_on: bool = false
 
 
 func _ready() -> void:
@@ -25,6 +26,16 @@ func set_slope_overlay(on: bool) -> void:
 
 
 func set_brush(on: bool, center: Vector2, radius: float, falloff: float, square: bool) -> void:
+	var pts: Array[Vector2] = []
+	if on:
+		pts = ToolState.world_image_points(center.x, center.y)
+		if pts.is_empty():
+			pts = [center]
+	var packed := PackedVector2Array()
+	packed.resize(4)
+	for i in mini(4, pts.size()):
+		packed[i] = pts[i]
+	var count := mini(4, pts.size())
 	for child in get_children():
 		if child is MeshInstance3D:
 			var mat := (child as MeshInstance3D).material_override as ShaderMaterial
@@ -32,6 +43,8 @@ func set_brush(on: bool, center: Vector2, radius: float, falloff: float, square:
 				continue
 			mat.set_shader_parameter("brush_on", on)
 			mat.set_shader_parameter("brush_center", center)
+			mat.set_shader_parameter("brush_centers", packed)
+			mat.set_shader_parameter("brush_count", count)
 			mat.set_shader_parameter("brush_radius", radius)
 			mat.set_shader_parameter("brush_falloff", falloff)
 			mat.set_shader_parameter("brush_shape", 1 if square else 0)
@@ -61,6 +74,13 @@ func set_feature_mask(on: bool, tex: Texture2D = null, tint: Color = Color(0.12,
 		_set_all("mask_tex", tex)
 	_set_all("mask_tint", Vector3(tint.r, tint.g, tint.b))
 	_set_all("mask_water_level", water_m)
+
+
+func set_selection_mask(on: bool, tex: Texture2D = null) -> void:
+	_sel_on = on and tex != null
+	_set_all("show_selection", _sel_on)
+	if tex != null:
+		_set_all("selection_tex", tex)
 
 
 func set_show_grid(on: bool) -> void:
@@ -192,6 +212,10 @@ func rebuild(p_field: HeightField) -> void:
 		set_feature_mask(true, MapState.mask_texture, _mask_tint, _mask_water_level)
 	else:
 		set_feature_mask(false)
+	if not MapState.selection_empty() and MapState.selection_texture:
+		set_selection_mask(true, MapState.selection_texture)
+	else:
+		set_selection_mask(false)
 
 
 func _add_chunk(cx: int, cz: int) -> void:
@@ -226,6 +250,9 @@ func _add_chunk(cx: int, cz: int) -> void:
 		mat.set_shader_parameter("mask_tex", MapState.mask_texture)
 	mat.set_shader_parameter("mask_tint", Vector3(_mask_tint.r, _mask_tint.g, _mask_tint.b))
 	mat.set_shader_parameter("mask_water_level", _mask_water_level)
+	mat.set_shader_parameter("show_selection", _sel_on)
+	if MapState.selection_texture:
+		mat.set_shader_parameter("selection_tex", MapState.selection_texture)
 	inst.material_override = mat
 	inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(inst)

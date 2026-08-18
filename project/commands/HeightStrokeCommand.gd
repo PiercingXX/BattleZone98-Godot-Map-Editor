@@ -11,6 +11,13 @@ var after: PackedInt32Array
 var snaps_before: Array = []
 var snaps_after: Array = []
 var uploaded_bytes: int = 0
+var tool: String = ""
+
+
+func describe() -> String:
+	if tool.is_empty():
+		return "height stroke"
+	return "%s stroke" % tool
 
 
 func setup(p_x0: int, p_z0: int, p_w: int, p_d: int, p_before: PackedInt32Array, p_after: PackedInt32Array) -> void:

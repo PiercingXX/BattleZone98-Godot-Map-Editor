@@ -10,12 +10,16 @@ func run(t) -> void:
 	var saved_f := ToolState.falloff
 	var saved_shape := ToolState.shape
 	var saved_mat := ToolState.paint_material
+	var saved_sym := ToolState.symmetry
 	var saved_armed: Dictionary = ToolState.armed.duplicate(true)
 	var saved_sel: Array[String] = MapState.selected_ids.duplicate()
+	var saved_w: int = MapState.width_m
+	var saved_d: int = MapState.depth_m
 	MapState.has_session = false
 	MapState.selected_ids.clear()
 	ToolState.clear_armed()
 	ToolState.set_tool("fly")
+	ToolState.set_symmetry(ToolState.SYMMETRY_OFF)
 
 	var pal: Node = load("res://project/ui/palette/PalettePanel.tscn").instantiate()
 	t.tree.root.add_child(pal)
@@ -81,6 +85,8 @@ func run(t) -> void:
 	t.ok((pal.find_child("ShapeSquare", true, false) as Button).button_pressed)
 	(pal.find_child("ShapeCircle", true, false) as Button).pressed.emit()
 	t.eq(ToolState.shape, "circle")
+
+	await _symmetry_selector(t, pal)
 
 	ToolState.set_radius(55)
 	t.eq(int(radius.value), 55, "keyboard/state radius syncs the slider")
@@ -160,6 +166,9 @@ func run(t) -> void:
 	ToolState.set_falloff(saved_f)
 	ToolState.set_shape(saved_shape)
 	ToolState.set_paint_material(saved_mat)
+	ToolState.set_symmetry(saved_sym)
+	MapState.width_m = saved_w
+	MapState.depth_m = saved_d
 	if saved_armed.is_empty():
 		ToolState.clear_armed()
 	else:
@@ -168,16 +177,20 @@ func run(t) -> void:
 
 func _visibility_matrix(t, pal: Node) -> void:
 	var want := {
-		"raise": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false},
-		"lower": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false},
-		"flatten": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false},
-		"smooth": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false},
-		"ramp": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false},
-		"noise": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false},
-		"paint": {"palette": false, "brush": true, "mats": true, "select": false, "fly": false},
-		"place": {"palette": true, "brush": false, "mats": false, "select": false, "fly": false},
-		"select": {"palette": false, "brush": false, "mats": false, "select": true, "fly": false},
-		"fly": {"palette": false, "brush": false, "mats": false, "select": false, "fly": true},
+		"raise": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false, "terrain": false},
+		"lower": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false, "terrain": false},
+		"flatten": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false, "terrain": false},
+		"smooth": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false, "terrain": false},
+		"ramp": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false, "terrain": false},
+		"noise": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false, "terrain": false},
+		"paint": {"palette": false, "brush": true, "mats": true, "select": false, "fly": false, "terrain": false},
+		"place": {"palette": true, "brush": true, "mats": false, "select": false, "fly": false, "terrain": false},
+		"select": {"palette": false, "brush": false, "mats": false, "select": true, "fly": false, "terrain": false},
+		"fly": {"palette": false, "brush": false, "mats": false, "select": false, "fly": true, "terrain": false},
+		"qsel": {"palette": false, "brush": true, "mats": true, "select": false, "fly": false, "terrain": true},
+		"rsel": {"palette": false, "brush": false, "mats": true, "select": false, "fly": false, "terrain": true},
+		"wand": {"palette": false, "brush": false, "mats": true, "select": false, "fly": false, "terrain": true},
+		"clone": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false, "terrain": false},
 	}
 	var rail: Control = pal as Control
 	var rail_w: float = rail.custom_minimum_size.x
@@ -220,6 +233,8 @@ func _visibility_matrix(t, pal: Node) -> void:
 	t.ok((pal.find_child("ClassList", true, false) as Control).is_visible_in_tree())
 	t.ok(not (pal.find_child("Radius", true, false) as Control).is_visible_in_tree())
 	t.ok(not (pal.find_child("Swatches", true, false) as Control).is_visible_in_tree())
+	var place_sym: OptionButton = pal.find_child("Symmetry", true, false)
+	t.ok(place_sym != null and place_sym.is_visible_in_tree(), "place shows the symmetry selector")
 
 	_apply_tool(pal, "fly")
 	var fly: Label = pal.find_child("FlyHint", true, false)
@@ -249,6 +264,18 @@ func _visibility_matrix(t, pal: Node) -> void:
 	pal.refresh_context()
 	t.eq(summary.text, "0 selected")
 
+	_apply_tool(pal, "qsel")
+	t.ok((pal.find_child("TerrainSelSection", true, false) as CanvasItem).visible)
+	t.ok((pal.find_child("Radius", true, false) as Control).is_visible_in_tree())
+	t.ok(not (pal.find_child("Strength", true, false) as Control).is_visible_in_tree(), "qsel hides strength")
+	t.ok((pal.find_child("SelectByMaterial", true, false) as Button) != null)
+	_apply_tool(pal, "wand")
+	t.ok((pal.find_child("WandTolerance", true, false) as Control).is_visible_in_tree())
+	t.ok((pal.find_child("FeatherApply", true, false) as Button).disabled, "feather disabled with no selection")
+	t.ok("no selection" in (pal.find_child("FeatherApply", true, false) as Button).tooltip_text.to_lower())
+	_apply_tool(pal, "clone")
+	t.ok((pal.find_child("CloneMaterials", true, false) as Control).is_visible_in_tree())
+
 	# Switching a tool twice is idempotent (raise → paint → raise, and raise ×2).
 	_apply_tool(pal, "raise")
 	var raise_a: Dictionary = _section_vis(pal)
@@ -268,6 +295,60 @@ func _visibility_matrix(t, pal: Node) -> void:
 	t.eq(ToolState.paint_material, 3)
 
 
+func _symmetry_selector(t, pal: Node) -> void:
+	_apply_tool(pal, "raise")
+	await t.tree.process_frame
+	var sym: OptionButton = pal.find_child("Symmetry", true, false)
+	t.ok(sym != null, "symmetry selector exists")
+	t.ok(sym.is_visible_in_tree(), "symmetry visible on sculpt")
+	t.eq(sym.item_count, 5, "Off / Mirror X / Mirror Z / Rot180 / Quad")
+	var ids: Array[String] = []
+	for i in sym.item_count:
+		ids.append(str(sym.get_item_metadata(i)))
+	t.eq(ids, [
+		ToolState.SYMMETRY_OFF,
+		ToolState.SYMMETRY_MIRROR_X,
+		ToolState.SYMMETRY_MIRROR_Z,
+		ToolState.SYMMETRY_ROT180,
+		ToolState.SYMMETRY_QUAD,
+	])
+	var mx := _symmetry_index(sym, ToolState.SYMMETRY_MIRROR_X)
+	t.ok(mx >= 0)
+	sym.select(mx)
+	sym.item_selected.emit(mx)
+	t.eq(ToolState.symmetry, ToolState.SYMMETRY_MIRROR_X, "selector writes ToolState")
+	ToolState.set_symmetry(ToolState.SYMMETRY_ROT180)
+	t.eq(str(sym.get_item_metadata(sym.selected)), ToolState.SYMMETRY_ROT180, "state syncs the selector")
+
+	var quad := _symmetry_index(sym, ToolState.SYMMETRY_QUAD)
+	t.ok(quad >= 0)
+	MapState.has_session = true
+	ToolState.set_symmetry(ToolState.SYMMETRY_QUAD)
+	MapState.width_m = 2560
+	MapState.depth_m = 1280
+	pal.refresh_context()
+	t.ok(sym.is_item_disabled(quad), "Quad disabled on a rectangular map")
+	t.ok("square" in sym.get_item_tooltip(quad).to_lower())
+	t.eq(ToolState.symmetry, ToolState.SYMMETRY_QUAD, "stored mode stays quad")
+	t.eq(ToolState.effective_symmetry(), ToolState.SYMMETRY_OFF, "stored Quad is off until the map is square")
+	MapState.width_m = 1280
+	MapState.depth_m = 1280
+	pal.refresh_context()
+	t.ok(not sym.is_item_disabled(quad), "Quad enabled on a square map")
+	t.eq(ToolState.effective_symmetry(), ToolState.SYMMETRY_QUAD)
+	sym.select(quad)
+	sym.item_selected.emit(quad)
+	t.eq(ToolState.symmetry, ToolState.SYMMETRY_QUAD)
+	ToolState.set_symmetry(ToolState.SYMMETRY_OFF)
+
+
+func _symmetry_index(sym: OptionButton, id: String) -> int:
+	for i in sym.item_count:
+		if str(sym.get_item_metadata(i)) == id:
+			return i
+	return -1
+
+
 func _apply_tool(pal: Node, tool: String) -> void:
 	# set_tool no-ops when the name is unchanged; still force a layout pass.
 	if ToolState.tool != tool:
@@ -276,12 +357,14 @@ func _apply_tool(pal: Node, tool: String) -> void:
 
 
 func _section_vis(pal: Node) -> Dictionary:
+	var terrain := pal.find_child("TerrainSelSection", true, false)
 	return {
 		"palette": (pal.find_child("PaletteSection", true, false) as CanvasItem).visible,
 		"brush": (pal.find_child("BrushSection", true, false) as CanvasItem).visible,
 		"mats": (pal.find_child("MatsSection", true, false) as CanvasItem).visible,
 		"select": (pal.find_child("SelectSection", true, false) as CanvasItem).visible,
 		"fly": (pal.find_child("FlySection", true, false) as CanvasItem).visible,
+		"terrain": terrain != null and (terrain as CanvasItem).visible,
 	}
 
 
@@ -295,9 +378,15 @@ func _assert_no_empty_gap(t, pal: Node, tool: String, want: Dictionary) -> void:
 		if (child as CanvasItem).visible:
 			visible_n += 1
 			t.ok((child as Control).get_combined_minimum_size().y > 0.0, "%s visible section has height" % tool)
-	var expect := 2 if tool == "paint" else 1
+	var expect := 0
+	for key in want.keys():
+		expect += int(want[key])
 	t.eq(visible_n, expect, "no leftover sections on %s" % tool)
-	t.eq(int(want["palette"]) + int(want["brush"]) + int(want["mats"]) + int(want["select"]) + int(want["fly"]), expect)
+	t.eq(
+		int(want["palette"]) + int(want["brush"]) + int(want["mats"])
+		+ int(want["select"]) + int(want["fly"]) + int(want.get("terrain", false)),
+		expect,
+	)
 
 
 func _index_of(list: ItemList, prjid: String) -> int:

@@ -18,6 +18,8 @@ const DarkThemeScript = preload("res://project/ui/DarkTheme.gd")
 @onready var _pack_kind: OptionButton = %PackKind
 @onready var _terrain: Node3D = %Terrain
 @onready var _objects: Node3D = %Objects
+@onready var _balance: Node3D = %BalanceOverlay
+var _aipaths: AiPathOverlay
 @onready var _camera: Camera3D = %Camera
 @onready var _center: Control = %Center
 @onready var _viewport: SubViewport = %SubViewport
@@ -26,13 +28,17 @@ const DarkThemeScript = preload("res://project/ui/DarkTheme.gd")
 @onready var _inspector = %InspectorPanel
 @onready var _features = %FeaturesPanel
 @onready var _findings = %FindingsPanel
+@onready var _history = %HistoryPanel
 @onready var _status = %StatusBar
 @onready var _help = %HelpWindow
 @onready var _probe = %ProbeDialog
+@onready var _gallery = %MapGalleryDialog
 @onready var _world_env: WorldEnvironment = %WorldEnvironment
 
 var _sculpt = SculptTool.new()
 var _io: SessionIO
+var _game_test: GameTest
+var _workshop: WorkshopPublish
 var _stroking: bool = false
 var _mask_stroking: bool = false
 var _mask_erase: bool = false
@@ -54,6 +60,34 @@ var _select_shift: bool = false
 var _select_press_id: String = ""
 var _hover_status: bool = false
 var _marquee: Control
+var _sel_stroking: bool = false
+var _sel_subtract: bool = false
+var _tsel_rect: bool = false
+var _tsel_from: Vector3 = Vector3.INF
+var _tsel_to: Vector3 = Vector3.INF
+var _tsel_shift: bool = false
+var _tsel_alt: bool = false
+var _heightmap_export_dialog: FileDialog
+var _heightmap_import_dialog: FileDialog
+var _restore_dialog: ConfirmationDialog
+var _restore_session_dir: String = ""
+var _binary_dialog: AcceptDialog
+var _binary_command: String = ""
+var _measuring: bool = false
+var _measure_from: Vector3 = Vector3.INF
+var _measure_to: Vector3 = Vector3.INF
+var _measure_mesh: MeshInstance3D
+var _aipath_bar: HBoxContainer
+var _btn_add_path: Button
+var _btn_del_path: Button
+var _btn_add_pt: Button
+var _btn_del_pt: Button
+var _aipath_dragging: bool = false
+var _aipath_drag_path: int = -1
+var _aipath_drag_point: int = -1
+var _aipath_drag_before: Array = []
+var _aipath_moved: bool = false
+var _aipath_drag_was_dirty: bool = false
 
 
 func _ready() -> void:
@@ -62,6 +96,19 @@ func _ready() -> void:
 	add_to_group("editor_shell")
 	get_tree().auto_accept_quit = false
 	_io = SessionIO.new(self, _log)
+	_game_test = GameTest.new()
+	_game_test.name = "GameTest"
+	_game_test.log = _log
+	add_child(_game_test)
+	_workshop = WorkshopPublish.new()
+	_workshop.name = "WorkshopPublish"
+	_workshop.log = _log
+	add_child(_workshop)
+	_install_heightmap_dialogs()
+	_install_restore_dialog()
+	_install_binary_dialog()
+	_install_measure_line()
+	_install_aipath_overlay()
 	_wire()
 	_try_load_asset_index()
 	_pack_kind.add_item("BZP map", 0)
@@ -85,6 +132,8 @@ func _ready() -> void:
 	_log.call("BattleZone 98 Godot Map Editor v%s. F1 help. Unsaved sessions autosave every 30s. Open a map to sculpt and place." % version)
 	Backend.probe()
 	_queue_smoke_open()
+	if not _is_automated():
+		call_deferred("_check_crash_recovery")
 
 
 func _notification(what: int) -> void:
@@ -92,16 +141,20 @@ func _notification(what: int) -> void:
 		if MapState.unsaved:
 			_quit_dialog.popup_centered()
 		else:
-			get_tree().quit()
+			quit_clean()
 
 
 func _wire() -> void:
 	_top.open_requested.connect(_io.open_prompt)
+	_top.gallery_requested.connect(_io.gallery_prompt)
 	_top.recent_open_requested.connect(_io.open_file)
+	if _gallery:
+		_gallery.map_open_requested.connect(_io.open_file)
 	_top.new_requested.connect(_io.new_prompt)
 	_top.save_requested.connect(_io.save)
 	_top.save_as_requested.connect(func(): _save_as = true; _io.save(true))
 	_top.validate_requested.connect(_io.validate)
+	_top.test_requested.connect(_io.test_in_game)
 	_top.more_selected.connect(_io.handle_more)
 	_top.tool_selected.connect(_set_tool)
 	_top.variant_changed.connect(func():
@@ -115,6 +168,11 @@ func _wire() -> void:
 	_palette.class_armed.connect(func(rec):
 		ToolState.set_armed(rec)
 		_log.call("armed %s  %s  %s" % [rec.get("prjid"), rec.get("placement_mode"), rec.get("mesh_fidelity")])
+	)
+	_palette.selection_query_applied.connect(func():
+		if _objects:
+			_objects.highlight(MapState.selected_ids)
+		_fill_inspector()
 	)
 	_inspector.apply_requested.connect(func(edits):
 		EditActions.apply_inspector(edits)
@@ -134,7 +192,7 @@ func _wire() -> void:
 	_quit_dialog.add_button("Discard", true, "discard")
 	_quit_dialog.custom_action.connect(func(a):
 		if a == "discard":
-			get_tree().quit()
+			quit_clean()
 	)
 	_new_guard.confirmed.connect(_io.new_after_save)
 	_new_guard.add_button("Discard changes", true, "discard")
@@ -157,6 +215,7 @@ func _wire() -> void:
 	Backend.call_failed.connect(_on_call_failed)
 	MapState.session_changed.connect(_on_session_changed)
 	MapState.objects_mutated.connect(_on_objects_mutated)
+	MapState.aipaths_changed.connect(_refresh_aipath_bar)
 	MapState.materials_changed.connect(_on_materials_changed)
 	MapState.dirty_changed.connect(func():
 		if MapState.findings_stale and not MapState.findings.is_empty():
@@ -174,6 +233,7 @@ func _wire() -> void:
 	MapState.mask_changed.connect(_refresh_mask_overlay)
 	MapState.features_changed.connect(_refresh_mask_overlay)
 	MapState.water_changed.connect(func(_l): _refresh_mask_overlay())
+	MapState.selection_changed.connect(_refresh_selection_overlay)
 	if _camera.has_signal("speed_changed"):
 		_camera.speed_changed.connect(func(mps): _status.set_status("transient", "cam %.0f m/s" % mps))
 	_sync_sculpt()
@@ -187,6 +247,7 @@ func _wire() -> void:
 	_marquee.draw.connect(_on_marquee_draw)
 	_center.add_child(_marquee)
 	_apply_view_settings()
+	_refresh_aipath_bar()
 
 
 func _process(_delta: float) -> void:
@@ -199,6 +260,12 @@ func _process(_delta: float) -> void:
 		_finish_select_gesture()
 	elif _select_pressing:
 		_update_select_drag(_viewport.get_mouse_position())
+	if _aipath_dragging and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		_finish_aipath_drag()
+	elif _aipath_dragging:
+		_update_aipath_drag()
+	if _measuring:
+		_update_measure_drag()
 	if not MapState.has_session:
 		_status.set_selection_count(0, false)
 		return
@@ -215,9 +282,11 @@ func _process(_delta: float) -> void:
 		_status.set_cursor("xz %.1f, %.1f  h %.1f m  mat %d  %s   ·  RMB look  wheel zoom  MMB orbit  WASD fly" % [
 			p.x, p.z, p.y, MapState.material_at(p.x, p.z), ToolState.tool,
 		])
-		var sculpting := ToolState.is_mask_painting() or ToolState.tool in ["raise", "lower", "flatten", "smooth", "ramp", "noise", "paint"]
+		var sculpting := ToolState.is_mask_painting() or ToolState.tool in ["raise", "lower", "flatten", "smooth", "ramp", "noise", "paint", "qsel", "clone"]
 		if sculpting:
 			_terrain.set_brush(true, Vector2(p.x, p.z), ToolState.radius_m, ToolState.falloff, ToolState.shape == "square")
+		elif ToolState.tool == "place" and ToolState.effective_symmetry() != ToolState.SYMMETRY_OFF:
+			_terrain.set_brush(true, Vector2(p.x, p.z), 12.0, 0.35, false)
 		else:
 			_terrain.set_brush(false, Vector2.ZERO, 0.0, 0.0, false)
 		if ToolState.tool == "place" and not ToolState.armed.is_empty():
@@ -229,7 +298,17 @@ func _process(_delta: float) -> void:
 	if _stroking and hit.get("hit", false) and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		var p2: Vector3 = hit["position"]
 		if _last_stamp.distance_to(p2) >= maxf(HeightField.CELL_M, ToolState.radius_m * 0.15):
-			_sculpt.stamp(MapState.field, p2.x, p2.z)
+			if _sel_stroking:
+				var mode := MapState.SEL_SUBTRACT if _sel_subtract else MapState.SEL_ADD
+				var pts: Array[Vector2] = ToolState.world_image_points(p2.x, p2.z)
+				if pts.is_empty():
+					pts = [Vector2(p2.x, p2.z)]
+				for pt in pts:
+					MapState.stamp_terrain_selection(
+						pt.x, pt.y, ToolState.radius_m, ToolState.falloff, ToolState.shape, mode
+					)
+			else:
+				_sculpt.stamp(MapState.field, p2.x, p2.z)
 			_last_stamp = p2
 
 
@@ -242,13 +321,37 @@ func _unhandled_input(event: InputEvent) -> void:
 	if k.keycode == KEY_ESCAPE:
 		if _select_pressing:
 			_cancel_select_gesture()
+		if _aipath_dragging:
+			_cancel_aipath_drag()
+		if _tsel_rect:
+			_cancel_terrain_rect()
+		if _measuring:
+			_clear_measure()
+			_log.call("measure cancelled")
 		ToolState.clear_armed()
 		if ToolState.mask_paint:
 			ToolState.set_mask_paint(false)
 			_log.call("mask paint off")
+	# Object-select rotate/nudge keeps R even when R is also rect-select.
+	if (
+		not k.ctrl_pressed
+		and not k.alt_pressed
+		and not EditActions.gui_text_focused(get_viewport())
+		and EditActions.try_select_transform(k.keycode, k.shift_pressed, _log)
+	):
+		_on_objects_mutated()
+		get_viewport().set_input_as_handled()
+		return
 	var action := Keymap.resolve(k)
 	if not action.is_empty():
-		if action.begins_with("team.") and EditActions.gui_text_focused(get_viewport()):
+		if (
+			(
+				action.begins_with("team.")
+				or action.begins_with("select.")
+				or action.begins_with("bookmark.")
+			)
+			and EditActions.gui_text_focused(get_viewport())
+		):
 			handled = false
 		else:
 			_apply_keymap_action(action)
@@ -256,21 +359,17 @@ func _unhandled_input(event: InputEvent) -> void:
 		_console.visible = not _console.visible
 		_status.set_log_visible(_console.visible)
 	elif k.keycode == KEY_DELETE:
-		EditActions.delete_selected(_log)
-		_on_objects_mutated()
+		if _try_delete_aipath():
+			pass
+		else:
+			EditActions.delete_selected(_log)
+			_on_objects_mutated()
 	elif k.keycode == KEY_ESCAPE:
 		_set_tool("fly")
 	elif k.keycode == KEY_BRACKETLEFT:
 		ToolState.set_strength(maxf(0.05, ToolState.strength - 0.05)) if k.shift_pressed else ToolState.set_radius(maxf(5, ToolState.radius_m - 5))
 	elif k.keycode == KEY_BRACKETRIGHT:
 		ToolState.set_strength(minf(1.0, ToolState.strength + 0.05)) if k.shift_pressed else ToolState.set_radius(minf(400, ToolState.radius_m + 5))
-	elif (
-		not k.ctrl_pressed
-		and not k.alt_pressed
-		and not EditActions.gui_text_focused(get_viewport())
-		and EditActions.try_select_transform(k.keycode, k.shift_pressed, _log)
-	):
-		_on_objects_mutated()
 	else:
 		handled = false
 	if handled:
@@ -287,6 +386,9 @@ func _apply_keymap_action(action: String) -> void:
 			return
 		EditActions.set_selection_team(team, _log)
 		_on_objects_mutated()
+		return
+	if action.begins_with("bookmark."):
+		_handle_bookmark(action)
 		return
 	match action:
 		"help":
@@ -314,6 +416,12 @@ func _apply_keymap_action(action: String) -> void:
 				_terrain._show_slope = not _terrain._show_slope
 				_terrain.set_slope_overlay(_terrain._show_slope)
 				_log.call("slope overlay %s" % ("on" if _terrain._show_slope else "off"))
+		"select.all":
+			EditActions.select_all_terrain(_log)
+		"select.none":
+			EditActions.deselect_terrain(_log)
+		"select.invert":
+			EditActions.invert_terrain(_log)
 
 
 func _on_view_gui_input(event: InputEvent) -> void:
@@ -325,13 +433,25 @@ func _on_view_gui_input(event: InputEvent) -> void:
 			return
 		if mb.button_index == MOUSE_BUTTON_LEFT:
 			if not mb.pressed:
+				if _measuring:
+					_finish_measure()
 				_on_lmb_up()
+				if _aipath_dragging:
+					_finish_aipath_drag()
 				if _select_pressing:
 					_finish_select_gesture()
+				if _tsel_rect:
+					_finish_terrain_rect()
+			elif ToolState.tool == "select" and Input.is_key_pressed(KEY_M):
+				var measure_hit := _pick()
+				if measure_hit.get("hit", false):
+					_begin_measure(measure_hit["position"])
+				else:
+					_log.call("nothing to measure")
 			elif ToolState.is_mask_painting():
 				var mask_hit := _pick()
 				if mask_hit.get("hit", false):
-					_on_lmb_down(mask_hit["position"], mask_hit, mb.shift_pressed, mb.alt_pressed)
+					_on_lmb_down(mask_hit["position"], mask_hit, mb.shift_pressed, mb.alt_pressed, mb.ctrl_pressed)
 				else:
 					_log.call("nothing to paint")
 			elif ToolState.tool == "paint" and mb.alt_pressed:
@@ -342,28 +462,53 @@ func _on_view_gui_input(event: InputEvent) -> void:
 					_palette.sample_material(MapState.material_at(p.x, p.z))
 				else:
 					_log.call("nothing to sample")
+			elif ToolState.tool == "select" and _begin_aipath_gesture(mb.shift_pressed):
+				pass
 			elif ToolState.tool == "select":
 				_begin_select_gesture(mb.shift_pressed)
 			else:
 				var hit := _pick()
 				if hit.get("hit", false):
-					_on_lmb_down(hit["position"], hit, mb.shift_pressed, mb.alt_pressed)
+					_on_lmb_down(hit["position"], hit, mb.shift_pressed, mb.alt_pressed, mb.ctrl_pressed)
 			accept_event()
 	elif event is InputEventMouseMotion:
-		if _select_pressing:
+		if _aipath_dragging:
+			_update_aipath_drag()
+			accept_event()
+		elif _select_pressing:
 			_update_select_drag(_viewport.get_mouse_position())
+			accept_event()
+		elif _tsel_rect:
+			var hit2 := _pick()
+			if hit2.get("hit", false):
+				_tsel_to = hit2["position"]
+			if _marquee:
+				_marquee.queue_redraw()
 			accept_event()
 		elif _camera.looking or _camera.orbiting:
 			_camera.handle_event(event)
 			accept_event()
 
 
-func _on_lmb_down(p: Vector3, hit: Dictionary, shift: bool, alt: bool = false) -> void:
+func _on_lmb_down(p: Vector3, hit: Dictionary, shift: bool, alt: bool = false, ctrl: bool = false) -> void:
 	if ToolState.is_mask_painting():
 		_begin_mask_stroke(p, alt)
 		return
 	if ToolState.tool == "place" and not ToolState.armed.is_empty():
 		EditActions.place_at(p, hit.get("normal", Vector3.UP), shift, _log)
+		return
+	if ToolState.tool == "clone" and ctrl:
+		ToolState.set_clone_source(p.x, p.z)
+		_log.call("clone source %.1f, %.1f" % [p.x, p.z])
+		return
+	if ToolState.tool == "qsel":
+		_begin_selection_stroke(p, alt)
+		return
+	if ToolState.tool == "rsel":
+		_begin_terrain_rect(p, shift, alt)
+		return
+	if ToolState.tool == "wand":
+		_apply_wand(p, shift, alt)
 		return
 	if ToolState.tool == "ramp":
 		if _ramp_a.x > 1.0e8:
@@ -372,6 +517,15 @@ func _on_lmb_down(p: Vector3, hit: Dictionary, shift: bool, alt: bool = false) -
 		else:
 			EditActions.apply_ramp(_sculpt, _ramp_a, p, _log)
 			_ramp_a = Vector3.INF
+		return
+	if ToolState.tool == "clone":
+		if not ToolState.has_clone_source():
+			_log.call("Ctrl+click to set the clone source")
+			return
+		_sync_sculpt()
+		_sculpt.begin_stroke(MapState.field, p.x, p.z, false)
+		_stroking = true
+		_last_stamp = p
 		return
 	if ToolState.tool in ["raise", "lower", "flatten", "smooth", "noise", "paint"]:
 		_sync_sculpt()
@@ -384,6 +538,10 @@ func _on_lmb_up() -> void:
 	if not _stroking:
 		return
 	_stroking = false
+	if _sel_stroking:
+		_sel_stroking = false
+		_log.call(EditActions.terrain_selection_log("erase" if _sel_subtract else "add"))
+		return
 	if _mask_stroking:
 		_mask_stroking = false
 		var mask_cmd = _sculpt.end_mask_paint()
@@ -400,7 +558,100 @@ func _on_lmb_up() -> void:
 		var cmd2 = _sculpt.end_stroke(MapState.field)
 		if cmd2:
 			UndoStack.push(cmd2, true)
+			if ToolState.tool == "clone":
+				_log.call("clone stamp")
 	_on_objects_mutated()
+
+
+func _begin_selection_stroke(p: Vector3, subtract: bool) -> void:
+	if not MapState.has_session or not MapState.has_heightmap():
+		_log.call("open a map first")
+		return
+	if subtract and MapState.selection_empty():
+		_log.call("no selection")
+		return
+	_sel_subtract = subtract
+	_sel_stroking = true
+	_stroking = true
+	_last_stamp = p
+	var mode := MapState.SEL_SUBTRACT if subtract else MapState.SEL_ADD
+	var pts: Array[Vector2] = ToolState.world_image_points(p.x, p.z)
+	if pts.is_empty():
+		pts = [Vector2(p.x, p.z)]
+	for pt in pts:
+		MapState.stamp_terrain_selection(
+			pt.x, pt.y, ToolState.radius_m, ToolState.falloff, ToolState.shape, mode
+		)
+
+
+func _begin_terrain_rect(p: Vector3, shift: bool, alt: bool) -> void:
+	if not MapState.has_session or not MapState.has_heightmap():
+		_log.call("open a map first")
+		return
+	_tsel_rect = true
+	_tsel_from = p
+	_tsel_to = p
+	_tsel_shift = shift
+	_tsel_alt = alt
+	if _marquee:
+		_marquee.queue_redraw()
+
+
+func _finish_terrain_rect() -> void:
+	if not _tsel_rect:
+		return
+	_tsel_rect = false
+	if _marquee:
+		_marquee.queue_redraw()
+	if not MapState.has_heightmap():
+		return
+	var mode := EditActions.terrain_combine_mode(_tsel_shift, _tsel_alt)
+	if mode == MapState.SEL_SUBTRACT and MapState.selection_empty():
+		_log.call("no selection")
+		return
+	var cell := HeightField.CELL_M
+	var x0 := int(floor(minf(_tsel_from.x, _tsel_to.x) / cell))
+	var z0 := int(floor(minf(_tsel_from.z, _tsel_to.z) / cell))
+	var x1 := int(floor(maxf(_tsel_from.x, _tsel_to.x) / cell))
+	var z1 := int(floor(maxf(_tsel_from.z, _tsel_to.z) / cell))
+	MapState.rect_terrain_selection(x0, z0, x1, z1, mode)
+	_log.call(EditActions.terrain_selection_log("rect"))
+
+
+func _cancel_terrain_rect() -> void:
+	if not _tsel_rect:
+		return
+	_tsel_rect = false
+	if _marquee:
+		_marquee.queue_redraw()
+
+
+func _apply_wand(p: Vector3, shift: bool, alt: bool) -> void:
+	if not MapState.has_session or not MapState.has_heightmap():
+		_log.call("open a map first")
+		return
+	var mode := EditActions.terrain_combine_mode(shift, alt)
+	if mode == MapState.SEL_SUBTRACT and MapState.selection_empty():
+		_log.call("no selection")
+		return
+	var cell := HeightField.CELL_M
+	var sx := int(floor(p.x / cell))
+	var sz := int(floor(p.z / cell))
+	MapState.wand_terrain_selection(sx, sz, ToolState.wand_tolerance_m, mode)
+	_log.call(EditActions.terrain_selection_log("wand"))
+
+
+func _refresh_selection_overlay() -> void:
+	if _terrain == null or not _terrain.has_method("set_selection_mask"):
+		return
+	if MapState.selection_empty():
+		_terrain.set_selection_mask(false)
+		return
+	MapState.upload_terrain_selection()
+	if MapState.selection_texture == null:
+		_terrain.set_selection_mask(false)
+		return
+	_terrain.set_selection_mask(true, MapState.selection_texture)
 
 
 func _begin_mask_stroke(p: Vector3, erase: bool) -> void:
@@ -460,11 +711,15 @@ func _on_tool_state(name: String) -> void:
 		_objects.set_ghost(false, {}, MapState.field, Vector3.UP)
 	if name != "select":
 		_cancel_select_gesture()
+		if _measuring:
+			_clear_measure()
 		_objects.set_hover("")
 		_clear_hover_status()
 		_status.set_selection_count(0, false)
 	else:
 		_status.set_selection_count(MapState.selected_ids.size(), MapState.has_session)
+	if name != "rsel":
+		_cancel_terrain_rect()
 
 
 func _sync_sculpt() -> void:
@@ -555,7 +810,7 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 					MapState.persist()
 					Backend.save_map(MapState.session_dir, out, MapState.stem)
 				else:
-					get_tree().quit(0)
+					quit_clean(0)
 		"save":
 			MapState.mark_saved()
 			_refresh_map_label()
@@ -571,9 +826,9 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 			if result.has("features"):
 				_log.call("features: %s" % result["features"])
 			if _quit_after_save:
-				get_tree().quit()
+				quit_clean()
 			if _is_smoke():
-				get_tree().quit(0)
+				quit_clean(0)
 			if _io.consume_new_after_save():
 				_io.show_new_dialog()
 		"validate":
@@ -618,12 +873,36 @@ func _on_call_failed(verb: String, error: Dictionary) -> void:
 	_log.call("ERROR [%s] %s" % [error.get("code", "?"), error.get("message", error)])
 	if error.has("hint"):
 		_log.call("  hint: %s" % error["hint"])
+	if verb == "open" and str(error.get("code", "")) == "binary_bzn_unsupported" and not _is_automated():
+		_show_binary_bzn_dialog(error)
 	if _is_smoke() and verb != "probe":
-		get_tree().quit(1)
+		quit_clean(1)
 
 
 func _is_smoke() -> bool:
 	return OS.get_cmdline_user_args().has("--smoke-open")
+
+
+func _is_automated() -> bool:
+	if _is_smoke():
+		return true
+	for arg in OS.get_cmdline_args():
+		if str(arg).ends_with("run_tests.gd") or str(arg).contains("run_tests.gd"):
+			return true
+	return false
+
+
+func quit_clean(code: int = 0) -> void:
+	SessionIO.write_clean_exit()
+	get_tree().quit(code)
+
+
+static func measure_meters(a: Vector3, b: Vector3) -> float:
+	return a.distance_to(b)
+
+
+static func measure_log_line(meters: float) -> String:
+	return "measured %.1f m" % meters
 
 
 func _try_load_asset_index() -> void:
@@ -776,11 +1055,19 @@ func _clear_hover_status() -> void:
 
 
 func _on_marquee_draw() -> void:
-	if _marquee == null or not _select_marquee:
+	if _marquee == null:
 		return
-	var box := EditActions.screen_rect_from_drag(_select_from, _select_to)
-	_marquee.draw_rect(box, Color(0.25, 0.7, 1.0, 0.14), true)
-	_marquee.draw_rect(box, Color(0.55, 0.88, 1.0, 0.95), false, 1.5)
+	if _select_marquee:
+		var box := EditActions.screen_rect_from_drag(_select_from, _select_to)
+		_marquee.draw_rect(box, Color(0.25, 0.7, 1.0, 0.14), true)
+		_marquee.draw_rect(box, Color(0.55, 0.88, 1.0, 0.95), false, 1.5)
+		return
+	if _tsel_rect and _tsel_from.x < 1.0e8:
+		var a := _camera.unproject_position(_tsel_from)
+		var b := _camera.unproject_position(_tsel_to)
+		var box2 := EditActions.screen_rect_from_drag(a, b)
+		_marquee.draw_rect(box2, Color(0.35, 0.55, 1.0, 0.16), true)
+		_marquee.draw_rect(box2, Color(0.70, 0.85, 1.0, 0.95), false, 1.5)
 
 
 func _on_session_changed() -> void:
@@ -793,6 +1080,7 @@ func _on_session_changed() -> void:
 	_inspector.set_water(MapState.water_level())
 	_findings.set_findings(MapState.findings, MapState.findings_stale)
 	_refresh_mask_overlay()
+	_refresh_selection_overlay()
 	_apply_view_settings()
 	if not MapState.has_session:
 		return
@@ -810,6 +1098,11 @@ func _on_objects_mutated() -> void:
 	_objects.highlight(MapState.selected_ids)
 	_fill_inspector()
 	_refresh_map_label()
+	if _balance and _balance.has_method("schedule_recompute"):
+		_balance.schedule_recompute()
+	if _aipaths and _aipaths.has_method("rebuild"):
+		_aipaths.rebuild()
+	_refresh_aipath_bar()
 
 
 func _on_materials_changed() -> void:
@@ -839,6 +1132,21 @@ func _apply_view_settings() -> void:
 		_terrain.set_water_visible(Settings.view_water)
 	_apply_plants_view()
 	_apply_sky_view()
+	_apply_balance_view()
+	_apply_aipaths_view()
+
+
+func _apply_balance_view() -> void:
+	if _balance == null or not _balance.has_method("set_active"):
+		return
+	_balance.set_active(BalanceOverlay.enabled and MapState.has_session)
+
+
+func _apply_aipaths_view() -> void:
+	if _aipaths == null:
+		return
+	_aipaths.set_active(AiPathOverlay.enabled and MapState.has_session)
+	_refresh_aipath_bar()
 
 
 func _apply_plants_view() -> void:
@@ -897,6 +1205,194 @@ func _queue_smoke_open() -> void:
 			_smoke_save = args[i + 1]
 
 
+func _install_heightmap_dialogs() -> void:
+	_heightmap_export_dialog = FileDialog.new()
+	_heightmap_export_dialog.name = "HeightmapExportDialog"
+	_heightmap_export_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_heightmap_export_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	_heightmap_export_dialog.title = "Export heightmap PNG…"
+	_heightmap_export_dialog.ok_button_text = "Export"
+	_heightmap_export_dialog.dir_selected.connect(_io.export_heightmap)
+	add_child(_heightmap_export_dialog)
+	_heightmap_import_dialog = FileDialog.new()
+	_heightmap_import_dialog.name = "HeightmapImportDialog"
+	_heightmap_import_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_heightmap_import_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	_heightmap_import_dialog.title = "Import heightmap PNG…"
+	_heightmap_import_dialog.ok_button_text = "Import"
+	_heightmap_import_dialog.filters = PackedStringArray(["*.png, *.PNG ; Heightmap PNG"])
+	_heightmap_import_dialog.file_selected.connect(_io.import_heightmap)
+	add_child(_heightmap_import_dialog)
+
+
+func _install_restore_dialog() -> void:
+	_restore_dialog = ConfirmationDialog.new()
+	_restore_dialog.name = "RestoreSessionDialog"
+	_restore_dialog.title = "Restore last session?"
+	_restore_dialog.dialog_text = "The editor did not shut down cleanly. Restore the last unsaved session?"
+	_restore_dialog.ok_button_text = "Restore"
+	_restore_dialog.cancel_button_text = "Discard"
+	_restore_dialog.confirmed.connect(_on_restore_session)
+	add_child(_restore_dialog)
+
+
+func _check_crash_recovery() -> void:
+	var had_clean := SessionIO.consume_clean_exit()
+	var newest := SessionIO.newest_session_dir(MapState.session_root())
+	if not SessionIO.should_offer_restore(had_clean, SessionIO.session_has_unsaved_evidence(newest)):
+		return
+	_restore_session_dir = newest
+	if _restore_dialog:
+		_restore_dialog.popup_centered()
+
+
+func _on_restore_session() -> void:
+	var dir := _restore_session_dir
+	_restore_session_dir = ""
+	var payload := SessionIO.session_open_payload(dir)
+	if payload.is_empty():
+		_log.call("could not restore last session")
+		return
+	MapState.load_from_open(payload)
+	if SessionIO.session_has_unsaved_evidence(MapState.session_dir):
+		MapState.note_unsaved()
+	var label := MapState.stem if not MapState.stem.is_empty() else dir.get_file()
+	_log.call("restored session %s" % label)
+
+
+func _install_binary_dialog() -> void:
+	_binary_dialog = AcceptDialog.new()
+	_binary_dialog.name = "BinaryBznDialog"
+	_binary_dialog.title = "Binary BZN"
+	_binary_dialog.ok_button_text = "Close"
+	_binary_dialog.dialog_autowrap = true
+	_binary_dialog.min_size = Vector2i(520, 280)
+	_binary_dialog.add_button("Copy launch command", true, "copy")
+	_binary_dialog.custom_action.connect(func(a):
+		if a == "copy":
+			if _binary_command.is_empty():
+				_log.call("no launch command to copy")
+				return
+			DisplayServer.clipboard_set(_binary_command)
+			_log.call("copied launch command")
+	)
+	add_child(_binary_dialog)
+
+
+func _show_binary_bzn_dialog(error: Dictionary) -> void:
+	if _binary_dialog == null:
+		return
+	var path := str(error.get("path", "")).strip_edges()
+	var map_name := path.get_file()
+	if map_name.is_empty():
+		map_name = "map.bzn"
+	_binary_command = SessionIO.asciisave_launch_command(map_name)
+	var where := path if not path.is_empty() else map_name
+	_binary_dialog.dialog_text = (
+		"This map is a binary BZN. The editor cannot open binary saves — the game must re-save it as ASCII.\n\n"
+		+ "1. Copy the launch command (button below).\n"
+		+ "2. Run it while Steam is running (terminal, or Win+R).\n"
+		+ "3. The game loads the map and writes an ASCII .bzn.\n\n"
+		+ "Where the file lands: the game overwrites the .bzn it loaded, in the same folder as:\n"
+		+ "%s\n"
+		+ "For stock maps, check the game install's addon/ folder for a new .bzn of the same name.\n\n"
+		+ "Then open that ASCII file here.\n\n"
+		+ "Command:\n%s"
+	) % [where, _binary_command]
+	_binary_dialog.popup_centered()
+
+
+func _install_measure_line() -> void:
+	_measure_mesh = MeshInstance3D.new()
+	_measure_mesh.name = "MeasureLine"
+	_measure_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = Color(1.0, 0.85, 0.15)
+	mat.no_depth_test = true
+	_measure_mesh.material_override = mat
+	if _terrain:
+		_terrain.get_parent().add_child(_measure_mesh)
+
+
+func _begin_measure(p: Vector3) -> void:
+	_measuring = true
+	_measure_from = p
+	_measure_to = p
+	if _measure_mesh == null:
+		_install_measure_line()
+	_update_measure_line(p, p)
+	_status.set_status("transient", "measure 0.0 m")
+
+
+func _update_measure_drag() -> void:
+	if not _measuring:
+		return
+	if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		_finish_measure()
+		return
+	var hit := _pick()
+	if hit.get("hit", false):
+		_measure_to = hit["position"]
+		_update_measure_line(_measure_from, _measure_to)
+		_status.set_status("transient", "measure %.1f m" % measure_meters(_measure_from, _measure_to))
+
+
+func _update_measure_line(a: Vector3, b: Vector3) -> void:
+	if _measure_mesh == null:
+		return
+	var mesh := ImmediateMesh.new()
+	var lift := Vector3(0.0, 0.4, 0.0)
+	mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	mesh.surface_add_vertex(a + lift)
+	mesh.surface_add_vertex(b + lift)
+	mesh.surface_end()
+	_measure_mesh.mesh = mesh
+
+
+func _finish_measure() -> void:
+	if not _measuring:
+		return
+	var d := measure_meters(_measure_from, _measure_to)
+	_clear_measure()
+	_log.call(measure_log_line(d))
+
+
+func _clear_measure() -> void:
+	_measuring = false
+	_measure_from = Vector3.INF
+	_measure_to = Vector3.INF
+	if _measure_mesh:
+		_measure_mesh.mesh = null
+
+
+func _handle_bookmark(action: String) -> void:
+	var slot := Keymap.bookmark_slot(action)
+	if slot < 1:
+		return
+	if not MapState.has_session:
+		_log.call("open a map first")
+		return
+	if Keymap.is_bookmark_store(action):
+		var pose: Dictionary = {}
+		if _camera.has_method("capture_bookmark"):
+			pose = _camera.capture_bookmark()
+		else:
+			pose = FlyCamera.make_bookmark(_camera.global_position, _camera.rotation, _camera.pivot)
+		if SessionIO.store_bookmark(MapState.session_dir, slot, pose):
+			_log.call("stored camera bookmark %d" % slot)
+		else:
+			_log.call("could not store camera bookmark %d" % slot)
+		return
+	var recalled := SessionIO.recall_bookmark(MapState.session_dir, slot)
+	if recalled.is_empty():
+		_log.call("no bookmark %d" % slot)
+		return
+	if _camera.has_method("apply_bookmark"):
+		_camera.apply_bookmark(recalled)
+	_log.call("recalled camera bookmark %d" % slot)
+
+
 func _on_file_dialog_file_selected(path: String) -> void:
 	_io.open_file(path)
 
@@ -907,3 +1403,337 @@ func _on_new_dialog_confirmed() -> void:
 
 func _on_save_dialog_dir_selected(dir: String) -> void:
 	_io.dir_selected(dir)
+
+
+func _install_aipath_overlay() -> void:
+	_aipaths = AiPathOverlay.new()
+	_aipaths.name = "AiPathOverlay"
+	if _balance:
+		_balance.get_parent().add_child(_aipaths)
+	elif _terrain:
+		_terrain.get_parent().add_child(_aipaths)
+	_aipath_bar = HBoxContainer.new()
+	_aipath_bar.name = "AiPathBar"
+	_aipath_bar.add_theme_constant_override("separation", 6)
+	_aipath_bar.mouse_filter = Control.MOUSE_FILTER_STOP
+	_aipath_bar.position = Vector2(8, 8)
+	_btn_add_path = _make_aipath_btn("Add path")
+	_btn_del_path = _make_aipath_btn("Delete path")
+	_btn_add_pt = _make_aipath_btn("Add point")
+	_btn_del_pt = _make_aipath_btn("Delete point")
+	_btn_add_path.pressed.connect(_on_add_aipath)
+	_btn_del_path.pressed.connect(_on_delete_aipath)
+	_btn_add_pt.pressed.connect(_on_add_aipath_point)
+	_btn_del_pt.pressed.connect(_on_delete_aipath_point)
+	_aipath_bar.add_child(_btn_add_path)
+	_aipath_bar.add_child(_btn_del_path)
+	_aipath_bar.add_child(_btn_add_pt)
+	_aipath_bar.add_child(_btn_del_pt)
+	_center.add_child(_aipath_bar)
+	_aipath_bar.visible = false
+
+
+func _make_aipath_btn(caption: String) -> Button:
+	var b := Button.new()
+	b.text = caption
+	b.focus_mode = Control.FOCUS_NONE
+	return b
+
+
+func _refresh_aipath_bar() -> void:
+	if _aipath_bar == null:
+		return
+	var show := MapState.has_session and AiPathOverlay.enabled
+	_aipath_bar.visible = show
+	if not show:
+		return
+	var recs: Array = MapState.active_paths()
+	var pi := MapState.selected_path_index
+	var qi := MapState.selected_point_index
+	var rec := {}
+	if pi >= 0 and pi < recs.size() and typeof(recs[pi]) == TYPE_DICTIONARY:
+		rec = recs[pi]
+	var editable := not rec.is_empty() and AiPathOverlay.is_editable(rec)
+	var pts: Array = rec.get("points", []) if typeof(rec.get("points", [])) == TYPE_ARRAY else []
+	_set_aipath_btn(_btn_add_path, true, "")
+	if rec.is_empty():
+		_set_aipath_btn(_btn_del_path, false, "Select an AI path first")
+		_set_aipath_btn(_btn_add_pt, false, "Select an AI path first")
+		_set_aipath_btn(_btn_del_pt, false, "Select a path point first")
+	elif not editable:
+		_set_aipath_btn(_btn_del_path, false, "unlabeled paths are preserved, not edited")
+		_set_aipath_btn(_btn_add_pt, false, "unlabeled paths are preserved, not edited")
+		_set_aipath_btn(_btn_del_pt, false, "unlabeled paths are preserved, not edited")
+	else:
+		_set_aipath_btn(_btn_del_path, true, "")
+		_set_aipath_btn(_btn_add_pt, true, "")
+		if qi < 0 or qi >= pts.size():
+			_set_aipath_btn(_btn_del_pt, false, "Select a path point first")
+		elif pts.size() <= 1:
+			_set_aipath_btn(_btn_del_pt, false, "path needs at least one point")
+		else:
+			_set_aipath_btn(_btn_del_pt, true, "")
+
+
+func _set_aipath_btn(btn: Button, on: bool, why: String) -> void:
+	if btn == null:
+		return
+	btn.disabled = not on
+	btn.tooltip_text = why
+
+
+func _begin_aipath_gesture(shift: bool) -> bool:
+	if _aipaths == null or not _aipaths.is_active() or not MapState.has_session:
+		return false
+	if ToolState.tool != "select":
+		return false
+	var mouse := _viewport.get_mouse_position()
+	var origin := _camera.project_ray_origin(mouse)
+	var dir := _camera.project_ray_normal(mouse)
+	var phit: Dictionary = _aipaths.pick_point(origin, dir)
+	if not phit.is_empty():
+		var pi := int(phit.get("path", -1))
+		var qi := int(phit.get("point", -1))
+		var rec := MapState.path_record(pi, MapState.active_variant)
+		if rec.is_empty() or not AiPathOverlay.is_editable(rec):
+			_log.call("unlabeled path is preserved, not edited")
+			return true
+		MapState.select_aipath(pi, qi)
+		_aipath_dragging = true
+		_aipath_drag_path = pi
+		_aipath_drag_point = qi
+		_aipath_drag_before = AiPathCommand._dup(MapState.active_paths())
+		_aipath_moved = false
+		var slot: Variant = MapState.dirty.get("aipaths")
+		_aipath_drag_was_dirty = typeof(slot) == TYPE_DICTIONARY and bool((slot as Dictionary).get(MapState.active_variant, false))
+		_refresh_aipath_bar()
+		_log.call("selected path %s point %d" % [str(rec.get("name", "")), qi])
+		return true
+	var lhit: Dictionary = _aipaths.pick_path(origin, dir)
+	if not lhit.is_empty():
+		var pi2 := int(lhit.get("path", -1))
+		var rec2 := MapState.path_record(pi2, MapState.active_variant)
+		if rec2.is_empty() or not AiPathOverlay.is_editable(rec2):
+			_log.call("unlabeled path is preserved, not edited")
+			return true
+		if shift and AiPathOverlay.is_editable(rec2):
+			var ground := _pick()
+			if ground.get("hit", false):
+				var p: Vector3 = ground["position"]
+				_insert_aipath_point_at(pi2, int(lhit.get("point", 0)) + 1, p.x, p.z)
+				return true
+		MapState.select_aipath(pi2, -1)
+		_refresh_aipath_bar()
+		_log.call("selected path %s" % str(rec2.get("name", "")))
+		return true
+	return false
+
+
+func _update_aipath_drag() -> void:
+	if not _aipath_dragging:
+		return
+	var hit := _pick()
+	if not hit.get("hit", false):
+		return
+	var p: Vector3 = hit["position"]
+	_set_aipath_point_live(_aipath_drag_path, _aipath_drag_point, p.x, p.z)
+	_aipath_moved = true
+
+
+func _finish_aipath_drag() -> void:
+	if not _aipath_dragging:
+		return
+	var moved := _aipath_moved
+	var before := _aipath_drag_before
+	var pi := _aipath_drag_path
+	var qi := _aipath_drag_point
+	_aipath_dragging = false
+	_aipath_moved = false
+	if not moved:
+		_refresh_aipath_bar()
+		return
+	var after := AiPathCommand._dup(MapState.active_paths())
+	var cmd := AiPathCommand.snapshot_and_apply(
+		AiPathCommand.Kind.MOVE_POINT, MapState.active_variant, before, after, pi, qi
+	)
+	UndoStack.push(cmd, true)
+	_log.call("moved AI path point")
+	_refresh_aipath_bar()
+
+
+func _cancel_aipath_drag() -> void:
+	if not _aipath_dragging:
+		return
+	if _aipath_moved and not _aipath_drag_before.is_empty():
+		MapState.replace_variant_paths(MapState.active_variant, _aipath_drag_before)
+		MapState.select_aipath(_aipath_drag_path, _aipath_drag_point)
+		if not _aipath_drag_was_dirty:
+			var slot: Variant = MapState.dirty.get("aipaths")
+			if typeof(slot) == TYPE_DICTIONARY:
+				(slot as Dictionary)[MapState.active_variant] = false
+	_aipath_dragging = false
+	_aipath_moved = false
+	_log.call("AI path drag cancelled")
+	_refresh_aipath_bar()
+
+
+func _set_aipath_point_live(path_i: int, point_i: int, x: float, z: float) -> void:
+	var recs: Array = AiPathCommand._dup(MapState.active_paths())
+	if path_i < 0 or path_i >= recs.size() or typeof(recs[path_i]) != TYPE_DICTIONARY:
+		return
+	var rec: Dictionary = recs[path_i]
+	var pts: Array = rec.get("points", []) if typeof(rec.get("points", [])) == TYPE_ARRAY else []
+	if point_i < 0 or point_i >= pts.size():
+		return
+	pts[point_i] = [x, z]
+	rec["points"] = pts
+	rec["pointCount"] = pts.size()
+	recs[path_i] = rec
+	MapState.replace_variant_paths(MapState.active_variant, recs)
+	MapState.select_aipath(path_i, point_i)
+
+
+func _on_add_aipath() -> void:
+	if _btn_add_path != null and _btn_add_path.disabled:
+		return
+	if not MapState.has_session:
+		_log.call("open a map first")
+		return
+	if not AiPathOverlay.enabled:
+		_log.call("turn on View → AI Paths first")
+		return
+	var before := AiPathCommand._dup(MapState.active_paths())
+	var after := AiPathCommand._dup(before)
+	var rec := MapState.default_new_path(MapState.active_variant)
+	rec["size"] = str(rec.get("name", "")).length()
+	after.append(rec)
+	var cmd := AiPathCommand.snapshot_and_apply(
+		AiPathCommand.Kind.ADD_PATH, MapState.active_variant, before, after, after.size() - 1, 0
+	)
+	UndoStack.push(cmd)
+	_log.call("added AI path %s" % str(rec.get("name", "")))
+	_refresh_aipath_bar()
+
+
+func _on_delete_aipath() -> void:
+	if _btn_del_path != null and _btn_del_path.disabled:
+		return
+	var pi := MapState.selected_path_index
+	var recs := MapState.active_paths()
+	if pi < 0 or pi >= recs.size():
+		_log.call("select an AI path first")
+		return
+	var rec: Dictionary = recs[pi] if typeof(recs[pi]) == TYPE_DICTIONARY else {}
+	if not AiPathOverlay.is_editable(rec):
+		_log.call("unlabeled paths are preserved, not edited")
+		return
+	var before := AiPathCommand._dup(recs)
+	var after := AiPathCommand._dup(recs)
+	after.remove_at(pi)
+	var cmd := AiPathCommand.snapshot_and_apply(
+		AiPathCommand.Kind.DELETE_PATH, MapState.active_variant, before, after, -1, -1
+	)
+	UndoStack.push(cmd)
+	_log.call("deleted AI path %s" % str(rec.get("name", "")))
+	_refresh_aipath_bar()
+
+
+func _on_add_aipath_point() -> void:
+	if _btn_add_pt != null and _btn_add_pt.disabled:
+		return
+	var pi := MapState.selected_path_index
+	var recs := MapState.active_paths()
+	if pi < 0 or pi >= recs.size() or typeof(recs[pi]) != TYPE_DICTIONARY:
+		_log.call("select an AI path first")
+		return
+	var rec: Dictionary = recs[pi]
+	if not AiPathOverlay.is_editable(rec):
+		_log.call("unlabeled paths are preserved, not edited")
+		return
+	var pts: Array = rec.get("points", []) if typeof(rec.get("points", [])) == TYPE_ARRAY else []
+	var insert_at := pts.size()
+	var x := float(MapState.width_m) * 0.5
+	var z := float(MapState.depth_m) * 0.5
+	if MapState.selected_point_index >= 0 and MapState.selected_point_index < pts.size():
+		insert_at = MapState.selected_point_index + 1
+		var cur: Array = BzOpen._aipath_point(pts[MapState.selected_point_index])
+		x = float(cur[0]) + 40.0
+		z = float(cur[1]) + 40.0
+	elif not pts.is_empty():
+		var last: Array = BzOpen._aipath_point(pts[pts.size() - 1])
+		x = float(last[0]) + 40.0
+		z = float(last[1]) + 40.0
+	_insert_aipath_point_at(pi, insert_at, x, z)
+
+
+func _insert_aipath_point_at(path_i: int, at: int, x: float, z: float) -> void:
+	var before := AiPathCommand._dup(MapState.active_paths())
+	var after := AiPathCommand._dup(before)
+	if path_i < 0 or path_i >= after.size() or typeof(after[path_i]) != TYPE_DICTIONARY:
+		return
+	var rec: Dictionary = after[path_i]
+	var pts: Array = rec.get("points", []) if typeof(rec.get("points", [])) == TYPE_ARRAY else []
+	var idx := clampi(at, 0, pts.size())
+	pts.insert(idx, [x, z])
+	rec["points"] = pts
+	rec["pointCount"] = pts.size()
+	after[path_i] = rec
+	var cmd := AiPathCommand.snapshot_and_apply(
+		AiPathCommand.Kind.ADD_POINT, MapState.active_variant, before, after, path_i, idx
+	)
+	UndoStack.push(cmd)
+	_log.call("added AI path point")
+	_refresh_aipath_bar()
+
+
+func _on_delete_aipath_point() -> void:
+	if _btn_del_pt != null and _btn_del_pt.disabled:
+		return
+	_delete_selected_aipath_point()
+
+
+func _delete_selected_aipath_point() -> bool:
+	var pi := MapState.selected_path_index
+	var qi := MapState.selected_point_index
+	var recs := MapState.active_paths()
+	if pi < 0 or pi >= recs.size() or typeof(recs[pi]) != TYPE_DICTIONARY:
+		return false
+	var rec: Dictionary = recs[pi]
+	if not AiPathOverlay.is_editable(rec):
+		return false
+	var pts: Array = rec.get("points", []) if typeof(rec.get("points", [])) == TYPE_ARRAY else []
+	if qi < 0 or qi >= pts.size():
+		return false
+	if pts.size() <= 1:
+		_log.call("path needs at least one point")
+		return true
+	var before := AiPathCommand._dup(recs)
+	var after := AiPathCommand._dup(recs)
+	var rec2: Dictionary = after[pi]
+	var pts2: Array = rec2.get("points", [])
+	pts2.remove_at(qi)
+	rec2["points"] = pts2
+	rec2["pointCount"] = pts2.size()
+	after[pi] = rec2
+	var next_pt := mini(qi, pts2.size() - 1)
+	var cmd := AiPathCommand.snapshot_and_apply(
+		AiPathCommand.Kind.DELETE_POINT, MapState.active_variant, before, after, pi, next_pt
+	)
+	UndoStack.push(cmd)
+	_log.call("deleted AI path point")
+	_refresh_aipath_bar()
+	return true
+
+
+func _try_delete_aipath() -> bool:
+	if not AiPathOverlay.enabled or not MapState.has_session:
+		return false
+	if MapState.selected_point_index >= 0:
+		return _delete_selected_aipath_point()
+	if MapState.selected_path_index >= 0:
+		if _btn_del_path != null and _btn_del_path.disabled:
+			return true
+		_on_delete_aipath()
+		return true
+	return false
+

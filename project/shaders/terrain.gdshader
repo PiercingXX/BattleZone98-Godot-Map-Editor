@@ -18,6 +18,8 @@ uniform bool show_grid = false;
 uniform vec3 mat_colors[16];
 uniform bool brush_on = false;
 uniform vec2 brush_center = vec2(0.0);
+uniform vec2 brush_centers[4];
+uniform int brush_count = 1;
 uniform float brush_radius = 40.0;
 uniform float brush_falloff = 0.65;
 uniform int brush_shape = 0;
@@ -26,6 +28,8 @@ uniform sampler2D mask_tex : filter_nearest, repeat_disable;
 uniform bool show_mask = false;
 uniform vec3 mask_tint = vec3(0.12, 0.32, 0.62);
 uniform float mask_water_level = -1.0;
+uniform sampler2D selection_tex : filter_linear, repeat_disable;
+uniform bool show_selection = false;
 
 varying vec2 v_uv;
 varying vec3 v_world;
@@ -123,13 +127,22 @@ void fragment() {
 		ground = mix(ground, vec3(0.05, 0.05, 0.06), line * 0.35);
 	}
 	if (brush_on) {
-		vec2 d = vec2(v_world.x, v_world.z) - brush_center;
-		float dist = brush_shape == 1 ? max(abs(d.x), abs(d.y)) : length(d);
-		float edge = abs(dist - brush_radius);
-		float ring = 1.0 - smoothstep(0.0, 2.5, edge);
-		float inner = 1.0 - clamp(dist / max(brush_radius, 0.001), 0.0, 1.0);
-		float fill = pow(inner, mix(1.0, 0.4, brush_falloff)) * 0.22;
-		ground = mix(ground, vec3(0.95, 0.85, 0.25), max(ring, fill));
+		float acc = 0.0;
+		int n = clamp(brush_count, 1, 4);
+		for (int i = 0; i < 4; i++) {
+			if (i >= n) {
+				break;
+			}
+			vec2 center = brush_centers[i];
+			vec2 d = vec2(v_world.x, v_world.z) - center;
+			float dist = brush_shape == 1 ? max(abs(d.x), abs(d.y)) : length(d);
+			float edge = abs(dist - brush_radius);
+			float ring = 1.0 - smoothstep(0.0, 2.5, edge);
+			float inner = 1.0 - clamp(dist / max(brush_radius, 0.001), 0.0, 1.0);
+			float fill = pow(inner, mix(1.0, 0.4, brush_falloff)) * 0.22;
+			acc = max(acc, max(ring, fill));
+		}
+		ground = mix(ground, vec3(0.95, 0.85, 0.25), acc);
 	}
 	if (water_level >= 0.0 && h <= water_level + 0.05) {
 		ground = mix(ground, vec3(0.12, 0.32, 0.62), 0.55);
@@ -142,6 +155,19 @@ void fragment() {
 				a = 0.62;
 			}
 			ground = mix(ground, mask_tint, a);
+		}
+	}
+	if (show_selection) {
+		float s = texture(selection_tex, v_uv).r;
+		if (s > 0.001) {
+			ground = mix(ground, vec3(0.18, 0.52, 0.95), 0.14 * s);
+			float s_l = texture(selection_tex, v_uv + vec2(-texel.x, 0.0)).r;
+			float s_r = texture(selection_tex, v_uv + vec2(texel.x, 0.0)).r;
+			float s_d = texture(selection_tex, v_uv + vec2(0.0, -texel.y)).r;
+			float s_u = texture(selection_tex, v_uv + vec2(0.0, texel.y)).r;
+			float edge = max(abs(s - s_l), max(abs(s - s_r), max(abs(s - s_d), abs(s - s_u))));
+			float pulse = 0.40 + 0.60 * (0.5 + 0.5 * sin(TIME * 5.0));
+			ground = mix(ground, vec3(0.95, 0.97, 1.0), clamp(edge * 3.0, 0.0, 1.0) * pulse);
 		}
 	}
 	ALBEDO = ground;

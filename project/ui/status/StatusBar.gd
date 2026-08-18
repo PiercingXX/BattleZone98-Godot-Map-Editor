@@ -14,6 +14,7 @@ var _kind: String = "info"
 @onready var _grid: Button = %Grid
 @onready var _slope: Button = %Slope
 var _sel: Label
+var _tsel: Label
 
 
 func _ready() -> void:
@@ -27,9 +28,17 @@ func _ready() -> void:
 	_sel.name = "SelectionCount"
 	_sel.visible = false
 	_sel.add_theme_color_override("font_color", Color(1.0, 0.88, 0.38))
+	_tsel = Label.new()
+	_tsel.name = "TerrainSelection"
+	_tsel.visible = false
+	_tsel.add_theme_color_override("font_color", Color(0.55, 0.82, 1.0))
 	var inner: HBoxContainer = $Inner
 	inner.add_child(_sel)
 	inner.move_child(_sel, _map.get_index() + 1)
+	inner.add_child(_tsel)
+	inner.move_child(_tsel, _sel.get_index() + 1)
+	MapState.selection_changed.connect(_refresh_terrain_selection)
+	_refresh_terrain_selection()
 	set_status("info", "starting")
 
 
@@ -74,6 +83,28 @@ func set_selection_count(count: int, show: bool) -> void:
 		return
 	_sel.visible = show
 	_sel.text = "%d selected" % count if show else ""
+
+
+func set_terrain_selection_text(text: String, show: bool) -> void:
+	if _tsel == null:
+		return
+	_tsel.visible = show
+	_tsel.text = text if show else ""
+
+
+func _refresh_terrain_selection() -> void:
+	if _tsel == null:
+		return
+	if MapState.selection_empty():
+		set_terrain_selection_text("", false)
+		return
+	set_terrain_selection_text(
+		"selection: %d cells (~%.0f m²)" % [
+			MapState.selection_cell_count(),
+			MapState.selection_area_m2(),
+		],
+		true,
+	)
 
 
 func set_log_visible(on: bool) -> void:

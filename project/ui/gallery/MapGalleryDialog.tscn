@@ -1,0 +1,66 @@
+[gd_scene load_steps=2 format=3 uid="uid://c8bzgallery00001"]
+
+[ext_resource type="Script" path="res://project/ui/gallery/MapGalleryDialog.gd" id="1_script"]
+
+[node name="MapGalleryDialog" type="Window"]
+title = "Map gallery"
+size = Vector2i(820, 560)
+visible = false
+exclusive = false
+script = ExtResource("1_script")
+
+[node name="Margin" type="MarginContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="Box" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Search" type="LineEdit" parent="Margin/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Filter by stem"
+clear_button_enabled = true
+
+[node name="Status" type="Label" parent="Margin/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Scanning…"
+autowrap_mode = 3
+
+[node name="Tiles" type="ItemList" parent="Margin/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+select_mode = 0
+icon_mode = 0
+fixed_icon_size = Vector2i(112, 112)
+same_column_width = true
+fixed_column_width = 140
+max_columns = 5
+max_text_lines = 2
+
+[node name="Row" type="HBoxContainer" parent="Margin/Box"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Open" type="Button" parent="Margin/Box/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Select a map"
+disabled = true
+text = "Open"
+
+[node name="Cancel" type="Button" parent="Margin/Box/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Cancel"

@@ -217,6 +217,14 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 		)
 		if BzErrors.is_err(applied):
 			return applied
+
+	# AiPaths: re-emit only dirty variants. Untouched tails stay residue bytes.
+	var aip_applied: Dictionary = _apply_dirty_aipaths(
+		session_dir, source_dir, source_stem, out_dir, out_stem,
+		manifest, dirty, written, regenerated, identical, warnings
+	)
+	if BzErrors.is_err(aip_applied):
+		return aip_applied
 	return {
 		"ok": true,
 		"files": _sorted_unique(written),
@@ -316,6 +324,106 @@ static func _apply_objects(
 	var wr: Dictionary = BzBzn.write_bzn(dest_bzn, bzn)
 	if typeof(wr) == TYPE_DICTIONARY and wr.get("ok") == false:
 		return wr
+	return {"ok": true}
+
+
+static func _apply_dirty_aipaths(
+	session_dir: String,
+	source_dir: String,
+	source_stem: String,
+	out_dir: String,
+	out_stem: String,
+	manifest: Dictionary,
+	dirty: Dictionary,
+	written: Array,
+	regenerated: Array,
+	identical: Array,
+	warnings: Array
+) -> Dictionary:
+	var flagged: Dictionary = _aipaths_dirty_variants(dirty, manifest)
+	if flagged.is_empty():
+		return {"ok": true}
+	var aip_path: String = session_dir.path_join("aipaths.json")
+	var data := {}
+	if FileAccess.file_exists(aip_path):
+		var loaded: Variant = BzSession.read_json(aip_path)
+		if BzErrors.is_err(loaded):
+			return loaded
+		if typeof(loaded) == TYPE_DICTIONARY:
+			data = loaded
+	for variant in flagged.keys():
+		if not bool(flagged[variant]):
+			continue
+		var dest_bzn: String = out_dir.path_join(
+			"%s%s" % [out_stem, BzSession.variant_bzn_suffix(str(variant))]
+		)
+		if not FileAccess.file_exists(dest_bzn):
+			var src_bzn: String = BzSession.find_source_file(
+				source_dir, source_stem, BzSession.variant_bzn_suffix(str(variant))
+			)
+			if src_bzn.is_empty():
+				warnings.append(
+					"no residue BZN for AiPaths variant %s; skipped" % _py_repr(str(variant))
+				)
+				continue
+			var cp: Dictionary = _copy_source(src_bzn, dest_bzn)
+			if BzErrors.is_err(cp):
+				return cp
+		var recs: Array = BzOpen.paths_of(data, str(variant))
+		var problems: PackedStringArray = BzOpen.aipaths_invariants(recs)
+		if not problems.is_empty():
+			warnings.append("AiPaths %s: %s" % [str(variant), ", ".join(problems)])
+		var raw: PackedByteArray = FileAccess.get_file_as_bytes(dest_bzn)
+		var text: String = raw.get_string_from_utf8()
+		var spliced: String = BzOpen.splice_aipaths_text(text, recs)
+		var wr: Dictionary = _write_text_bytes(dest_bzn, spliced)
+		if BzErrors.is_err(wr):
+			return wr
+		if not written.has(dest_bzn.get_file()):
+			written.append(dest_bzn.get_file())
+		if not regenerated.has(dest_bzn.get_file()):
+			regenerated.append(dest_bzn.get_file())
+		var ident_i: int = identical.find(dest_bzn.get_file())
+		if ident_i >= 0:
+			identical.remove_at(ident_i)
+	return {"ok": true}
+
+
+static func _aipaths_dirty_variants(dirty: Dictionary, manifest: Dictionary) -> Dictionary:
+	var field: Variant = dirty.get("aipaths", null)
+	if field == null:
+		return {}
+	var out := {}
+	if typeof(field) == TYPE_BOOL:
+		if not field:
+			return {}
+		var variants_v: Variant = manifest.get("variants", [""])
+		var variants: Array = variants_v if typeof(variants_v) == TYPE_ARRAY else [""]
+		for v in variants:
+			out[str(v)] = true
+		return out
+	if typeof(field) != TYPE_DICTIONARY:
+		return {}
+	for k in (field as Dictionary).keys():
+		if _truthy((field as Dictionary)[k]):
+			out[str(k)] = true
+	return out
+
+
+static func _write_text_bytes(path: String, text: String) -> Dictionary:
+	var parent: String = path.get_base_dir()
+	if not parent.is_empty() and not DirAccess.dir_exists_absolute(parent):
+		DirAccess.make_dir_recursive_absolute(parent)
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return BzErrors.err(
+			"write_failed",
+			"cannot write %s (%s)" % [path, error_string(FileAccess.get_open_error())],
+			"",
+			path
+		)
+	file.store_buffer(text.to_utf8_buffer())
+	file.close()
 	return {"ok": true}
 
 

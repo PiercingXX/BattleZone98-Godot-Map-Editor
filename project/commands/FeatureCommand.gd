@@ -16,6 +16,18 @@ var mask_before: PackedByteArray = PackedByteArray()
 var mask_after: PackedByteArray = PackedByteArray()
 
 
+func describe() -> String:
+	var noun := "water" if group == "water" else "plant"
+	match kind:
+		Kind.ADD:
+			return "add %s" % noun
+		Kind.REMOVE:
+			return "remove %s" % noun
+		Kind.EDIT:
+			return "edit %s" % noun
+	return get_class()
+
+
 func cost_bytes() -> int:
 	return 1024 + mask_bytes.size() + mask_before.size() + mask_after.size()
 

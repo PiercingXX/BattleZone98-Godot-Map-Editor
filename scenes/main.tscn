@@ -1,9 +1,10 @@
-[gd_scene load_steps=16 format=3 uid="uid://c8bzmapmain0001"]
+[gd_scene load_steps=19 format=3 uid="uid://c8bzmapmain0001"]
 
 [ext_resource type="Script" path="res://scenes/main.gd" id="1_main"]
 [ext_resource type="Script" path="res://project/camera/FlyCamera.gd" id="2_cam"]
 [ext_resource type="Script" path="res://project/terrain/TerrainRenderer.gd" id="3_terrain"]
 [ext_resource type="Script" path="res://project/objects/ObjectMarkers.gd" id="4_objs"]
+[ext_resource type="Script" path="res://project/objects/BalanceOverlay.gd" id="14_balance"]
 [ext_resource type="PackedScene" path="res://project/ui/top_bar/TopBar.tscn" id="5_top"]
 [ext_resource type="PackedScene" path="res://project/ui/palette/PalettePanel.tscn" id="6_pal"]
 [ext_resource type="PackedScene" path="res://project/ui/inspector/InspectorPanel.tscn" id="7_insp"]
@@ -12,6 +13,8 @@
 [ext_resource type="PackedScene" path="res://project/ui/help/HelpWindow.tscn" id="10_help"]
 [ext_resource type="PackedScene" path="res://project/ui/probe/ProbeDialog.tscn" id="11_probe"]
 [ext_resource type="PackedScene" path="res://project/ui/features/FeaturesPanel.tscn" id="12_feat"]
+[ext_resource type="PackedScene" path="res://project/ui/gallery/MapGalleryDialog.tscn" id="13_gallery"]
+[ext_resource type="PackedScene" path="res://project/ui/history/HistoryPanel.tscn" id="15_hist"]
 
 [sub_resource type="ProceduralSkyMaterial" id="SkyMat_1"]
 sky_top_color = Color(0.22, 0.42, 0.72, 1)
@@ -113,6 +116,10 @@ script = ExtResource("3_terrain")
 unique_name_in_owner = true
 script = ExtResource("4_objs")
 
+[node name="BalanceOverlay" type="Node3D" parent="Root/Body/Mid/Center/SubViewport/World"]
+unique_name_in_owner = true
+script = ExtResource("14_balance")
+
 [node name="Camera" type="Camera3D" parent="Root/Body/Mid/Center/SubViewport/World"]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 0.87, 0.5, 0, -0.5, 0.87, 640, 180, 200)
@@ -138,10 +145,19 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="FindingsPanel" parent="Root/Body/Mid/Right" instance=ExtResource("8_find")]
+[node name="Lower" type="VSplitContainer" parent="Root/Body/Mid/Right"]
+layout_mode = 2
+size_flags_vertical = 3
+split_offset = 160
+
+[node name="FindingsPanel" parent="Root/Body/Mid/Right/Lower" instance=ExtResource("8_find")]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+
+[node name="HistoryPanel" parent="Root/Body/Mid/Right/Lower" instance=ExtResource("15_hist")]
+unique_name_in_owner = true
+layout_mode = 2
 
 [node name="StatusBar" parent="Root" instance=ExtResource("9_stat")]
 unique_name_in_owner = true
@@ -251,6 +267,9 @@ dialog_text = "Save changes before quitting?"
 unique_name_in_owner = true
 
 [node name="ProbeDialog" parent="." instance=ExtResource("11_probe")]
+unique_name_in_owner = true
+
+[node name="MapGalleryDialog" parent="." instance=ExtResource("13_gallery")]
 unique_name_in_owner = true
 
 [connection signal="file_selected" from="FileDialog" to="." method="_on_file_dialog_file_selected"]

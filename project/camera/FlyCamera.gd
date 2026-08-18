@@ -104,6 +104,50 @@ func top_down(width_m: float, depth_m: float) -> void:
 	speed_changed.emit(base_speed)
 
 
+static func make_bookmark(pos: Vector3, rot: Vector3, pivot_pt: Vector3) -> Dictionary:
+	return {
+		"position": [pos.x, pos.y, pos.z],
+		"rotation": [rot.x, rot.y, rot.z],
+		"pivot": [pivot_pt.x, pivot_pt.y, pivot_pt.z],
+	}
+
+
+static func bookmark_position(d: Dictionary) -> Vector3:
+	return _vec3_from(d.get("position", []), Vector3.ZERO)
+
+
+static func bookmark_rotation(d: Dictionary) -> Vector3:
+	return _vec3_from(d.get("rotation", []), Vector3.ZERO)
+
+
+static func bookmark_pivot(d: Dictionary) -> Vector3:
+	return _vec3_from(d.get("pivot", []), Vector3.ZERO)
+
+
+static func _vec3_from(v: Variant, fallback: Vector3) -> Vector3:
+	if typeof(v) != TYPE_ARRAY or (v as Array).size() < 3:
+		return fallback
+	var a: Array = v
+	return Vector3(float(a[0]), float(a[1]), float(a[2]))
+
+
+func capture_bookmark() -> Dictionary:
+	var pos := global_position if is_inside_tree() else position
+	return make_bookmark(pos, rotation, pivot)
+
+
+func apply_bookmark(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	var pos := bookmark_position(d)
+	if is_inside_tree():
+		global_position = pos
+	else:
+		position = pos
+	rotation = bookmark_rotation(d)
+	pivot = bookmark_pivot(d)
+
+
 func _text_focused() -> bool:
 	var focus := get_viewport().gui_get_focus_owner()
 	return focus is LineEdit or focus is TextEdit or focus is SpinBox or focus is TextEdit

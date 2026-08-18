@@ -1,0 +1,27 @@
+[gd_scene load_steps=2 format=3 uid="uid://c8bzhistory0001"]
+
+[ext_resource type="Script" path="res://project/ui/history/HistoryPanel.gd" id="1_script"]
+
+[node name="HistoryPanel" type="PanelContainer"]
+custom_minimum_size = Vector2(0, 72)
+script = ExtResource("1_script")
+
+[node name="Box" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Toggle" type="Button" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+toggle_mode = true
+button_pressed = true
+text = "History ▾"
+flat = true
+alignment = 0
+
+[node name="List" type="ItemList" parent="Box"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+size_flags_vertical = 3
+allow_reselect = true

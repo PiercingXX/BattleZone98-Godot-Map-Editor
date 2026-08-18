@@ -35,7 +35,42 @@ func can_redo() -> bool:
 	return _index + 1 < _stack.size()
 
 
+func command_count() -> int:
+	return _stack.size()
+
+
+func current_index() -> int:
+	return _index
+
+
+func command_at(i: int) -> RefCounted:
+	if i < 0 or i >= _stack.size():
+		return null
+	return _stack[i]
+
+
+func describe_command(command: RefCounted) -> String:
+	if command == null:
+		return ""
+	if command.has_method("describe"):
+		var label := str(command.call("describe")).strip_edges()
+		if not label.is_empty():
+			return label
+	return command.get_class()
+
+
+func jump_to(index: int) -> void:
+	var target := clampi(index, -1, _stack.size() - 1)
+	if target == _index:
+		return
+	while _index > target and can_undo():
+		undo()
+	while _index < target and can_redo():
+		redo()
+
+
 func push(command: RefCounted, already_applied: bool = false) -> void:
+	_stamp_height_tool(command)
 	if _index + 1 < _stack.size():
 		for i in range(_index + 1, _stack.size()):
 			_bytes -= _cost(_stack[i])
@@ -108,6 +143,17 @@ func _evict() -> void:
 		_stack.remove_at(0)
 		_gens.remove_at(0)
 		_index -= 1
+
+
+func _stamp_height_tool(command: RefCounted) -> void:
+	if not (command is HeightStrokeCommand):
+		return
+	var hs := command as HeightStrokeCommand
+	if not hs.tool.is_empty():
+		return
+	var mode := str(ToolState.tool)
+	if mode in ["raise", "lower", "flatten", "smooth", "ramp", "noise"]:
+		hs.tool = mode
 
 
 func _cost(command: RefCounted) -> int:
