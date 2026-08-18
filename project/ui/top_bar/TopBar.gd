@@ -99,21 +99,26 @@ func _ready() -> void:
 func _install_action_row() -> void:
 	if _row2 == null:
 		return
-	_action_button("SaveAs", "Save As…", MORE_SAVE_AS, "save")
-	_action_button("ImportPng", "Import PNG", MORE_IMPORT_HEIGHTMAP, "")
-	_action_button("ExportPng", "Export PNG", MORE_EXPORT_HEIGHTMAP, "")
+	_action_button("SaveAs", "Save As…", MORE_SAVE_AS)
+	_action_button("ImportPng", "Import PNG", MORE_IMPORT_HEIGHTMAP)
+	_action_button("ExportPng", "Export PNG", MORE_EXPORT_HEIGHTMAP)
 	_row2_sep()
-	_action_button("Assets", "Assets", MORE_IMPORT, "open")
-	_action_button("Thumbnail", "Thumbnail", MORE_RENDER, "frame")
-	_action_button("Screenshot", "Screenshot", MORE_SCREENSHOT, "view")
+	_action_button("Assets", "Assets", MORE_IMPORT)
+	_action_button("Thumbnail", "Thumbnail", MORE_RENDER)
+	_action_button("Screenshot", "Screenshot", MORE_SCREENSHOT)
 	_row2_sep()
-	_action_button("Install", "Install", MORE_INSTALL, "test")
-	_action_button("Pack", "Pack", MORE_PACK, "")
-	_action_button("Publish", "Publish", MORE_PUBLISH, "")
-	_row2_sep()
-	_action_button("Probe", "Probe", MORE_PROBE, "")
+	_action_button("Install", "Install", MORE_INSTALL)
+	_action_button("Pack", "Pack", MORE_PACK)
+	_action_button("Publish", "Publish", MORE_PUBLISH)
+	# Utility cluster hugs the right edge; a spacer eats the slack.
+	var spacer := Control.new()
+	spacer.name = "Row2Spacer"
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_row2.add_child(spacer)
+	_action_button("Probe", "Probe", MORE_PROBE)
 	_scheme_opt = OptionButton.new()
 	_scheme_opt.name = "KeymapScheme"
+	_scheme_opt.flat = true
 	_scheme_opt.focus_mode = Control.FOCUS_NONE
 	_scheme_opt.add_item("Keys: Godot", MORE_SCHEME_GODOT)
 	_scheme_opt.add_item("Keys: GIMP", MORE_SCHEME_GIMP)
@@ -122,18 +127,19 @@ func _install_action_row() -> void:
 		more_selected.emit(_scheme_opt.get_item_id(i))
 	)
 	_row2.add_child(_scheme_opt)
-	_action_button("Hotkeys", "Hotkeys", MORE_HELP, "")
-	_action_button("Prefs", "Prefs", MORE_PREFS, "")
+	_action_button("Hotkeys", "Hotkeys", MORE_HELP)
+	_action_button("Prefs", "Prefs", MORE_PREFS)
 	_refresh_action_row()
 
 
-func _action_button(node_name: String, label: String, id: int, icon: String) -> void:
+func _action_button(node_name: String, label: String, id: int) -> void:
+	# Flat, text-only, quiet until hover: a secondary toolbar, not a
+	# second wall of primary buttons.
 	var b := Button.new()
 	b.name = node_name
 	b.text = label
+	b.flat = true
 	b.focus_mode = Control.FOCUS_NONE
-	if not icon.is_empty():
-		EditorIcons.apply_button(b, icon, true)
 	if id == MORE_SAVE_AS:
 		b.pressed.connect(func() -> void: save_as_requested.emit())
 	else:
