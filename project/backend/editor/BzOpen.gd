@@ -186,6 +186,8 @@ static func open_map(path: String, session_dir: String) -> Dictionary:
 			var feat_dict: Dictionary = loaded_feat
 			if feat_dict.has("water") or feat_dict.has("plants"):
 				features = feat_dict
+	if (features.get("water", []) as Array).is_empty():
+		features["water"] = detect_legacy_water(directory, objects)
 
 	var meta: Dictionary = _parse_meta(files, stem)
 	var dirty: Dictionary = _empty_dirty(present_variants)
@@ -242,6 +244,68 @@ static func open_map(path: String, session_dir: String) -> Dictionary:
 
 
 # -- private helpers (open.py) -----------------------------------------------
+
+
+## Classic maps carry water as a static mesh object in the BZN (corpus
+## desrten1 pattern) instead of an editor sidecar. Detect it: an object
+## whose <prjid>.mesh ships beside the map and is a flat-ish horizontal
+## plane is water; its level is the plane's mean height (carrier sits at
+## the origin, so mesh coords are world coords). Records are marked
+## legacy so save/meshgen leaves the shipped files untouched.
+static func detect_legacy_water(directory: String, objects: Dictionary) -> Array:
+	var out: Array = []
+	var seen := {}
+	for variant in objects:
+		var recs: Variant = objects[variant]
+		if typeof(recs) != TYPE_ARRAY:
+			continue
+		for rec in recs:
+			if typeof(rec) != TYPE_DICTIONARY:
+				continue
+			var prjid := str((rec as Dictionary).get("prjid", "")).to_lower()
+			if prjid.is_empty() or seen.has(prjid):
+				continue
+			seen[prjid] = true
+			var mesh_path := _find_source_file(directory, prjid, ".mesh")
+			if mesh_path.is_empty():
+				continue
+			var parsed: Dictionary = BzOgre.read_ogre_mesh(mesh_path)
+			if not bool(parsed.get("ok", false)):
+				continue
+			var level: Variant = _flat_plane_level(parsed.get("mesh"))
+			if level == null:
+				continue
+			out.append({
+				"stem": prjid,
+				"level_m": float(level),
+				"variant_scope": "all",
+				"legacy": true,
+			})
+	return out
+
+
+## Mean vertex height when the mesh reads as a horizontal water plane
+## (small Y spread over a large footprint); null otherwise.
+static func _flat_plane_level(mesh: Variant) -> Variant:
+	if mesh == null:
+		return null
+	var min_v := Vector3(1.0e9, 1.0e9, 1.0e9)
+	var max_v := Vector3(-1.0e9, -1.0e9, -1.0e9)
+	var sum_y := 0.0
+	var n := 0
+	for sm in mesh.submeshes:
+		for v in sm.positions:
+			min_v = min_v.min(v)
+			max_v = max_v.max(v)
+			sum_y += v.y
+			n += 1
+	if n < 4:
+		return null
+	var y_spread := max_v.y - min_v.y
+	var footprint := minf(max_v.x - min_v.x, max_v.z - min_v.z)
+	if y_spread > 15.0 or footprint < 100.0:
+		return null
+	return sum_y / float(n)
 
 
 static func _detect_pack_context(directory: String, files: Array) -> Dictionary:

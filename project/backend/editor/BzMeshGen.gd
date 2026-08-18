@@ -127,6 +127,12 @@ static func collect_entries(features: Dictionary) -> Array:
 		for w in waters:
 			if typeof(w) != TYPE_DICTIONARY:
 				continue
+			if bool((w as Dictionary).get("legacy", false)):
+				# Pre-existing carrier detected on open (e.g. desrten1):
+				# its mesh and BZN object already ship with the map.
+				# Regenerating would clobber the original files and break
+				# byte-identical round-trips.
+				continue
 			var rec: Dictionary = (w as Dictionary).duplicate()
 			rec["kind"] = "water"
 			out.append(rec)
