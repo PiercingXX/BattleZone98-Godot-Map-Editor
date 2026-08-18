@@ -20,6 +20,7 @@ func run(t) -> void:
 	_quick_assign_undo(t)
 	_persist_objects_json(t)
 	await _inspector_row(t)
+	await _wingman_row(t)
 	_keymap_chords(t)
 
 	UndoStack.clear()
@@ -122,6 +123,43 @@ func _inspector_row(t) -> void:
 	UndoStack.undo()
 	t.eq(int(MapState.find_object("i-a").get("team", 0)), 1)
 	t.eq(int(MapState.find_object("i-b").get("team", 0)), 1)
+	insp.queue_free()
+	await t.tree.process_frame
+	UndoStack.clear()
+
+
+func _wingman_row(t) -> void:
+	# Wingman/Teams variants offer the four real slots: sides 1 and 8,
+	# neutral 0, hostile AI 15 (corpus BZN spec + SBPGlobals).
+	var a := _rec("w-a", 1)
+	MapState.objects = {"_SW": [a]}
+	MapState.active_variant = "_SW"
+	MapState.selected_ids = ["w-a"] as Array[String]
+	UndoStack.clear()
+	var insp: Node = load("res://project/ui/inspector/InspectorPanel.tscn").instantiate()
+	t.tree.root.add_child(insp)
+	await t.tree.process_frame
+	var b0: Button = insp.find_child("Team0", true, false)
+	var b1: Button = insp.find_child("Team1", true, false)
+	var b2: Button = insp.find_child("Team2", true, false)
+	var b3: Button = insp.find_child("Team3", true, false)
+	var b4: Button = insp.find_child("Team4", true, false)
+	t.eq(b0.text, "Team A", "wingman row: side A")
+	t.eq(b1.text, "Team B")
+	t.eq(b2.text, "Neutral")
+	t.eq(b3.text, "AI")
+	t.ok(not b4.visible, "fifth slot hidden in team mode")
+	t.ok(not (insp.find_child("Team", true, false) as SpinBox).visible, "raw spinner hidden")
+	insp.show_object(a)
+	b1.pressed.emit()
+	t.eq(int(MapState.find_object("w-a").get("team", 0)), 8, "Team B assigns 8")
+	b3.pressed.emit()
+	t.eq(int(MapState.find_object("w-a").get("team", 0)), 15, "AI assigns 15")
+	MapState.active_variant = ""
+	MapState.objects_mutated.emit()
+	await t.tree.process_frame
+	t.eq(b0.text, "0", "numeric row returns outside team variants")
+	t.ok(b4.visible)
 	insp.queue_free()
 	await t.tree.process_frame
 	UndoStack.clear()

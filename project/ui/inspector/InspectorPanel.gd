@@ -14,6 +14,8 @@ signal collapsed_changed(collapsed: bool)
 @onready var _yaw: SpinBox = %Yaw
 @onready var _team: SpinBox = %Team
 @onready var _team_btns: Array[Button] = []
+## Team number each quick button assigns; swapped in Wingman/Teams mode.
+var _team_button_values: Array[int] = [0, 1, 2, 3, 4]
 @onready var _pin: CheckBox = %PinHeight
 @onready var _mode: Label = %Mode
 @onready var _water: SpinBox = %Water
@@ -394,8 +396,46 @@ func _install_team_buttons() -> void:
 		if btn == null:
 			continue
 		btn.add_theme_color_override("font_color", colors[i])
-		btn.pressed.connect(_on_team_quick.bind(i))
+		btn.pressed.connect(_on_team_btn.bind(i))
 		_team_btns.append(btn)
+	MapState.session_changed.connect(_sync_team_mode)
+	MapState.objects_mutated.connect(_sync_team_mode)
+	_sync_team_mode()
+
+
+func _on_team_btn(idx: int) -> void:
+	if idx < _team_button_values.size():
+		_on_team_quick(_team_button_values[idx])
+
+
+## Wingman/Teams BZNs use fixed sides: allied bases are teams 1 and 8
+## ("wingman second base 8", corpus BZN spec) and hostile AI units are
+## team 15 (SBPGlobals hardcodes furies to 15; 10-15 read as AI). In
+## those variants the row offers exactly Team A / Team B / AI.
+func _sync_team_mode() -> void:
+	var team_mode := MapState.active_variant in ["_SW", "_ST"]
+	if _team_btns.size() < 5:
+		return
+	if team_mode:
+		_team_button_values = [1, 8, 0, 15, 4] as Array[int]
+		_team_btns[0].text = "Team A"
+		_team_btns[0].tooltip_text = "Side A, humans or AI allies (team 1)"
+		_team_btns[1].text = "Team B"
+		_team_btns[1].tooltip_text = "Side B (team 8)"
+		_team_btns[2].text = "Neutral"
+		_team_btns[2].tooltip_text = "World objects anyone can use — scrap, geysers, spawns (team 0)"
+		_team_btns[3].text = "AI"
+		_team_btns[3].tooltip_text = "Hostile to everyone — SIZ furies (team 15)"
+		_team_btns[3].visible = true
+		_team_btns[4].visible = false
+		_team.visible = false
+	else:
+		_team_button_values = [0, 1, 2, 3, 4] as Array[int]
+		for i in 5:
+			_team_btns[i].text = str(i)
+			_team_btns[i].tooltip_text = "Team %d  (Shift+%d)" % [i, i]
+			_team_btns[i].visible = true
+		_team.visible = true
 
 
 func _on_team_quick(team: int) -> void:
