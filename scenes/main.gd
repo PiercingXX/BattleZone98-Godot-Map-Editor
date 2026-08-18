@@ -596,9 +596,13 @@ func _on_view_gui_input(event: InputEvent) -> void:
 			if _marquee:
 				_marquee.queue_redraw()
 			accept_event()
-		elif _camera.looking or _camera.orbiting:
+		elif _camera.looking or _camera.orbiting or _camera.pan_dragging:
 			_camera.handle_event(event)
 			accept_event()
+		else:
+			# The camera also owns the buttonless modifier moves
+			# (Ctrl+move orbit, Shift+move pan); it ignores plain motion.
+			_camera.handle_event(event)
 
 
 func _on_lmb_down(p: Vector3, hit: Dictionary, shift: bool, alt: bool = false, ctrl: bool = false) -> void:
