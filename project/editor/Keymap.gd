@@ -235,9 +235,10 @@ static func help_text(scheme: String = "") -> String:
 		other_tools.append("%s %s" % [format_action(action, other), short])
 	return """[code]Scheme: %s
 
-RMB look     mouse wheel zoom (Ctrl+wheel too)     MMB orbit
+RMB drag look     Ctrl+RMB (or Alt+RMB) drag orbit     Shift+RMB drag pan
+MMB orbit     Shift+MMB pan     mouse wheel zoom (Ctrl+wheel too)
 Shift+wheel truck left/right     Alt+wheel orbit step
-Ctrl+move orbit view     Shift+move pan view     (2D: Shift+wheel/move pans)
+Ctrl+move orbit view     Shift+move pan view     (2D: RMB/MMB drag pans)
 WASD fly     Q/E up down     Shift fast     Ctrl slow
 %s frame map     %s top-down     %s 2D/3D     %s slope tint     %s walk-the-surface
 %s grid     Delete remove selected

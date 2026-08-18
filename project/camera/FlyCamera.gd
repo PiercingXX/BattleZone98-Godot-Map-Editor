@@ -22,6 +22,8 @@ var base_speed: float = 80.0
 var looking: bool = false
 var orbiting: bool = false
 var panning: bool = false
+## Shift+RMB (or Shift+MMB) drag: grab-pan in 3D.
+var pan_dragging: bool = false
 var pivot: Vector3 = Vector3.ZERO
 var map_mode: bool = false
 var _look_sens: float = 0.003
@@ -36,14 +38,30 @@ func handle_event(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
-			looking = mb.pressed
+			# Modifier+RMB drags: Shift pans the view, Ctrl/Alt orbits the
+			# pivot, plain RMB free-looks. RMB is camera-only, so single
+			# modifiers stay free of tool click bindings.
+			looking = false
 			orbiting = false
+			pan_dragging = false
+			if mb.pressed and mb.shift_pressed:
+				pan_dragging = true
+			elif mb.pressed and (mb.ctrl_pressed or mb.alt_pressed):
+				orbiting = true
+			else:
+				looking = mb.pressed
 			Input.mouse_mode = (
-				Input.MOUSE_MODE_CAPTURED if looking else Input.MOUSE_MODE_VISIBLE
+				Input.MOUSE_MODE_CAPTURED
+				if looking or orbiting
+				else Input.MOUSE_MODE_VISIBLE
 			)
 		elif mb.button_index == MOUSE_BUTTON_MIDDLE:
 			orbiting = mb.pressed
 			looking = false
+			pan_dragging = false
+			if mb.pressed and mb.shift_pressed:
+				orbiting = false
+				pan_dragging = true
 			Input.mouse_mode = (
 				Input.MOUSE_MODE_CAPTURED if orbiting else Input.MOUSE_MODE_VISIBLE
 			)
@@ -71,6 +89,8 @@ func handle_event(event: InputEvent) -> void:
 			)
 		elif orbiting:
 			_orbit(mm.relative)
+		elif pan_dragging:
+			_pan_ground(mm.relative)
 		elif mm.button_mask == 0 and _fly_keys_down():
 			# Shift/Ctrl also modulate WASD speed; never hijack mid-flight.
 			pass
@@ -84,7 +104,7 @@ func handle_event(event: InputEvent) -> void:
 func _handle_map_event(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_MIDDLE:
+		if mb.button_index == MOUSE_BUTTON_MIDDLE or mb.button_index == MOUSE_BUTTON_RIGHT:
 			if mb.pressed:
 				begin_pan()
 			else:
@@ -131,6 +151,7 @@ static func _fly_keys_down() -> bool:
 func _end_pointer_capture() -> void:
 	looking = false
 	orbiting = false
+	pan_dragging = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 

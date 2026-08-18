@@ -330,7 +330,7 @@ func _process(_delta: float) -> void:
 		var nav := (
 			"wheel zoom  MMB/Space+LMB pan  WASD pan"
 			if _camera.map_mode
-			else "RMB look  wheel zoom  Shift+wheel truck  Ctrl+move orbit  Shift+move pan  WASD fly"
+			else "RMB look  Ctrl+RMB orbit  Shift+RMB pan  wheel zoom  WASD fly"
 		)
 		_status.set_cursor("xz %.1f, %.1f  h %.1f m  mat %d  %s   ·  %s" % [
 			p.x, p.z, p.y, MapState.material_at(p.x, p.z), ToolState.tool, nav,
