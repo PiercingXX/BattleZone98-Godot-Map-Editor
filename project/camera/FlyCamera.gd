@@ -95,8 +95,16 @@ func handle_event(event: InputEvent) -> void:
 			# Shift/Ctrl also modulate WASD speed; never hijack mid-flight.
 			pass
 		elif mm.button_mask == 0 and mm.ctrl_pressed:
-			# Buttonless Ctrl+move orbits the pivot (perspective change).
-			_orbit(mm.relative)
+			# Buttonless Ctrl+move orbits the pivot, deliberately slow.
+			_orbit(mm.relative * 0.25)
+		elif mm.button_mask == 0 and mm.alt_pressed:
+			# Buttonless Alt+move pans the camera tripod-style.
+			rotate_y(look_yaw_delta(mm.relative.x, _look_sens))
+			rotation.x = clampf(
+				rotation.x + look_pitch_delta(mm.relative.y, Settings.invert_look, _look_sens),
+				-1.35,
+				1.35,
+			)
 		elif mm.button_mask == 0 and mm.shift_pressed:
 			_pan_ground(mm.relative)
 

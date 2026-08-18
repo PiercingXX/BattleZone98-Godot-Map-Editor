@@ -240,7 +240,8 @@ RMB drag look        Ctrl+RMB / Alt+RMB drag orbit
 Shift+RMB drag pan   MMB orbit     Shift+MMB pan
 wheel zoom (to cursor; Ctrl+wheel too)
 Shift+wheel truck left/right      Alt+wheel orbit step
-Ctrl+move orbit      Shift+move pan     (2D: RMB/MMB drag pans)
+Ctrl+move orbit (slow)   Alt+move pan camera   Shift+move grab-pan
+(2D: RMB/MMB drag pans)
 WASD fly     Q/E up down     Shift fast     Ctrl slow
 %s frame map   %s top-down   %s 2D/3D
 %s slope tint  %s walk-the-surface  %s grid[/code]

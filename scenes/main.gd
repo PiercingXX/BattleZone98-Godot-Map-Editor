@@ -359,19 +359,27 @@ func _process(_delta: float) -> void:
 			_objects.set_ghost(true, ghost, MapState.field, hit.get("normal", Vector3.UP))
 	if _stroking and hit.get("hit", false) and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		var p2: Vector3 = hit["position"]
-		if _last_stamp.distance_to(p2) >= maxf(HeightField.CELL_M, ToolState.radius_m * 0.15):
+		# March along the drag segment at even spacing: a fast drag used
+		# to land one dab per frame, leaving gaps that made strokes feel
+		# jerky. Density per metre is now constant at any mouse speed.
+		var spacing := maxf(HeightField.CELL_M, ToolState.radius_m * 0.15)
+		var guard := 0
+		while _last_stamp.distance_to(p2) >= spacing and guard < 64:
+			guard += 1
+			var dir := (p2 - _last_stamp) / _last_stamp.distance_to(p2)
+			var at := _last_stamp + dir * spacing
 			if _sel_stroking:
 				var mode := MapState.SEL_SUBTRACT if _sel_subtract else MapState.SEL_ADD
-				var pts: Array[Vector2] = ToolState.world_image_points(p2.x, p2.z)
+				var pts: Array[Vector2] = ToolState.world_image_points(at.x, at.z)
 				if pts.is_empty():
-					pts = [Vector2(p2.x, p2.z)]
+					pts = [Vector2(at.x, at.z)]
 				for pt in pts:
 					MapState.stamp_terrain_selection(
 						pt.x, pt.y, ToolState.radius_m, ToolState.falloff, ToolState.shape, mode
 					)
 			else:
-				_sculpt.stamp(MapState.field, p2.x, p2.z)
-			_last_stamp = p2
+				_sculpt.stamp(MapState.field, at.x, at.z)
+			_last_stamp = at
 
 
 func _input(event: InputEvent) -> void:
