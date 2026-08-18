@@ -157,7 +157,12 @@ func _end_pointer_capture() -> void:
 
 func _dolly(sign: float) -> void:
 	var step := maxf(8.0, base_speed * Settings.coerce_camera_speed(Settings.camera_speed_mul) * 0.35) * sign
-	global_position += global_transform.basis.z * step
+	# Zoom along the ray under the cursor, so the point you point at is
+	# what you approach (and what stays put on screen), not screen center.
+	var dir := -global_transform.basis.z
+	if is_inside_tree():
+		dir = project_ray_normal(get_viewport().get_mouse_position())
+	global_position -= dir * step
 
 
 ## Shift+wheel: slide left/right along the ground plane.
