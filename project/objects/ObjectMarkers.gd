@@ -41,6 +41,10 @@ const TEAM_PALETTE_COLORBLIND: Array[Color] = [
 static var ghost_other_variants: bool = false
 
 var _box: BoxMesh
+var _cone: CylinderMesh
+var _gem: SphereMesh
+var _capsule: CapsuleMesh
+var _pillar: BoxMesh
 var _ghost: Node3D
 var _by_id: Dictionary = {}
 var _gltf_cache: Dictionary = {}
@@ -52,6 +56,25 @@ var _hull_mat: StandardMaterial3D
 func _ready() -> void:
 	_box = BoxMesh.new()
 	_box.size = Vector3(8, 6, 8)
+	# Category silhouettes for classes with no converted mesh: a geyser
+	# reads as a plume cone, scrap as a low gem, a pilot as a capsule,
+	# a spawn point as a slim pillar. Everything else stays a box.
+	_cone = CylinderMesh.new()
+	_cone.top_radius = 0.0
+	_cone.bottom_radius = 3.2
+	_cone.height = 9.0
+	_cone.radial_segments = 12
+	_cone.rings = 1
+	_gem = SphereMesh.new()
+	_gem.radius = 3.0
+	_gem.height = 4.2
+	_gem.radial_segments = 5
+	_gem.rings = 3
+	_capsule = CapsuleMesh.new()
+	_capsule.radius = 1.1
+	_capsule.height = 4.6
+	_pillar = BoxMesh.new()
+	_pillar.size = Vector3(2.2, 10.0, 2.2)
 	set_process(false)
 	if Settings != null and Settings.has_signal("prefs_changed"):
 		if not Settings.prefs_changed.is_connected(_on_prefs_changed):
@@ -193,9 +216,9 @@ func refresh_labels(camera: Camera3D) -> void:
 		var inst := _by_id[id] as Node3D
 		if inst == null or not inst.visible:
 			continue
-		var rec := MapState.find_object(str(id))
-		if rec.is_empty():
-			continue
+		# No record lookup here: find_object is a linear scan, and doing
+		# it for every marker every frame is O(N²). Stale ids just miss
+		# the label cut below (only the kept few are looked up).
 		var dist := cam.distance_to(inst.global_position)
 		cands.append({"id": str(id), "dist": dist})
 	var keep := SelectionGizmo.pick_nearest_label_ids(cands, LABEL_RANGE_M, LABEL_MAX)
@@ -693,12 +716,35 @@ func _make_visual(rec: Dictionary, faded: bool) -> Node3D:
 		_apply_team_accent(loaded, rec)
 		return loaded
 	var inst := MeshInstance3D.new()
-	inst.mesh = _box
 	var size := _size_for(prjid)
-	inst.scale = Vector3(size.x / _box.size.x, size.y / _box.size.y, size.z / _box.size.z)
-	# Local Y is in pre-scale mesh units so world offset is exactly size.y / 2
+	var mesh_h := _box.size.y
+	var s := Vector3.ONE
+	match _silhouette_for(rec):
+		"geyser":
+			# Uniform scale keeps each silhouette's proportions; the box
+			# keeps the old fit-the-footprint behavior.
+			inst.mesh = _cone
+			mesh_h = _cone.height
+			s = Vector3.ONE * (size.y / mesh_h)
+		"scrap":
+			inst.mesh = _gem
+			mesh_h = _gem.height
+			s = Vector3.ONE * (size.x / (_gem.radius * 2.0))
+		"pilot":
+			inst.mesh = _capsule
+			mesh_h = _capsule.height
+			s = Vector3.ONE * (size.y / mesh_h)
+		"spawn":
+			inst.mesh = _pillar
+			mesh_h = _pillar.size.y
+			s = Vector3.ONE * (size.y * 1.5 / mesh_h)
+		_:
+			inst.mesh = _box
+			s = Vector3(size.x / _box.size.x, size.y / _box.size.y, size.z / _box.size.z)
+	inst.scale = s
+	# Local Y is in pre-scale mesh units so world offset stays size-based
 	# (pick() uses wrap.position + size.y * 0.5).
-	inst.position.y = _box.size.y * 0.5
+	inst.position.y = mesh_h * 0.5
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.albedo_color = _color_for(prjid, int(rec.get("team", 0)))
@@ -710,6 +756,19 @@ func _make_visual(rec: Dictionary, faded: bool) -> Node3D:
 	var wrap := Node3D.new()
 	wrap.add_child(inst)
 	return wrap
+
+
+## Which fallback silhouette a record gets, from its class category.
+static func _silhouette_for(rec: Dictionary) -> String:
+	var prjid := str(rec.get("prjid", ""))
+	var info := MapState.class_info(prjid)
+	var cat := str(info.get("category", "")).strip_edges().to_lower()
+	if cat.is_empty():
+		cat = _categorize_prjid(prjid)
+	match cat:
+		"geyser", "scrap", "pilot", "spawn":
+			return cat
+	return "box"
 
 
 func _apply_team_accent(root: Node, rec: Dictionary) -> void:

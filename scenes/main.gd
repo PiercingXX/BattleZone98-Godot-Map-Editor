@@ -45,6 +45,8 @@ var _aipaths: AiPathOverlay
 @onready var _world_env: WorldEnvironment = %WorldEnvironment
 
 var _sculpt = SculptTool.new()
+## Accumulator for 10 Hz UI work (status text, label culling).
+var _ui_tick_acc: float = 0.0
 var _io: SessionIO
 var _game_test: GameTest
 var _workshop: WorkshopPublish
@@ -291,11 +293,18 @@ func _wire() -> void:
 
 func _process(_delta: float) -> void:
 	_refresh_compass()
-	_status.set_debug("%d fps  chunks %d  up %d B" % [
-		int(Engine.get_frames_per_second()),
-		_terrain.get_child_count() if _terrain else 0,
-		_sculpt.last_uploaded,
-	])
+	# Status text, hover pick, and label culling are 10 Hz work; running
+	# them every frame (and per high-poll-rate mouse event) is the main
+	# CPU cost of an idle frame.
+	_ui_tick_acc += _delta
+	var ui_tick := _ui_tick_acc >= 0.1
+	if ui_tick:
+		_ui_tick_acc = 0.0
+		_status.set_debug("%d fps  chunks %d  up %d B" % [
+			int(Engine.get_frames_per_second()),
+			_terrain.get_child_count() if _terrain else 0,
+			_sculpt.last_uploaded,
+		])
 	if _gizmo_dragging and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		_finish_gizmo_drag()
 	elif _gizmo_dragging:
@@ -314,7 +323,7 @@ func _process(_delta: float) -> void:
 		_status.set_selection_count(0, false)
 		return
 	_sync_gizmo()
-	if _objects and _objects.has_method("refresh_labels"):
+	if ui_tick and _objects and _objects.has_method("refresh_labels"):
 		_objects.refresh_labels(_camera)
 	var over_view := _center.get_global_rect().has_point(get_global_mouse_position())
 	if not over_view:
