@@ -16,8 +16,20 @@ func run(t) -> void:
 	_test_first_game_root(t)
 	_test_empty_roots_warns(t)
 	_test_live_shape(t)
+	_test_linux_roots(t)
 	_restore()
 	_rmtree(tmp)
+
+
+func _test_linux_roots(t) -> void:
+	if OS.get_name() != "Linux":
+		return
+	var roots := BzDiscover._linux_steam_roots()
+	var joined := "\n".join(roots)
+	t.ok("/.steam/steam" in joined, "classic steam root probed")
+	t.ok("/.local/share/Steam" in joined, "xdg steam root probed")
+	t.ok("com.valvesoftware.Steam" in joined, "flatpak steam root probed")
+	t.ok("/snap/steam/common/" in joined, "snap steam root probed")
 
 
 func _isolate() -> void:

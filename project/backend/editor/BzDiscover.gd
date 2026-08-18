@@ -273,6 +273,15 @@ static func _linux_steam_roots() -> PackedStringArray:
 	)
 	roots.append(home.path_join(".steam").path_join("root"))
 	roots.append(home.path_join(".steam").path_join("debian-installation"))
+	# Snap-packaged Steam (Ubuntu default install channel).
+	roots.append(
+		home.path_join("snap").path_join("steam").path_join("common")
+			.path_join(".local").path_join("share").path_join("Steam")
+	)
+	roots.append(
+		home.path_join("snap").path_join("steam").path_join("current")
+			.path_join(".local").path_join("share").path_join("Steam")
+	)
 	return roots
 
 
