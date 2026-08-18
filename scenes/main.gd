@@ -3,8 +3,11 @@ extends Control
 
 const TerrainRaycastScript = preload("res://project/terrain/TerrainRaycast.gd")
 const DarkThemeScript = preload("res://project/ui/DarkTheme.gd")
+const SelectionGizmoScript = preload("res://project/objects/SelectionGizmo.gd")
 
-@onready var _console: TextEdit = %Console
+@onready var _console: Control = %Console
+@onready var _toasts: Control = %ToastLayer
+@onready var _prefs: Window = %PrefsDialog
 @onready var _file_dialog: FileDialog = %FileDialog
 @onready var _save_dialog: FileDialog = %SaveDialog
 @onready var _new_dialog: ConfirmationDialog = %NewDialog
@@ -23,6 +26,11 @@ var _aipaths: AiPathOverlay
 @onready var _camera: Camera3D = %Camera
 @onready var _center: Control = %Center
 @onready var _viewport: SubViewport = %SubViewport
+@onready var _body_split: HSplitContainer = %Body
+@onready var _mid_split: HSplitContainer = %Mid
+@onready var _right_split: VSplitContainer = %Right
+@onready var _upper_split: VSplitContainer = %Upper
+@onready var _lower_split: VSplitContainer = %Lower
 @onready var _top = %TopBar
 @onready var _palette = %PalettePanel
 @onready var _inspector = %InspectorPanel
@@ -30,6 +38,8 @@ var _aipaths: AiPathOverlay
 @onready var _findings = %FindingsPanel
 @onready var _history = %HistoryPanel
 @onready var _status = %StatusBar
+@onready var _start = %StartScreen
+@onready var _compass: Control = %CompassRose
 @onready var _help = %HelpWindow
 @onready var _probe = %ProbeDialog
 @onready var _gallery = %MapGalleryDialog
@@ -88,11 +98,24 @@ var _aipath_drag_point: int = -1
 var _aipath_drag_before: Array = []
 var _aipath_moved: bool = false
 var _aipath_drag_was_dirty: bool = false
+var _autosave: Timer
+var _layout_timer: Timer
+var _layout_applying: bool = false
+var _compass_yaw: float = 0.0
+var _gizmo: SelectionGizmo
+var _gizmo_dragging: bool = false
+var _gizmo_handle: String = ""
+var _gizmo_start_hit: Vector3 = Vector3.ZERO
+var _gizmo_pivot: Vector3 = Vector3.ZERO
+var _gizmo_dx: float = 0.0
+var _gizmo_dz: float = 0.0
+var _gizmo_dyaw: float = 0.0
 
 
 func _ready() -> void:
 	randomize()
 	theme = DarkThemeScript.make()
+	Settings.apply_ui_scale(get_window())
 	add_to_group("editor_shell")
 	get_tree().auto_accept_quit = false
 	_io = SessionIO.new(self, _log)
@@ -110,26 +133,27 @@ func _ready() -> void:
 	_install_measure_line()
 	_install_aipath_overlay()
 	_wire()
+	_install_layout_persistence()
+	_apply_layout_settings()
+	_refresh_start_screen()
 	_try_load_asset_index()
 	_pack_kind.add_item("BZP map", 0)
 	_pack_kind.add_item("Base-game map", 1)
 	for size in [1280, 2560, 3840, 5120]:
 		_size_option.add_item("%s m" % size, size)
 		_size_z.add_item("%s m" % size, size)
-	var autosave := Timer.new()
-	autosave.wait_time = 30.0
-	autosave.timeout.connect(func():
-		if MapState.has_session and MapState.unsaved:
-			MapState.persist()
-			_log.call("autosaved session")
-	)
-	add_child(autosave)
-	autosave.start()
+	_autosave = Timer.new()
+	_autosave.name = "Autosave"
+	_autosave.timeout.connect(_on_autosave)
+	add_child(_autosave)
+	_apply_autosave()
 	_refresh_map_label()
 	var version := str(ProjectSettings.get_setting("application/config/version", ""))
 	if not version.is_empty():
 		get_window().title = "BattleZone 98 Godot Map Editor  v%s" % version
-	_log.call("BattleZone 98 Godot Map Editor v%s. F1 help. Unsaved sessions autosave every 30s. Open a map to sculpt and place." % version)
+	var auto_n := Settings.coerce_autosave_interval(Settings.autosave_interval_s)
+	var auto_txt := "Autosave is off." if auto_n <= 0 else "Unsaved sessions autosave every %ds." % auto_n
+	_log.call("BattleZone 98 Godot Map Editor v%s. F1 help. %s Open a map to sculpt and place." % [version, auto_txt])
 	Backend.probe()
 	_queue_smoke_open()
 	if not _is_automated():
@@ -150,12 +174,18 @@ func _wire() -> void:
 	_top.recent_open_requested.connect(_io.open_file)
 	if _gallery:
 		_gallery.map_open_requested.connect(_io.open_file)
+	if _start:
+		_start.new_requested.connect(_io.new_prompt)
+		_start.open_requested.connect(_io.open_prompt)
+		_start.gallery_requested.connect(_io.gallery_prompt)
+		_start.recent_open_requested.connect(_io.open_file)
+		_start.template_requested.connect(_on_start_template)
 	_top.new_requested.connect(_io.new_prompt)
 	_top.save_requested.connect(_io.save)
 	_top.save_as_requested.connect(func(): _save_as = true; _io.save(true))
 	_top.validate_requested.connect(_io.validate)
 	_top.test_requested.connect(_io.test_in_game)
-	_top.more_selected.connect(_io.handle_more)
+	_top.more_selected.connect(_on_more_selected)
 	_top.tool_selected.connect(_set_tool)
 	_top.variant_changed.connect(func():
 		MapState.active_variant = _top.selected_variant()
@@ -164,7 +194,10 @@ func _wire() -> void:
 	_top.undo_requested.connect(func(): UndoStack.undo())
 	_top.redo_requested.connect(func(): UndoStack.redo())
 	_top.frame_requested.connect(camera_frame)
+	_top.map_mode_requested.connect(_toggle_map_mode)
 	_top.view_changed.connect(_apply_view_settings)
+	if _status.has_signal("goto_submitted"):
+		_status.goto_submitted.connect(_on_goto_submitted)
 	_palette.class_armed.connect(func(rec):
 		ToolState.set_armed(rec)
 		_log.call("armed %s  %s  %s" % [rec.get("prjid"), rec.get("placement_mode"), rec.get("mesh_fidelity")])
@@ -186,7 +219,8 @@ func _wire() -> void:
 	_findings.finding_selected.connect(_on_finding_select)
 	_findings.finding_activated.connect(_on_finding_fly)
 	_findings.validate_requested.connect(_io.validate)
-	_status.log_toggled.connect(func(on): _console.visible = on)
+	_status.log_toggled.connect(_on_console_toggled)
+	_wire_panel_collapse()
 	_probe.install_chosen.connect(_io.choose_install)
 	_quit_dialog.confirmed.connect(_io.quit_save)
 	_quit_dialog.add_button("Discard", true, "discard")
@@ -236,6 +270,9 @@ func _wire() -> void:
 	MapState.selection_changed.connect(_refresh_selection_overlay)
 	if _camera.has_signal("speed_changed"):
 		_camera.speed_changed.connect(func(mps): _status.set_status("transient", "cam %.0f m/s" % mps))
+	if _camera.has_signal("map_mode_changed"):
+		_camera.map_mode_changed.connect(_on_map_mode_changed)
+	_install_compass()
 	_sync_sculpt()
 	if _features == null:
 		push_error("FeaturesPanel missing from main.tscn")
@@ -248,14 +285,21 @@ func _wire() -> void:
 	_center.add_child(_marquee)
 	_apply_view_settings()
 	_refresh_aipath_bar()
+	_install_selection_gizmo()
+	_install_labels_view()
 
 
 func _process(_delta: float) -> void:
+	_refresh_compass()
 	_status.set_debug("%d fps  chunks %d  up %d B" % [
 		int(Engine.get_frames_per_second()),
 		_terrain.get_child_count() if _terrain else 0,
 		_sculpt.last_uploaded,
 	])
+	if _gizmo_dragging and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		_finish_gizmo_drag()
+	elif _gizmo_dragging:
+		_update_gizmo_drag()
 	if _select_pressing and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		_finish_select_gesture()
 	elif _select_pressing:
@@ -269,6 +313,9 @@ func _process(_delta: float) -> void:
 	if not MapState.has_session:
 		_status.set_selection_count(0, false)
 		return
+	_sync_gizmo()
+	if _objects and _objects.has_method("refresh_labels"):
+		_objects.refresh_labels(_camera)
 	var over_view := _center.get_global_rect().has_point(get_global_mouse_position())
 	if not over_view:
 		_terrain.set_brush(false, Vector2.ZERO, 0.0, 0.0, false)
@@ -279,8 +326,13 @@ func _process(_delta: float) -> void:
 	if hit.get("hit", false):
 		var p: Vector3 = hit["position"]
 		_camera.pivot = p
-		_status.set_cursor("xz %.1f, %.1f  h %.1f m  mat %d  %s   ·  RMB look  wheel zoom  MMB orbit  WASD fly" % [
-			p.x, p.z, p.y, MapState.material_at(p.x, p.z), ToolState.tool,
+		var nav := (
+			"wheel zoom  MMB/Space+LMB pan  WASD pan"
+			if _camera.map_mode
+			else "RMB look  wheel zoom  MMB orbit  WASD fly"
+		)
+		_status.set_cursor("xz %.1f, %.1f  h %.1f m  mat %d  %s   ·  %s" % [
+			p.x, p.z, p.y, MapState.material_at(p.x, p.z), ToolState.tool, nav,
 		])
 		var sculpting := ToolState.is_mask_painting() or ToolState.tool in ["raise", "lower", "flatten", "smooth", "ramp", "noise", "paint", "qsel", "clone"]
 		if sculpting:
@@ -291,9 +343,10 @@ func _process(_delta: float) -> void:
 			_terrain.set_brush(false, Vector2.ZERO, 0.0, 0.0, false)
 		if ToolState.tool == "place" and not ToolState.armed.is_empty():
 			var ghost := ToolState.armed.duplicate()
-			ghost["x"] = p.x
-			ghost["z"] = p.z
-			ghost["y"] = p.y
+			var snapped := EditActions.snap_world_xz(p.x, p.z)
+			ghost["x"] = snapped.x
+			ghost["z"] = snapped.y
+			ghost["y"] = MapState.field.height_at(snapped.x, snapped.y) if MapState.field else p.y
 			_objects.set_ghost(true, ghost, MapState.field, hit.get("normal", Vector3.UP))
 	if _stroking and hit.get("hit", false) and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		var p2: Vector3 = hit["position"]
@@ -312,13 +365,32 @@ func _process(_delta: float) -> void:
 			_last_stamp = p2
 
 
+func _input(event: InputEvent) -> void:
+	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	var k := event as InputEventKey
+	if Keymap.resolve(k) != Keymap.ACTION_FOCUS:
+		return
+	if EditActions.gui_text_focused(get_viewport()):
+		return
+	_toggle_focus_mode()
+	get_viewport().set_input_as_handled()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
 	var k := event as InputEventKey
 	var handled := true
 	# Escape always disarms; in the GIMP scheme it is also tool.fly.
+	if (
+		Keymap.resolve(k) == Keymap.ACTION_FOCUS
+		and EditActions.gui_text_focused(get_viewport())
+	):
+		return
 	if k.keycode == KEY_ESCAPE:
+		if _gizmo_dragging:
+			_cancel_gizmo_drag()
 		if _select_pressing:
 			_cancel_select_gesture()
 		if _aipath_dragging:
@@ -353,11 +425,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			and EditActions.gui_text_focused(get_viewport())
 		):
 			handled = false
+		elif action == Keymap.ACTION_MAP_MODE and EditActions.gui_text_focused(get_viewport()):
+			handled = false
 		else:
 			_apply_keymap_action(action)
 	elif k.keycode == KEY_QUOTELEFT:
-		_console.visible = not _console.visible
-		_status.set_log_visible(_console.visible)
+		_set_console_visible(not Settings.console_visible, true)
 	elif k.keycode == KEY_DELETE:
 		if _try_delete_aipath():
 			pass
@@ -395,7 +468,12 @@ func _apply_keymap_action(action: String) -> void:
 			_help.popup_help()
 		"grid":
 			_show_grid = not _show_grid
+			Settings.view_grid = _show_grid
+			Settings.save()
 			_apply_grid()
+		"focus":
+			if not EditActions.gui_text_focused(get_viewport()):
+				_toggle_focus_mode()
 		"undo":
 			UndoStack.undo()
 		"redo":
@@ -409,12 +487,18 @@ func _apply_keymap_action(action: String) -> void:
 		"frame":
 			camera_frame()
 		"top_down":
-			if MapState.has_session:
+			if _camera.map_mode:
+				pass
+			elif MapState.has_session:
 				_camera.top_down(float(MapState.width_m), float(MapState.depth_m))
+		"map_mode":
+			_toggle_map_mode()
 		"slope_overlay":
 			if _terrain.has_method("set_slope_overlay"):
 				_terrain._show_slope = not _terrain._show_slope
 				_terrain.set_slope_overlay(_terrain._show_slope)
+				Settings.view_slope = _terrain._show_slope
+				Settings.save()
 				_log.call("slope overlay %s" % ("on" if _terrain._show_slope else "off"))
 		"select.all":
 			EditActions.select_all_terrain(_log)
@@ -432,10 +516,19 @@ func _on_view_gui_input(event: InputEvent) -> void:
 			accept_event()
 			return
 		if mb.button_index == MOUSE_BUTTON_LEFT:
+			if _camera.map_mode and (Input.is_key_pressed(KEY_SPACE) or _camera.panning):
+				if mb.pressed:
+					_camera.begin_pan()
+				else:
+					_camera.end_pan()
+				accept_event()
+				return
 			if not mb.pressed:
 				if _measuring:
 					_finish_measure()
 				_on_lmb_up()
+				if _gizmo_dragging:
+					_finish_gizmo_drag()
 				if _aipath_dragging:
 					_finish_aipath_drag()
 				if _select_pressing:
@@ -462,6 +555,8 @@ func _on_view_gui_input(event: InputEvent) -> void:
 					_palette.sample_material(MapState.material_at(p.x, p.z))
 				else:
 					_log.call("nothing to sample")
+			elif ToolState.tool == "select" and _try_begin_gizmo_drag():
+				pass
 			elif ToolState.tool == "select" and _begin_aipath_gesture(mb.shift_pressed):
 				pass
 			elif ToolState.tool == "select":
@@ -472,7 +567,14 @@ func _on_view_gui_input(event: InputEvent) -> void:
 					_on_lmb_down(hit["position"], hit, mb.shift_pressed, mb.alt_pressed, mb.ctrl_pressed)
 			accept_event()
 	elif event is InputEventMouseMotion:
-		if _aipath_dragging:
+		if _camera.map_mode and _camera.panning:
+			_camera.handle_event(event)
+			accept_event()
+			return
+		if _gizmo_dragging:
+			_update_gizmo_drag()
+			accept_event()
+		elif _aipath_dragging:
 			_update_aipath_drag()
 			accept_event()
 		elif _select_pressing:
@@ -710,14 +812,18 @@ func _on_tool_state(name: String) -> void:
 	if name != "place":
 		_objects.set_ghost(false, {}, MapState.field, Vector3.UP)
 	if name != "select":
+		_cancel_gizmo_drag()
 		_cancel_select_gesture()
 		if _measuring:
 			_clear_measure()
 		_objects.set_hover("")
 		_clear_hover_status()
 		_status.set_selection_count(0, false)
+		if _gizmo:
+			_gizmo.hide_gizmo()
 	else:
 		_status.set_selection_count(MapState.selected_ids.size(), MapState.has_session)
+		_sync_gizmo()
 	if name != "rsel":
 		_cancel_terrain_rect()
 
@@ -749,7 +855,7 @@ func _on_discovered(ok: bool, detail: String) -> void:
 
 
 func _on_call_started(verb: String) -> void:
-	_status.set_status("busy", "bzmap editor %s…" % verb)
+	_status.set_status("busy", StatusBar.verb_activity_text(verb))
 	_top.set_busy(true)
 
 
@@ -802,7 +908,7 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 				MapState.note_unsaved()
 				_refresh_map_label()
 			for w in result.get("warnings", []):
-				_log.call("warning: %s" % w)
+				_log.call("warning: %s" % w, "warning")
 			if _is_smoke():
 				if not _smoke_save.is_empty():
 					var out := _smoke_save
@@ -816,13 +922,13 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 			_refresh_map_label()
 			_log.call("saved %d files to %s" % [
 				(result.get("files", []) as Array).size(), Settings.last_save_dir,
-			])
+			], "info", true)
 			_log.call("byte-identical: %s" % ", ".join(PackedStringArray(result.get("byte_identical", []))))
 			var regen: Array = result.get("regenerated", [])
 			if not regen.is_empty():
 				_log.call("regenerated: %s" % ", ".join(PackedStringArray(regen)))
 			for w2 in result.get("warnings", []):
-				_log.call("warning: %s" % w2)
+				_log.call("warning: %s" % w2, "warning")
 			if result.has("features"):
 				_log.call("features: %s" % result["features"])
 			if _quit_after_save:
@@ -843,14 +949,15 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 			_fill_palette()
 			_log.call("%d classes  %d unresolved  fidelity mostly proxy" % [
 				result.get("classes", []).size(), result.get("unresolved", []).size(),
-			])
+			], "info", true)
 		"render":
 			_log.call("thumbnail %s" % result.get("png", ""))
 		"package":
+			var pkg_mode := str(result.get("mode", ""))
 			_log.call("package %s: %d files → %s" % [
-				result.get("mode", ""), (result.get("files", []) as Array).size(),
+				pkg_mode, (result.get("files", []) as Array).size(),
 				result.get("dest", ""),
-			])
+			], "info", pkg_mode == "addon")
 			var shared: Array = result.get("shared_lua", [])
 			if not shared.is_empty():
 				_log.call("bundled shared lua: %s" % ", ".join(PackedStringArray(shared)))
@@ -867,12 +974,11 @@ func _on_call_failed(verb: String, error: Dictionary) -> void:
 		_pending_package = ""
 		_io.consume_new_after_save()
 	_top.set_busy(false)
-	_console.visible = true
-	_status.set_log_visible(true)
+	_set_console_visible(true, true)
 	_status.set_status("error", "error: %s" % verb)
-	_log.call("ERROR [%s] %s" % [error.get("code", "?"), error.get("message", error)])
+	_log.call("ERROR [%s] %s" % [error.get("code", "?"), error.get("message", error)], "error", true)
 	if error.has("hint"):
-		_log.call("  hint: %s" % error["hint"])
+		_log.call("  hint: %s" % error["hint"], "warning")
 	if verb == "open" and str(error.get("code", "")) == "binary_bzn_unsupported" and not _is_automated():
 		_show_binary_bzn_dialog(error)
 	if _is_smoke() and verb != "probe":
@@ -893,6 +999,7 @@ func _is_automated() -> bool:
 
 
 func quit_clean(code: int = 0) -> void:
+	_flush_layout(true)
 	SessionIO.write_clean_exit()
 	get_tree().quit(code)
 
@@ -937,8 +1044,7 @@ func _on_finding_fly(f: Dictionary) -> void:
 		if not rec.is_empty():
 			pos = [rec.get("x", 0.0), rec.get("y", 0.0), rec.get("z", 0.0)]
 	if typeof(pos) == TYPE_ARRAY and pos.size() >= 3:
-		_camera.global_position = Vector3(float(pos[0]), float(pos[1]) + 40.0, float(pos[2]) - 40.0)
-		_camera.look_at(Vector3(float(pos[0]), float(pos[1]), float(pos[2])), Vector3.UP)
+		camera_hover(Vector3(float(pos[0]), float(pos[1]), float(pos[2])))
 
 
 func _fill_inspector() -> void:
@@ -948,6 +1054,184 @@ func _fill_inspector() -> void:
 		_inspector.show_object(MapState.find_object(MapState.selected_ids[0]))
 	if ToolState.tool == "select" and MapState.has_session:
 		_status.set_selection_count(MapState.selected_ids.size(), true)
+
+
+func _install_selection_gizmo() -> void:
+	if _gizmo != null:
+		return
+	var world := _objects.get_parent() if _objects else null
+	if world == null:
+		return
+	_gizmo = SelectionGizmoScript.new()
+	_gizmo.name = "SelectionGizmo"
+	world.add_child(_gizmo)
+
+
+func _install_labels_view() -> void:
+	if _top == null:
+		return
+	var view: MenuButton = _top.find_child("View", true, false)
+	if view == null:
+		return
+	var pop := view.get_popup()
+	Settings.attach_labels_view_item(pop)
+	if not pop.id_pressed.is_connected(_on_labels_view_id):
+		pop.id_pressed.connect(_on_labels_view_id)
+	if not pop.about_to_popup.is_connected(_on_labels_view_popup):
+		pop.about_to_popup.connect(_on_labels_view_popup)
+	Settings.sync_labels_view_item(pop)
+
+
+func _on_labels_view_id(id: int) -> void:
+	if id != Settings.VIEW_LABELS_ID:
+		return
+	var on := Settings.toggle_view_labels()
+	_log.call("view labels %s" % ("on" if on else "off"))
+	if _objects and _objects.has_method("refresh_labels"):
+		_objects.refresh_labels(_camera)
+	_on_labels_view_popup()
+
+
+func _on_labels_view_popup() -> void:
+	if _top == null:
+		return
+	var view: MenuButton = _top.find_child("View", true, false)
+	if view:
+		Settings.sync_labels_view_item(view.get_popup())
+
+
+func _selection_records() -> Array:
+	var recs: Array = []
+	for id in MapState.selected_ids:
+		var rec := MapState.find_object(id)
+		if rec.is_empty():
+			continue
+		recs.append(rec)
+	return recs
+
+
+func _sync_gizmo() -> void:
+	if _gizmo == null:
+		return
+	var show := (
+		ToolState.tool == "select"
+		and MapState.has_session
+		and not MapState.selected_ids.is_empty()
+		and not _select_marquee
+	)
+	if not show:
+		_gizmo.hide_gizmo()
+		return
+	var recs := _selection_records()
+	if recs.is_empty():
+		_gizmo.hide_gizmo()
+		return
+	var pivot := SelectionGizmo.selection_pivot(recs)
+	if _gizmo_dragging:
+		if is_zero_approx(_gizmo_dyaw):
+			pivot.x += _gizmo_dx
+			pivot.z += _gizmo_dz
+			if MapState.field:
+				pivot.y = MapState.field.height_at(pivot.x, pivot.z)
+	var highlight := _gizmo_handle if _gizmo_dragging else _gizmo.hover_handle()
+	_gizmo.sync_at(pivot, _camera, highlight)
+	if _gizmo_dragging:
+		_gizmo.set_active_handle(_gizmo_handle)
+
+
+func _try_begin_gizmo_drag() -> bool:
+	_sync_gizmo()
+	if _gizmo == null or not _gizmo.visible:
+		return false
+	var mouse := _viewport.get_mouse_position()
+	var origin := _camera.project_ray_origin(mouse)
+	var dir := _camera.project_ray_normal(mouse)
+	var hit: Dictionary = _gizmo.pick(origin, dir)
+	var handle := str(hit.get("handle", ""))
+	if handle.is_empty():
+		return false
+	var recs := _selection_records()
+	if recs.is_empty():
+		return false
+	_gizmo_dragging = true
+	_gizmo_handle = handle
+	_gizmo_pivot = SelectionGizmo.selection_pivot(recs)
+	var plane := SelectionGizmo.ray_ground(origin, dir, _gizmo_pivot.y)
+	if not plane.is_finite():
+		plane = hit.get("point", _gizmo_pivot)
+	_gizmo_start_hit = plane
+	_gizmo_dx = 0.0
+	_gizmo_dz = 0.0
+	_gizmo_dyaw = 0.0
+	_gizmo.set_active_handle(handle)
+	_objects.set_hover("")
+	return true
+
+
+func _update_gizmo_drag() -> void:
+	if not _gizmo_dragging:
+		return
+	var mouse := _viewport.get_mouse_position()
+	var origin := _camera.project_ray_origin(mouse)
+	var dir := _camera.project_ray_normal(mouse)
+	var now := SelectionGizmo.ray_ground(origin, dir, _gizmo_pivot.y)
+	if not now.is_finite():
+		return
+	if _gizmo_handle == SelectionGizmo.HANDLE_YAW:
+		_gizmo_dx = 0.0
+		_gizmo_dz = 0.0
+		_gizmo_dyaw = SelectionGizmo.yaw_delta_deg(
+			_gizmo_pivot, _gizmo_start_hit, now, ToolState.snap_angle
+		)
+	else:
+		_gizmo_dyaw = 0.0
+		var delta := SelectionGizmo.move_delta(
+			_gizmo_handle, _gizmo_pivot, _gizmo_start_hit, now, ToolState.snap_grid_m
+		)
+		_gizmo_dx = delta.x
+		_gizmo_dz = delta.z
+	var recs := _selection_records()
+	if _objects and _objects.has_method("preview_poses"):
+		_objects.preview_poses(SelectionGizmo.preview_poses(
+			recs, _gizmo_dx, _gizmo_dz, _gizmo_dyaw, _gizmo_pivot, MapState.field
+		))
+	_sync_gizmo()
+
+
+func _finish_gizmo_drag() -> void:
+	if not _gizmo_dragging:
+		return
+	var dx := _gizmo_dx
+	var dz := _gizmo_dz
+	var dyaw := _gizmo_dyaw
+	var pivot := _gizmo_pivot
+	_gizmo_dragging = false
+	_gizmo_handle = ""
+	_gizmo_dx = 0.0
+	_gizmo_dz = 0.0
+	_gizmo_dyaw = 0.0
+	if _gizmo:
+		_gizmo.set_active_handle("")
+	if _objects and _objects.has_method("restore_placed"):
+		_objects.restore_placed()
+	EditActions.apply_selection_transform(dx, dz, dyaw, pivot, _log)
+	_on_objects_mutated()
+
+
+func _cancel_gizmo_drag() -> void:
+	if not _gizmo_dragging:
+		return
+	_gizmo_dragging = false
+	_gizmo_handle = ""
+	_gizmo_dx = 0.0
+	_gizmo_dz = 0.0
+	_gizmo_dyaw = 0.0
+	if _gizmo:
+		_gizmo.set_active_handle("")
+	if _objects and _objects.has_method("restore_placed"):
+		_objects.restore_placed()
+	_sync_gizmo()
+	_log.call("gizmo cancelled")
 
 
 func _begin_select_gesture(shift: bool) -> void:
@@ -1028,12 +1312,24 @@ func _update_select_hover(over_view: bool) -> void:
 		_status.set_selection_count(0, false)
 		return
 	_status.set_selection_count(MapState.selected_ids.size(), true)
-	if not over_view or _select_marquee:
+	if not over_view or _select_marquee or _gizmo_dragging:
+		if not _gizmo_dragging and _gizmo:
+			_gizmo.set_hover_handle("")
 		_objects.set_hover("")
 		_clear_hover_status()
 		return
 	var mouse := _viewport.get_mouse_position()
-	var hid: String = _objects.pick(_camera.project_ray_origin(mouse), _camera.project_ray_normal(mouse))
+	var origin := _camera.project_ray_origin(mouse)
+	var dir := _camera.project_ray_normal(mouse)
+	if _gizmo and _gizmo.visible:
+		var gh: Dictionary = _gizmo.pick(origin, dir)
+		var handle := str(gh.get("handle", ""))
+		_gizmo.set_hover_handle(handle)
+		if not handle.is_empty():
+			_objects.set_hover("")
+			_clear_hover_status()
+			return
+	var hid: String = _objects.pick(origin, dir)
 	_objects.set_hover(hid)
 	if hid.is_empty():
 		_clear_hover_status()
@@ -1071,6 +1367,14 @@ func _on_marquee_draw() -> void:
 
 
 func _on_session_changed() -> void:
+	_cancel_gizmo_drag()
+	if _gizmo:
+		_gizmo.hide_gizmo()
+	if _compass:
+		_compass.visible = MapState.has_session
+	if _top.has_method("set_map_mode"):
+		_top.set_map_mode(_camera.map_mode)
+	_refresh_start_screen()
 	if _objects.has_method("reset"):
 		_objects.reset()
 	_refresh_map_label()
@@ -1096,6 +1400,9 @@ func _on_objects_mutated() -> void:
 	if _objects.has_method("rebuild"):
 		_objects.rebuild(MapState.objects, MapState.field)
 	_objects.highlight(MapState.selected_ids)
+	_sync_gizmo()
+	if _objects and _objects.has_method("refresh_labels"):
+		_objects.refresh_labels(_camera)
 	_fill_inspector()
 	_refresh_map_label()
 	if _balance and _balance.has_method("schedule_recompute"):
@@ -1127,6 +1434,9 @@ func _apply_view_settings() -> void:
 	EditActions.deselect_hidden(_log)
 	if _objects:
 		_objects.highlight(MapState.selected_ids)
+		if _objects.has_method("refresh_labels"):
+			_objects.refresh_labels(_camera)
+	_sync_gizmo()
 	_fill_inspector()
 	if _terrain and _terrain.has_method("set_water_visible"):
 		_terrain.set_water_visible(Settings.view_water)
@@ -1191,9 +1501,347 @@ func camera_frame() -> void:
 	_camera.frame_map(float(MapState.width_m), float(MapState.depth_m), MapState.field.height_at(float(MapState.width_m) * 0.5, float(MapState.depth_m) * 0.5))
 
 
-func _log(text: String) -> void:
-	_console.text = text if _console.text.is_empty() else _console.text + "\n" + text
-	_console.scroll_vertical = _console.get_line_count()
+func camera_hover(world: Vector3) -> void:
+	if _camera.has_method("hover_point"):
+		_camera.hover_point(world)
+	else:
+		_camera.global_position = FlyCamera.hover_perspective_position(world)
+		_camera.look_at(world, Vector3.UP)
+
+
+func _toggle_map_mode() -> void:
+	if not MapState.has_session:
+		_log.call("open a map first")
+		if _top.has_method("set_map_mode"):
+			_top.set_map_mode(_camera.map_mode)
+		return
+	_camera.set_map_mode(not _camera.map_mode)
+
+
+func _on_map_mode_changed(on: bool) -> void:
+	if _top.has_method("set_map_mode"):
+		_top.set_map_mode(on)
+	if _compass:
+		_compass.queue_redraw()
+	_log.call("2D map mode" if on else "3D camera")
+
+
+func _on_goto_submitted(text: String) -> void:
+	if not MapState.has_session:
+		_log.call("open a map first")
+		return
+	var xz := FlyCamera.parse_goto(text)
+	if not xz.is_finite():
+		_log.call("cannot parse go-to")
+		return
+	var y := 0.0
+	if MapState.field != null and MapState.field.grid_x > 1:
+		y = MapState.field.height_at(xz.x, xz.y)
+	camera_hover(Vector3(xz.x, y, xz.y))
+	_log.call("go to %.1f, %.1f" % [xz.x, xz.y])
+
+
+func _install_compass() -> void:
+	if _compass == null:
+		_compass = Control.new()
+		_compass.name = "CompassRose"
+		_compass.custom_minimum_size = Vector2(76, 76)
+		_compass.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		_compass.offset_left = -84.0
+		_compass.offset_top = 8.0
+		_compass.offset_right = -8.0
+		_compass.offset_bottom = 84.0
+		_compass.mouse_filter = Control.MOUSE_FILTER_STOP
+		_center.add_child(_compass)
+	_compass.mouse_filter = Control.MOUSE_FILTER_STOP
+	_compass.visible = MapState.has_session
+	if not _compass.draw.is_connected(_on_compass_draw):
+		_compass.draw.connect(_on_compass_draw)
+	if not _compass.gui_input.is_connected(_on_compass_gui_input):
+		_compass.gui_input.connect(_on_compass_gui_input)
+	_compass.queue_redraw()
+
+
+func _refresh_compass() -> void:
+	if _compass == null or not _compass.visible:
+		return
+	var rose := 0.0
+	if _camera and not _camera.map_mode:
+		rose = FlyCamera.rose_radians_from_look(-_camera.global_transform.basis.z)
+	if absf(rose - _compass_yaw) < 0.0005:
+		return
+	_compass_yaw = rose
+	_compass.queue_redraw()
+
+
+func _on_compass_draw() -> void:
+	if _compass == null:
+		return
+	var center := _compass.size * 0.5
+	var radius := minf(_compass.size.x, _compass.size.y) * 0.5 - 1.0
+	var rose := 0.0 if (_camera != null and _camera.map_mode) else _compass_yaw
+	_compass.draw_circle(center, radius, Color(0.08, 0.09, 0.11, 0.82))
+	_compass.draw_arc(center, radius, 0.0, TAU, 36, Color(0.38, 0.40, 0.44, 0.95), 1.4, true)
+	var arms: Array = [
+		{"id": "N", "dir": Vector2(0.0, -1.0), "color": Color(0.95, 0.38, 0.34)},
+		{"id": "E", "dir": Vector2(1.0, 0.0), "color": Color(0.78, 0.80, 0.84)},
+		{"id": "S", "dir": Vector2(0.0, 1.0), "color": Color(0.78, 0.80, 0.84)},
+		{"id": "W", "dir": Vector2(-1.0, 0.0), "color": Color(0.78, 0.80, 0.84)},
+	]
+	for arm in arms:
+		var dir: Vector2 = (arm["dir"] as Vector2).rotated(rose)
+		var tip := center + dir * (radius - 4.0)
+		var side := Vector2(-dir.y, dir.x) * 3.0
+		var base := center + dir * 12.0
+		var col: Color = arm["color"]
+		_compass.draw_colored_polygon(PackedVector2Array([tip, base + side, base - side]), col)
+		var label_at := center + dir * (radius - 13.0)
+		var font := _compass.get_theme_default_font()
+		var fs := 11
+		if font:
+			var txt := str(arm["id"])
+			var sz := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+			_compass.draw_string(
+				font,
+				label_at - Vector2(sz.x * 0.5, -sz.y * 0.25),
+				txt,
+				HORIZONTAL_ALIGNMENT_LEFT,
+				-1,
+				fs,
+				col,
+			)
+	_compass.draw_circle(center, 10.0, Color(0.22, 0.52, 0.78, 0.96))
+	_compass.draw_arc(center, 10.0, 0.0, TAU, 20, Color(0.90, 0.92, 0.95, 0.9), 1.2, true)
+
+
+func _on_compass_gui_input(event: InputEvent) -> void:
+	if not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
+		return
+	var rose := 0.0 if (_camera != null and _camera.map_mode) else _compass_yaw
+	var hit := FlyCamera.compass_hit(mb.position, _compass.size, rose)
+	if hit.is_empty():
+		return
+	if hit == "center":
+		_toggle_map_mode()
+		_compass.accept_event()
+		return
+	if hit == "n":
+		if _camera.has_method("snap_yaw_north"):
+			_camera.snap_yaw_north()
+		_log.call("facing north")
+		_compass_yaw = 0.0
+		if _compass:
+			_compass.queue_redraw()
+		_compass.accept_event()
+
+
+func _refresh_start_screen() -> void:
+	if _start == null:
+		return
+	if MapState.has_session:
+		_start.hide_start()
+	else:
+		_start.show_start()
+
+
+func _on_start_template(trn: String) -> void:
+	_io.new_prompt()
+	if _template_option == null:
+		return
+	var want := trn.strip_edges()
+	for i in _template_option.item_count:
+		if str(_template_option.get_item_metadata(i)) == want:
+			_template_option.select(i)
+			_log.call("new-from-template prefilled %s" % want.get_base_dir().get_file())
+			return
+
+
+func _on_console_toggled(on: bool) -> void:
+	_set_console_visible(on, true)
+
+
+func _set_console_visible(on: bool, persist: bool) -> void:
+	if persist:
+		Settings.console_visible = on
+		Settings.save()
+	if _console:
+		_console.visible = on
+	if _status:
+		_status.set_log_visible(on)
+
+
+func _toggle_focus_mode() -> void:
+	Settings.focus_mode = not Settings.focus_mode
+	Settings.save()
+	_apply_focus_mode()
+	_log.call("focus mode %s" % ("on" if Settings.focus_mode else "off"))
+
+
+func _apply_focus_mode() -> void:
+	var focus := Settings.focus_mode
+	if _palette:
+		_palette.visible = not focus
+	if _right_split:
+		_right_split.visible = not focus
+	if focus:
+		if _console:
+			_console.visible = false
+		if _status:
+			_status.set_log_visible(false)
+	else:
+		_apply_split_offsets()
+		if _console:
+			_console.visible = Settings.console_visible
+		if _status:
+			_status.set_log_visible(Settings.console_visible)
+
+
+func _install_layout_persistence() -> void:
+	_layout_timer = Timer.new()
+	_layout_timer.name = "LayoutSaveTimer"
+	_layout_timer.one_shot = true
+	_layout_timer.wait_time = Settings.LAYOUT_SAVE_IDLE_S
+	_layout_timer.timeout.connect(_on_layout_idle)
+	add_child(_layout_timer)
+	for split in [_body_split, _mid_split, _right_split, _upper_split, _lower_split]:
+		if split == null:
+			continue
+		if split.has_signal("dragged"):
+			split.dragged.connect(_on_split_dragged)
+
+
+func _wire_panel_collapse() -> void:
+	_connect_collapse(_palette, "collapse_palette")
+	_connect_collapse(_inspector, "collapse_inspector")
+	_connect_collapse(_features, "collapse_features")
+	_connect_collapse(_findings, "collapse_findings")
+	_connect_collapse(_history, "collapse_history")
+
+
+func _connect_collapse(panel: Object, key: String) -> void:
+	if panel == null or not panel.has_signal("collapsed_changed"):
+		return
+	panel.collapsed_changed.connect(func(on: bool) -> void:
+		match key:
+			"collapse_palette":
+				Settings.collapse_palette = on
+			"collapse_inspector":
+				Settings.collapse_inspector = on
+			"collapse_features":
+				Settings.collapse_features = on
+			"collapse_findings":
+				Settings.collapse_findings = on
+			"collapse_history":
+				Settings.collapse_history = on
+		Settings.save()
+	)
+
+
+func _on_split_dragged(_offset: int = 0) -> void:
+	if _layout_applying or _layout_timer == null:
+		return
+	_layout_timer.start()
+
+
+func _on_layout_idle() -> void:
+	_flush_layout(true)
+
+
+func _flush_layout(persist: bool) -> void:
+	if not Settings.focus_mode:
+		if _body_split:
+			Settings.layout_split_body = _body_split.split_offset
+		if _mid_split:
+			Settings.layout_split_mid = _mid_split.split_offset
+		if _right_split:
+			Settings.layout_split_right = _right_split.split_offset
+		if _upper_split:
+			Settings.layout_split_upper = _upper_split.split_offset
+		if _lower_split:
+			Settings.layout_split_lower = _lower_split.split_offset
+	if persist:
+		Settings.save()
+
+
+func _apply_layout_settings() -> void:
+	Settings.apply_runtime_view()
+	_layout_applying = true
+	if _palette and _palette.has_method("set_collapsed"):
+		_palette.set_collapsed(Settings.collapse_palette)
+	if _inspector and _inspector.has_method("set_collapsed"):
+		_inspector.set_collapsed(Settings.collapse_inspector)
+	if _features and _features.has_method("set_collapsed"):
+		_features.set_collapsed(Settings.collapse_features)
+	if _findings and _findings.has_method("set_collapsed"):
+		_findings.set_collapsed(Settings.collapse_findings)
+	if _history and _history.has_method("set_collapsed"):
+		_history.set_collapsed(Settings.collapse_history)
+	_show_grid = Settings.view_grid
+	_apply_grid()
+	if _terrain and _terrain.has_method("set_slope_overlay"):
+		_terrain.set_slope_overlay(Settings.view_slope)
+	_apply_split_offsets()
+	_apply_focus_mode()
+	if not Settings.focus_mode:
+		_set_console_visible(Settings.console_visible, false)
+	_layout_applying = false
+
+
+func _apply_split_offsets() -> void:
+	if _body_split:
+		_body_split.split_offset = Settings.layout_split_body
+	if _mid_split:
+		_mid_split.split_offset = Settings.layout_split_mid
+	if _right_split:
+		_right_split.split_offset = Settings.layout_split_right
+	if _upper_split:
+		_upper_split.split_offset = Settings.layout_split_upper
+	if _lower_split:
+		_lower_split.split_offset = Settings.layout_split_lower
+
+
+func _on_more_selected(id: int) -> void:
+	if id == _top.MORE_PREFS:
+		if _prefs and _prefs.has_method("popup_prefs"):
+			_prefs.call("popup_prefs")
+		elif _prefs:
+			_prefs.popup_centered()
+		return
+	_io.handle_more(id)
+
+
+func _on_autosave() -> void:
+	if MapState.has_session and MapState.unsaved:
+		MapState.persist()
+		_log.call("autosaved session")
+
+
+func _apply_autosave() -> void:
+	if _autosave == null:
+		return
+	var sec := Settings.coerce_autosave_interval(Settings.autosave_interval_s)
+	if sec <= 0:
+		_autosave.stop()
+		return
+	_autosave.stop()
+	_autosave.wait_time = float(sec)
+	_autosave.start()
+
+
+func _log(text: String, level: String = "", toast: bool = false) -> void:
+	var routed := LogRouter.route(text, level, toast)
+	if _console != null and _console.has_method("append_line"):
+		_console.call("append_line", routed.text, routed.level)
+	elif _console != null:
+		var cur := str(_console.get("text"))
+		_console.set("text", routed.text if cur.is_empty() else cur + "\n" + routed.text)
+		if _console.has_method("get_line_count"):
+			_console.set("scroll_vertical", _console.call("get_line_count"))
+	if bool(routed.toast) and _toasts != null and _toasts.has_method("push"):
+		_toasts.call("push", routed.text, routed.level)
 
 
 func _queue_smoke_open() -> void:

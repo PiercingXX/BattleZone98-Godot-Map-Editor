@@ -1,17 +1,34 @@
 extends PanelContainer
 ## Collapsible undo-stack list. Click a step to undo/redo to that point.
 
+signal collapsed_changed(collapsed: bool)
+
 @onready var _toggle: Button = %Toggle
 @onready var _list: ItemList = %List
 
 var _syncing: bool = false
+var _collapsed: bool = false
 
 
 func _ready() -> void:
 	_toggle.toggled.connect(_on_toggle)
 	_list.item_clicked.connect(_on_item_clicked)
 	UndoStack.changed.connect(refresh)
+	EditorIcons.apply_button(_toggle, "undo", true)
+	PanelCollapse.apply_toggle(_toggle, "History", not _collapsed)
 	refresh()
+
+
+func is_collapsed() -> bool:
+	return _collapsed
+
+
+func set_collapsed(on: bool) -> void:
+	if _collapsed == on:
+		return
+	_collapsed = on
+	_apply_collapse()
+	collapsed_changed.emit(on)
 
 
 func _exit_tree() -> void:
@@ -20,8 +37,20 @@ func _exit_tree() -> void:
 
 
 func _on_toggle(on: bool) -> void:
-	_list.visible = on
-	_toggle.text = "History ▾" if on else "History ▸"
+	var next := not on
+	if _collapsed == next:
+		_apply_collapse()
+		return
+	_collapsed = next
+	_apply_collapse()
+	collapsed_changed.emit(_collapsed)
+
+
+func _apply_collapse() -> void:
+	if _list:
+		_list.visible = not _collapsed
+	if _toggle:
+		PanelCollapse.apply_toggle(_toggle, "History", not _collapsed)
 
 
 func _on_item_clicked(index: int, _at: Vector2, button: int) -> void:

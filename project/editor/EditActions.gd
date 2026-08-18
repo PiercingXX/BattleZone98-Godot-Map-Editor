@@ -200,6 +200,11 @@ static func place_at(p: Vector3, normal: Vector3, keep: bool, log: Callable) -> 
 	if prjid.to_lower() == "player" and MapState.player_in_variant(MapState.active_variant):
 		log.call("player already placed in this variant")
 		return
+	var snapped := snap_world_xz(p.x, p.z)
+	p.x = snapped.x
+	p.z = snapped.y
+	if ToolState.snap_grid_m > 0.0 and MapState.field != null:
+		p.y = _terrain_y(p.x, p.z)
 	var yaw0 := 0.0
 	if str(info.get("up_convention", "upright")) == "follow":
 		yaw0 = rad_to_deg(atan2(normal.x, normal.z))
@@ -285,10 +290,16 @@ static func nudge_selected(dx: float, dz: float, log: Callable) -> void:
 			continue
 		var before := rec.duplicate(true)
 		var after := before.duplicate(true)
-		after["x"] = float(before.get("x", 0.0)) + dx
-		after["z"] = float(before.get("z", 0.0)) + dz
+		var nx := float(before.get("x", 0.0)) + dx
+		var nz := float(before.get("z", 0.0)) + dz
+		if ToolState.snap_grid_m > 0.0:
+			var snapped := SelectionGizmo.snap_xz(nx, nz, ToolState.snap_grid_m)
+			nx = snapped.x
+			nz = snapped.y
+		after["x"] = nx
+		after["z"] = nz
 		if not bool(after.get("pinned_y", false)):
-			after["y"] = _terrain_y(float(after["x"]), float(after["z"]))
+			after["y"] = _terrain_y(nx, nz)
 		if not _record_match(before, after):
 			edits.append({"before": before, "after": after})
 	if edits.is_empty():
@@ -313,7 +324,10 @@ static func rotate_selected(delta_yaw: float, log: Callable) -> void:
 			continue
 		var before := rec.duplicate(true)
 		var after := before.duplicate(true)
-		after["yaw_deg"] = wrap_yaw_deg(float(before.get("yaw_deg", 0.0)) + delta_yaw)
+		var yaw := wrap_yaw_deg(float(before.get("yaw_deg", 0.0)) + delta_yaw)
+		if ToolState.snap_angle > 0.0:
+			yaw = SelectionGizmo.snap_angle_deg(yaw, ToolState.snap_angle)
+		after["yaw_deg"] = yaw
 		if not _record_match(before, after):
 			edits.append({"before": before, "after": after})
 	if edits.is_empty():
@@ -626,7 +640,7 @@ static func try_select_transform(keycode: int, shift: bool, log: Callable) -> bo
 		return false
 	if not MapState.has_session:
 		return false
-	var step := NUDGE_SHIFT_M if shift else NUDGE_M
+	var step := nudge_step_m(shift)
 	match keycode:
 		KEY_LEFT:
 			nudge_selected(-step, 0.0, log)
@@ -641,7 +655,7 @@ static func try_select_transform(keycode: int, shift: bool, log: Callable) -> bo
 			nudge_selected(0.0, step, log)
 			return true
 		KEY_R:
-			rotate_selected(ROTATE_SHIFT_DEG if shift else ROTATE_DEG, log)
+			rotate_selected(rotate_step_deg(shift), log)
 			return true
 	return false
 
@@ -653,6 +667,74 @@ static func gui_text_focused(viewport: Viewport) -> bool:
 	if focus == null:
 		return false
 	return focus is LineEdit or focus is TextEdit or focus is CodeEdit or focus is SpinBox
+
+
+static func nudge_step_m(shift: bool) -> float:
+	var grid := ToolState.snap_grid_m
+	if grid > 0.0:
+		return grid * (5.0 if shift else 1.0)
+	return NUDGE_SHIFT_M if shift else NUDGE_M
+
+
+static func rotate_step_deg(shift: bool) -> float:
+	var ang := ToolState.snap_angle
+	if ang > 0.0:
+		return ROTATE_SHIFT_DEG if shift else ang
+	return ROTATE_SHIFT_DEG if shift else ROTATE_DEG
+
+
+static func snap_world_xz(x: float, z: float) -> Vector2:
+	return SelectionGizmo.snap_xz(x, z, ToolState.snap_grid_m)
+
+
+static func apply_selection_transform(
+	dx: float, dz: float, delta_yaw: float, pivot: Vector3, log: Callable = Callable()
+) -> void:
+	if not MapState.has_session:
+		_log(log, "open a map first")
+		return
+	if MapState.selected_ids.is_empty():
+		_log(log, "nothing selected")
+		return
+	if is_zero_approx(dx) and is_zero_approx(dz) and is_zero_approx(delta_yaw):
+		_log(log, "nothing to transform")
+		return
+	var edits: Array = []
+	for id in MapState.selected_ids:
+		var rec := MapState.find_object(id)
+		if rec.is_empty():
+			continue
+		var before := rec.duplicate(true)
+		var pose := SelectionGizmo.transformed_xz_yaw(
+			float(before.get("x", 0.0)),
+			float(before.get("z", 0.0)),
+			float(before.get("yaw_deg", 0.0)),
+			dx,
+			dz,
+			delta_yaw,
+			pivot,
+		)
+		var after := before.duplicate(true)
+		after["x"] = float(pose.get("x", after.get("x", 0.0)))
+		after["z"] = float(pose.get("z", after.get("z", 0.0)))
+		after["yaw_deg"] = wrap_yaw_deg(float(pose.get("yaw_deg", after.get("yaw_deg", 0.0))))
+		if not bool(after.get("pinned_y", false)):
+			after["y"] = _terrain_y(float(after["x"]), float(after["z"]))
+		if not _record_match(before, after):
+			edits.append({"before": before, "after": after})
+	if edits.is_empty():
+		_log(log, "nothing to transform")
+		return
+	_push_edits(edits)
+	var n := edits.size()
+	if is_zero_approx(dx) and is_zero_approx(dz):
+		_log(log, "rotated %d object%s %+g°" % [n, "s" if n != 1 else "", delta_yaw])
+	elif is_zero_approx(delta_yaw):
+		_log(log, "moved %d object%s by %.1f, %.1f m" % [n, "s" if n != 1 else "", dx, dz])
+	else:
+		_log(log, "moved %d object%s by %.1f, %.1f m  rotated %+g°" % [
+			n, "s" if n != 1 else "", dx, dz, delta_yaw,
+		])
 
 
 static func wrap_yaw_deg(deg: float) -> float:

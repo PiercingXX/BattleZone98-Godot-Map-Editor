@@ -7,6 +7,7 @@ signal armed_changed()
 signal mask_target_changed()
 signal mask_paint_changed()
 signal symmetry_changed()
+signal snap_changed()
 
 const SYMMETRY_OFF := "off"
 const SYMMETRY_MIRROR_X := "mirror_x"
@@ -45,9 +46,15 @@ var grow_cells: int = 1
 ## Clone-stamp source in world XZ. Non-finite = unset.
 var clone_source_m: Vector2 = Vector2.INF
 var clone_materials: bool = false
+## World-XZ grid snap in metres. 0 = off. Allowed: 0 / 1 / 5 / 10 / 20.
+var snap_grid_m: float = 0.0
+## Yaw snap in degrees. 0 = off. Allowed: 0 / 15 / 45 / 90.
+var snap_angle: float = 0.0
 
 
 func _ready() -> void:
+	snap_grid_m = Settings.snap_grid_m
+	snap_angle = Settings.snap_angle
 	MapState.session_changed.connect(_on_session_changed)
 
 
@@ -185,6 +192,26 @@ func has_clone_source() -> bool:
 
 func set_clone_materials(on: bool) -> void:
 	clone_materials = on
+
+
+func set_snap_grid(v: float) -> void:
+	v = SelectionGizmo.coerce_snap_grid(v)
+	if is_equal_approx(snap_grid_m, v):
+		return
+	snap_grid_m = v
+	Settings.snap_grid_m = v
+	Settings.save()
+	snap_changed.emit()
+
+
+func set_snap_angle(v: float) -> void:
+	v = SelectionGizmo.coerce_snap_angle(v)
+	if is_equal_approx(snap_angle, v):
+		return
+	snap_angle = v
+	Settings.snap_angle = v
+	Settings.save()
+	snap_changed.emit()
 
 
 func is_terrain_select_tool() -> bool:

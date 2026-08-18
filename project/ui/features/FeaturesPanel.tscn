@@ -1,6 +1,10 @@
-[gd_scene load_steps=2 format=3 uid="uid://c8bzfeatures001"]
+[gd_scene load_steps=6 format=3 uid="uid://c8bzfeatures001"]
 
 [ext_resource type="Script" path="res://project/ui/features/FeaturesPanel.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://project/ui/icons/view.svg" id="2_view"]
+[ext_resource type="Texture2D" path="res://project/ui/icons/water.svg" id="3_water"]
+[ext_resource type="Texture2D" path="res://project/ui/icons/plants.svg" id="4_plants"]
+[ext_resource type="Texture2D" path="res://project/ui/icons/paint.svg" id="5_paint"]
 
 [node name="FeaturesPanel" type="PanelContainer"]
 custom_minimum_size = Vector2(0, 200)
@@ -8,10 +12,19 @@ script = ExtResource("1_script")
 
 [node name="Box" type="VBoxContainer" parent="."]
 layout_mode = 2
-theme_override_constants/separation = 6
+theme_override_constants/separation = 8
 
 [node name="Head" type="HBoxContainer" parent="Box"]
 layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="TitleIcon" type="TextureRect" parent="Box/Head"]
+custom_minimum_size = Vector2(16, 16)
+layout_mode = 2
+mouse_filter = 2
+texture = ExtResource("2_view")
+expand_mode = 0
+stretch_mode = 5
 
 [node name="Title" type="Label" parent="Box/Head"]
 layout_mode = 2
@@ -22,10 +35,20 @@ text = "Features"
 unique_name_in_owner = true
 layout_mode = 2
 toggle_mode = true
+icon = ExtResource("5_paint")
 text = "Paint region"
 
 [node name="WaterHead" type="HBoxContainer" parent="Box"]
 layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="WaterIcon" type="TextureRect" parent="Box/WaterHead"]
+custom_minimum_size = Vector2(16, 16)
+layout_mode = 2
+mouse_filter = 2
+texture = ExtResource("3_water")
+expand_mode = 0
+stretch_mode = 5
 
 [node name="WaterLabel" type="Label" parent="Box/WaterHead"]
 layout_mode = 2
@@ -55,6 +78,15 @@ theme_override_constants/separation = 4
 
 [node name="PlantHead" type="HBoxContainer" parent="Box"]
 layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="PlantIcon" type="TextureRect" parent="Box/PlantHead"]
+custom_minimum_size = Vector2(16, 16)
+layout_mode = 2
+mouse_filter = 2
+texture = ExtResource("4_plants")
+expand_mode = 0
+stretch_mode = 5
 
 [node name="PlantLabel" type="Label" parent="Box/PlantHead"]
 layout_mode = 2

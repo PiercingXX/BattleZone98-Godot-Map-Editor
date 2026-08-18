@@ -4,6 +4,7 @@ extends PanelContainer
 signal apply_requested(edits: Array)
 signal delete_requested
 signal water_changed(level: float)
+signal collapsed_changed(collapsed: bool)
 
 @onready var _prj: LineEdit = %Prj
 @onready var _label: LineEdit = %Label
@@ -28,9 +29,12 @@ var _water_timer: Timer
 var _dirty: Dictionary = {}
 var _copy_btn: Button
 var _copy_menu: PopupMenu
+var _collapse: Button
+var _collapsed: bool = false
 
 
 func _ready() -> void:
+	_install_collapse()
 	_apply.pressed.connect(_on_apply)
 	_delete.pressed.connect(_on_delete)
 	_water.value_changed.connect(_on_water)
@@ -43,6 +47,7 @@ func _ready() -> void:
 	_yaw.value_changed.connect(func(_v: float) -> void: _mark_dirty("yaw"))
 	_team.value_changed.connect(func(_v: float) -> void: _mark_dirty("team"))
 	_install_team_buttons()
+	_apply_header_icons()
 	_install_copy_to_variant()
 	MapState.water_changed.connect(_on_water_state)
 	MapState.session_changed.connect(_on_session)
@@ -319,6 +324,60 @@ func _edits_match(a: Dictionary, b: Dictionary) -> bool:
 		and int(a.get("team", 0)) == int(b.get("team", 0))
 		and bool(a.get("pinned_y", false)) == bool(b.get("pinned_y", false))
 	)
+
+
+func is_collapsed() -> bool:
+	return _collapsed
+
+
+func set_collapsed(on: bool) -> void:
+	if _collapsed == on:
+		return
+	_collapsed = on
+	_apply_collapse()
+	collapsed_changed.emit(on)
+
+
+func _install_collapse() -> void:
+	var box := get_node_or_null("Box") as VBoxContainer
+	if box == null:
+		return
+	_collapse = PanelCollapse.make_toggle("Object", true)
+	box.add_child(_collapse)
+	box.move_child(_collapse, 0)
+	var obj := find_child("ObjLabel", true, false) as Label
+	if obj:
+		obj.visible = false
+	_collapse.toggled.connect(func(on: bool) -> void: set_collapsed(not on))
+
+
+func _apply_collapse() -> void:
+	var box := get_node_or_null("Box") as VBoxContainer
+	if box:
+		for child in box.get_children():
+			if child == _collapse:
+				continue
+			if child.name == "ObjLabel" or (child is Label and child.text == "Object"):
+				child.visible = false
+				continue
+			child.visible = not _collapsed
+	PanelCollapse.apply_toggle(_collapse, "Object", not _collapsed)
+
+
+func _apply_header_icons() -> void:
+	if _collapse:
+		EditorIcons.apply_button(_collapse, "select", true)
+	var obj := find_child("ObjLabel", true, false) as Label
+	if obj and obj.visible:
+		EditorIcons.prepend_icon(obj, "select")
+	var water_lab := find_child("WaterLabel", true, false) as Label
+	if water_lab:
+		EditorIcons.prepend_icon(water_lab, "water")
+	var row := get_node_or_null("%TeamRow") as HBoxContainer
+	if row:
+		var icon := EditorIcons.make_rect("team")
+		row.add_child(icon)
+		row.move_child(icon, 0)
 
 
 func _install_team_buttons() -> void:

@@ -8,6 +8,7 @@ const _PANEL_MIN_X := 252.0
 
 signal class_armed(rec: Dictionary)
 signal selection_query_applied
+signal collapsed_changed(collapsed: bool)
 
 @onready var _search: LineEdit = %Search
 @onready var _category: OptionButton = %CategoryFilter
@@ -65,11 +66,17 @@ var _terrain_hint: Label
 var _clone_row: HBoxContainer
 var _clone_mats: CheckBox
 var _clone_hint: Label
+var _snap_grid: OptionButton
+var _snap_angle: OptionButton
+var _snap_row: HBoxContainer
+var _collapse: Button
+var _collapsed: bool = false
 
 
 func _ready() -> void:
 	set_process(false)
 	custom_minimum_size.x = _PANEL_MIN_X
+	_install_collapse()
 	_rebuild_category_items()
 	_search.text_changed.connect(func(t): _filter = t.strip_edges(); _fill())
 	_category.item_selected.connect(func(_i): _fill())
@@ -82,13 +89,16 @@ func _ready() -> void:
 	_shape_square.pressed.connect(func(): _on_shape("square"))
 	_build_swatches()
 	_build_select_tools()
+	_build_snap_tools()
 	_build_symmetry()
 	_build_terrain_select()
 	_build_clone_tools()
+	_apply_chrome_icons()
 	refresh_swatches()
 	_sync_from_state()
 	ToolState.brush_changed.connect(_sync_from_state)
 	ToolState.symmetry_changed.connect(_sync_symmetry_from_state)
+	ToolState.snap_changed.connect(_sync_snap_from_state)
 	ToolState.tool_changed.connect(_on_tool)
 	ToolState.armed_changed.connect(_on_armed)
 	MapState.session_changed.connect(_on_session)
@@ -109,8 +119,47 @@ func set_classes(index: Dictionary, pack_kind: String) -> void:
 		_fill_replace_list()
 
 
+func is_collapsed() -> bool:
+	return _collapsed
+
+
+func set_collapsed(on: bool) -> void:
+	if _collapsed == on:
+		return
+	_collapsed = on
+	if _collapsed:
+		_hide_body()
+	else:
+		refresh_context()
+	PanelCollapse.apply_toggle(_collapse, "Palette", not _collapsed)
+	collapsed_changed.emit(on)
+
+
+func _install_collapse() -> void:
+	var box := get_node_or_null("Box") as VBoxContainer
+	if box == null:
+		return
+	_collapse = PanelCollapse.make_toggle("Palette", true)
+	box.add_child(_collapse)
+	box.move_child(_collapse, 0)
+	_collapse.toggled.connect(func(on: bool) -> void: set_collapsed(not on))
+
+
+func _hide_body() -> void:
+	var box := get_node_or_null("Box") as VBoxContainer
+	if box == null:
+		return
+	for child in box.get_children():
+		if child == _collapse:
+			continue
+		child.visible = false
+
+
 func refresh_context() -> void:
 	if _palette_section == null:
+		return
+	if _collapsed:
+		_hide_body()
 		return
 	custom_minimum_size.x = _PANEL_MIN_X
 	var show_palette := false
@@ -576,11 +625,105 @@ func _build_select_tools() -> void:
 	_copy_btn.add_child(_copy_menu)
 	_copy_menu.id_pressed.connect(_on_copy_variant_picked)
 	_select_section.add_child(_copy_btn)
-	var hint := _select_section.get_node_or_null("SelectHint")
+	var hint := _select_section.get_node_or_null("SelectHint") as Label
 	if hint:
+		hint.text = "Drag the gizmo to move/rotate. Arrows nudge 1 m (Shift 5 m). R rotate +15° (Shift+R +90°). Snap overrides the step."
 		_select_section.move_child(hint, -1)
 	_ensure_replace_dialog()
 	_refresh_select_actions()
+
+
+func _build_snap_tools() -> void:
+	if _select_section == null or _snap_row != null:
+		return
+	_snap_row = HBoxContainer.new()
+	_snap_row.name = "SnapRow"
+	_snap_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var glab := Label.new()
+	glab.text = "Grid"
+	_snap_grid = OptionButton.new()
+	_snap_grid.name = "SnapGrid"
+	_snap_grid.focus_mode = Control.FOCUS_NONE
+	_snap_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for item in [
+		{"v": 0.0, "t": "Off"},
+		{"v": 1.0, "t": "1 m"},
+		{"v": 5.0, "t": "5 m"},
+		{"v": 10.0, "t": "10 m"},
+		{"v": 20.0, "t": "20 m"},
+	]:
+		var i := _snap_grid.item_count
+		_snap_grid.add_item(str(item["t"]))
+		_snap_grid.set_item_metadata(i, float(item["v"]))
+	_snap_grid.item_selected.connect(_on_snap_grid)
+	var alab := Label.new()
+	alab.text = "Angle"
+	_snap_angle = OptionButton.new()
+	_snap_angle.name = "SnapAngle"
+	_snap_angle.focus_mode = Control.FOCUS_NONE
+	_snap_angle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for item in [
+		{"v": 0.0, "t": "Off"},
+		{"v": 15.0, "t": "15°"},
+		{"v": 45.0, "t": "45°"},
+		{"v": 90.0, "t": "90°"},
+	]:
+		var i := _snap_angle.item_count
+		_snap_angle.add_item(str(item["t"]))
+		_snap_angle.set_item_metadata(i, float(item["v"]))
+	_snap_angle.item_selected.connect(_on_snap_angle)
+	_snap_row.add_child(glab)
+	_snap_row.add_child(_snap_grid)
+	_snap_row.add_child(alab)
+	_snap_row.add_child(_snap_angle)
+	_select_section.add_child(_snap_row)
+	var hint := _select_section.get_node_or_null("SelectHint")
+	if hint:
+		_select_section.move_child(hint, -1)
+	_sync_snap_from_state()
+
+
+func _on_snap_grid(index: int) -> void:
+	if _syncing or _snap_grid == null:
+		return
+	if index < 0 or index >= _snap_grid.item_count:
+		return
+	var v := float(_snap_grid.get_item_metadata(index))
+	ToolState.set_snap_grid(v)
+	EditorFeedback.log("snap grid %s" % ("off" if v <= 0.0 else "%.0f m" % v))
+
+
+func _on_snap_angle(index: int) -> void:
+	if _syncing or _snap_angle == null:
+		return
+	if index < 0 or index >= _snap_angle.item_count:
+		return
+	var v := float(_snap_angle.get_item_metadata(index))
+	ToolState.set_snap_angle(v)
+	EditorFeedback.log("snap angle %s" % ("off" if v <= 0.0 else "%.0f°" % v))
+
+
+func _sync_snap_from_state() -> void:
+	if _snap_grid == null or _snap_angle == null:
+		return
+	var was := _syncing
+	_syncing = true
+	_select_snap_item(_snap_grid, ToolState.snap_grid_m)
+	_select_snap_item(_snap_angle, ToolState.snap_angle)
+	_snap_grid.tooltip_text = "Snap gizmo, nudges, and Place to this grid"
+	_snap_angle.tooltip_text = "Snap gizmo yaw and R-rotate to this increment"
+	_syncing = was
+
+
+func _select_snap_item(btn: OptionButton, value: float) -> void:
+	var best := 0
+	var best_d := INF
+	for i in btn.item_count:
+		var d := absf(float(btn.get_item_metadata(i)) - value)
+		if d < best_d:
+			best_d = d
+			best = i
+	btn.select(best)
 
 
 func _ensure_replace_dialog() -> void:
@@ -1070,9 +1213,29 @@ func _sync_from_state() -> void:
 	_sync_shape_buttons()
 	_highlight_swatch()
 	_sync_symmetry_from_state()
+	_sync_snap_from_state()
 	_syncing = false
 
 
 func _sync_shape_buttons() -> void:
 	_shape_circle.button_pressed = ToolState.shape != "square"
 	_shape_square.button_pressed = ToolState.shape == "square"
+
+
+func _apply_chrome_icons() -> void:
+	if _search and _search.right_icon == null:
+		EditorIcons.apply_line_edit(_search, "search")
+	if _category and _category.icon == null:
+		_category.icon = EditorIcons.texture("filter")
+	if _select_summary:
+		EditorIcons.prepend_icon(_select_summary, "select")
+	var terrain_title := find_child("TerrainSelSection", true, false)
+	if terrain_title:
+		for child in terrain_title.get_children():
+			if child is Label and str(child.text).begins_with("Terrain"):
+				EditorIcons.prepend_icon(child, "qsel")
+				break
+	if _query_select:
+		EditorIcons.apply_button(_query_select, "select", true)
+	if _batch_team_btn:
+		EditorIcons.apply_button(_batch_team_btn, "team", true)

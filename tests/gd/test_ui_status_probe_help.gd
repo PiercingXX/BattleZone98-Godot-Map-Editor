@@ -32,9 +32,33 @@ func _status(t) -> void:
 
 	bar.set_cursor("xz 1, 2")
 	t.eq((bar.find_child("Cursor", true, false) as Label).text, "xz 1, 2")
+	var goto_edit: LineEdit = bar.find_child("Goto", true, false)
+	t.ok(goto_edit != null, "go-to box exists")
+	t.eq(goto_edit.placeholder_text, "x, z")
+	t.ok(not goto_edit.editable, "go-to locked with no map")
+	t.ok("map" in goto_edit.tooltip_text.to_lower())
+	var submitted: Array = []
+	bar.goto_submitted.connect(func(text): submitted.append(str(text)))
+	goto_edit.text_submitted.emit("64, 128")
+	t.eq(submitted, [], "go-to does not emit without a session")
+	var saved_session := false
+	if MapState != null:
+		saved_session = MapState.has_session
+		MapState.has_session = true
+		MapState.session_changed.emit()
+		t.ok(goto_edit.editable, "go-to unlocks with a session")
+		goto_edit.text_submitted.emit("64, 128")
+		t.eq(submitted, ["64, 128"], "Enter emits the typed x, z")
+		MapState.has_session = saved_session
+		MapState.session_changed.emit()
 	bar.set_map_info("1280x1280  mars")
 	t.eq((bar.find_child("MapInfo", true, false) as Label).text, "1280x1280  mars")
 	t.ok("autosave" in bar.tooltip_text.to_lower(), "status tooltip mentions autosave")
+	var activity: Control = bar.find_child("Activity", true, false)
+	t.ok(activity != null, "status hosts an activity indicator")
+	t.ok(not activity.visible, "activity is hidden while idle")
+	t.eq(StatusBar.verb_activity_text("assets"), "importing assets…")
+	t.eq(StatusBar.verb_activity_text("save"), "saving…")
 
 	var walk: Button = bar.find_child("Walk", true, false)
 	var grid: Button = bar.find_child("Grid", true, false)
@@ -127,6 +151,12 @@ func _help(t) -> void:
 	t.ok("feather" in body.text.to_lower(), "help documents feather")
 	t.ok("wand" in body.text.to_lower(), "help documents the magic wand")
 	t.ok("clone" in body.text.to_lower(), "help documents clone stamp")
+	t.ok("2D map" in body.text, "help documents 2D map mode")
+	t.ok("Compass" in body.text, "help documents the compass")
+	t.ok("Go-to" in body.text, "help documents go-to")
+	t.ok("KP 7" in body.text, "help lists KP 7")
+	t.ok("Preferences" in body.text, "help documents Preferences")
+	t.ok("toast" in body.text.to_lower(), "help documents toasts")
 	help.popup_help()
 	help.hide()
 	help.queue_free()

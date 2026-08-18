@@ -36,6 +36,12 @@ func run(t) -> void:
 	t.ok(findings != null and status != null and probe != null and help != null)
 	t.ok(history != null, "History panel sits under Findings")
 	t.ok(history.find_child("List", true, false) is ItemList)
+	var start: Node = scene.find_child("StartScreen", true, false)
+	t.ok(start != null, "start overlay lives in the Center area")
+	t.ok(start.visible, "start overlay shows with no session")
+	t.ok(start.get_parent() == scene.find_child("Center", true, false), "overlay is a Center child")
+	t.ok("BattleZone" in (start.find_child("Title", true, false) as Label).text)
+	t.ok(str(ProjectSettings.get_setting("application/config/version", "")) in (start.find_child("Version", true, false) as Label).text)
 	t.ok((features.find_child("AddWater", true, false) as Button).disabled, "Features Add off with no map")
 	t.ok((features.find_child("PaintRegion", true, false) as Button).disabled)
 
@@ -46,6 +52,17 @@ func run(t) -> void:
 	t.ok((top.find_child("Undo", true, false) as Button).disabled)
 	t.eq((top.find_child("MapLabel", true, false) as Label).text, "no map open")
 	t.ok(top.find_child("View", true, false) is MenuButton, "shell has a View menu")
+	t.ok(top.find_child("MapMode", true, false) is Button, "shell has a 2D/3D toggle")
+	t.ok((top.find_child("MapMode", true, false) as Button).disabled, "2D/3D off with no map")
+	t.ok(status.find_child("Goto", true, false) is LineEdit, "status has a go-to box")
+	t.ok(not (status.find_child("Goto", true, false) as LineEdit).editable)
+	t.ok(scene.find_child("CompassRose", true, false) is Control, "viewport hosts a compass")
+	t.ok(not (scene.find_child("CompassRose", true, false) as Control).visible, "compass hidden with no map")
+	t.eq(
+		scene.get_window().content_scale_factor,
+		Settings.ui_scale,
+		"main applies Settings.ui_scale to the window",
+	)
 
 	t.ok((inspector.find_child("Apply", true, false) as Button).disabled)
 	t.ok((inspector.find_child("Delete", true, false) as Button).disabled)
@@ -54,8 +71,12 @@ func run(t) -> void:
 	t.ok(scene._io != null, "SessionIO constructed")
 	t.ok(scene._game_test != null, "GameTest constructed")
 	t.ok(scene._workshop != null, "WorkshopPublish constructed")
-	var console: TextEdit = scene.find_child("Console", true, false)
-	t.ok(console != null and "autosave" in console.text.to_lower(), "startup log mentions autosave")
+	var console: Node = scene.find_child("Console", true, false)
+	t.ok(console != null and "autosave" in str(console.get("text")).to_lower(), "startup log mentions autosave")
+	t.ok(scene.find_child("ToastLayer", true, false) != null, "viewport hosts a toast layer")
+	t.ok(scene.find_child("PrefsDialog", true, false) != null, "shell hosts Preferences")
+	t.ok(console.find_child("Copy", true, false) is Button, "console has a Copy button")
+	t.ok(console.find_child("All", true, false) is Button, "console has an All filter")
 	t.ok(top.get_signal_connection_list("open_requested").size() > 0)
 	t.ok(top.get_signal_connection_list("gallery_requested").size() > 0)
 	var gallery: Node = scene.find_child("MapGalleryDialog", true, false)
@@ -98,6 +119,9 @@ func run(t) -> void:
 	UndoStack.clear()
 	MapState.mark_saved()
 	MapState.session_changed.emit()
+	t.ok(not start.visible, "start overlay hides when a session loads")
+	t.ok((scene.find_child("CompassRose", true, false) as Control).visible, "compass shows with a session")
+	t.ok(not (top.find_child("MapMode", true, false) as Button).disabled, "2D/3D enables after session_changed")
 	t.ok(not (top.find_child("Save", true, false) as Button).disabled, "Save enables after session_changed")
 	t.ok(not (findings.find_child("Validate", true, false) as Button).disabled)
 	t.ok((top.find_child("Test", true, false) as Button).disabled, "Test still needs a game root")
@@ -113,8 +137,28 @@ func run(t) -> void:
 
 	MapState.has_session = false
 	MapState.session_changed.emit()
+	t.ok(start.visible, "start overlay returns when the session closes")
 	t.ok((top.find_child("Save", true, false) as Button).disabled)
 	t.eq((inspector.find_child("Mode", true, false) as Label).text, "nothing selected")
+
+	var saved_focus := Settings.focus_mode
+	Settings.focus_mode = false
+	scene._apply_focus_mode()
+	t.ok((scene.get("_palette") as Control).visible, "palette visible out of focus")
+	t.ok((scene.get("_right_split") as Control).visible, "right column visible out of focus")
+	scene._toggle_focus_mode()
+	t.ok(Settings.focus_mode)
+	t.ok(not (scene.get("_palette") as Control).visible, "Tab hides the left panel")
+	t.ok(not (scene.get("_right_split") as Control).visible, "Tab hides the right column")
+	t.ok(not (scene.find_child("Console", true, false) as Control).visible, "Tab hides the console")
+	t.ok((scene.find_child("TopBar", true, false) as Control).visible)
+	t.ok((scene.find_child("StatusBar", true, false) as Control).visible)
+	scene._toggle_focus_mode()
+	t.ok((scene.get("_palette") as Control).visible, "focus off restores the left panel")
+	t.ok((scene.get("_right_split") as Control).visible)
+	Settings.focus_mode = saved_focus
+	Settings.save()
+	scene._apply_focus_mode()
 
 	scene.queue_free()
 	await t.tree.process_frame

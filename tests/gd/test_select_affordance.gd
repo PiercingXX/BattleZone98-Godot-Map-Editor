@@ -169,6 +169,8 @@ func _status_and_help(t) -> void:
 	t.ok("replace class" in text, "help documents batch replace")
 	t.ok("terrain selection" in text, "help documents terrain selection")
 	t.ok("wand" in text, "help documents magic wand")
+	t.ok("gizmo" in text, "help documents the selection gizmo")
+	t.ok("snap" in text, "help documents snap")
 	help.queue_free()
 	await t.tree.process_frame
 

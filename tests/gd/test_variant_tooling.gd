@@ -271,6 +271,7 @@ func _snapshot() -> Dictionary:
 		"manifest": MapState.manifest.duplicate(true),
 		"next_id": MapState.next_new_id,
 		"ghost": ObjectMarkers.ghost_other_variants,
+		"view_ghost_variants": Settings.view_ghost_variants,
 	}
 
 
@@ -285,5 +286,6 @@ func _restore(snap: Dictionary) -> void:
 	MapState.manifest = snap["manifest"]
 	MapState.next_new_id = int(snap["next_id"])
 	ObjectMarkers.ghost_other_variants = bool(snap["ghost"])
+	Settings.view_ghost_variants = bool(snap.get("view_ghost_variants", false))
 	if MapState.has_session:
 		MapState.mark_saved()

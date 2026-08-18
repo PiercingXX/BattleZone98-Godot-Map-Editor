@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3 uid="uid://c8bzmapmain0001"]
+[gd_scene load_steps=23 format=3 uid="uid://c8bzmapmain0001"]
 
 [ext_resource type="Script" path="res://scenes/main.gd" id="1_main"]
 [ext_resource type="Script" path="res://project/camera/FlyCamera.gd" id="2_cam"]
@@ -15,6 +15,10 @@
 [ext_resource type="PackedScene" path="res://project/ui/features/FeaturesPanel.tscn" id="12_feat"]
 [ext_resource type="PackedScene" path="res://project/ui/gallery/MapGalleryDialog.tscn" id="13_gallery"]
 [ext_resource type="PackedScene" path="res://project/ui/history/HistoryPanel.tscn" id="15_hist"]
+[ext_resource type="PackedScene" path="res://project/ui/start/StartScreen.tscn" id="16_start"]
+[ext_resource type="Script" path="res://project/ui/toasts/LogConsole.gd" id="17_log"]
+[ext_resource type="Script" path="res://project/ui/toasts/ToastLayer.gd" id="18_toast"]
+[ext_resource type="PackedScene" path="res://project/ui/prefs/PrefsDialog.tscn" id="19_prefs"]
 
 [sub_resource type="ProceduralSkyMaterial" id="SkyMat_1"]
 sky_top_color = Color(0.22, 0.42, 0.72, 1)
@@ -81,6 +85,7 @@ unique_name_in_owner = true
 layout_mode = 2
 
 [node name="Mid" type="HSplitContainer" parent="Root/Body"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 split_offset = -280
@@ -127,12 +132,53 @@ current = true
 far = 12000.0
 script = ExtResource("2_cam")
 
+[node name="StartScreen" parent="Root/Body/Mid/Center" instance=ExtResource("16_start")]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="CompassRose" type="Control" parent="Root/Body/Mid/Center"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(76, 76)
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -84.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = 84.0
+mouse_filter = 0
+
+[node name="ToastLayer" type="VBoxContainer" parent="Root/Body/Mid/Center"]
+unique_name_in_owner = true
+z_index = 40
+custom_minimum_size = Vector2(280, 0)
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -296.0
+offset_top = 88.0
+offset_right = -8.0
+offset_bottom = 88.0
+mouse_filter = 2
+theme_override_constants/separation = 6
+script = ExtResource("18_toast")
+
 [node name="Right" type="VSplitContainer" parent="Root/Body/Mid"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(276, 0)
 layout_mode = 2
 split_offset = 440
 
 [node name="Upper" type="VSplitContainer" parent="Root/Body/Mid/Right"]
+unique_name_in_owner = true
 layout_mode = 2
 split_offset = 240
 
@@ -146,6 +192,7 @@ layout_mode = 2
 size_flags_vertical = 3
 
 [node name="Lower" type="VSplitContainer" parent="Root/Body/Mid/Right"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 split_offset = 160
@@ -163,13 +210,13 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="Console" type="TextEdit" parent="Root"]
+[node name="Console" type="VBoxContainer" parent="Root"]
 unique_name_in_owner = true
 visible = false
 custom_minimum_size = Vector2(0, 140)
 layout_mode = 2
-editable = false
-wrap_mode = 1
+theme_override_constants/separation = 4
+script = ExtResource("17_log")
 
 [node name="FileDialog" type="FileDialog" parent="."]
 unique_name_in_owner = true
@@ -270,6 +317,9 @@ unique_name_in_owner = true
 unique_name_in_owner = true
 
 [node name="MapGalleryDialog" parent="." instance=ExtResource("13_gallery")]
+unique_name_in_owner = true
+
+[node name="PrefsDialog" parent="." instance=ExtResource("19_prefs")]
 unique_name_in_owner = true
 
 [connection signal="file_selected" from="FileDialog" to="." method="_on_file_dialog_file_selected"]

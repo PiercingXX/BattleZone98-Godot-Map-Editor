@@ -1,6 +1,8 @@
 extends PanelContainer
 ## Water bodies and plant regions. Selection is the active mask target.
 
+signal collapsed_changed(collapsed: bool)
+
 const _SCOPES: PackedStringArray = ["all", "_S", "_ST", "_SW"]
 const _SELECT := Color(0.24, 0.42, 0.62, 1)
 const _ROW := Color(0.16, 0.16, 0.17, 1)
@@ -13,6 +15,8 @@ const _ROW := Color(0.16, 0.16, 0.17, 1)
 @onready var _water_list: VBoxContainer = %WaterList
 @onready var _plant_list: VBoxContainer = %PlantList
 
+var _collapse: Button
+var _collapsed: bool = false
 var _building: bool = false
 var _rebuild_queued: bool = false
 var _sel_kind: String = ""
@@ -26,6 +30,7 @@ var _field_timer: Timer
 
 
 func _ready() -> void:
+	_install_collapse()
 	_paint.toggled.connect(_on_paint_toggled)
 	_add_water.pressed.connect(_on_add_water)
 	_remove_water.pressed.connect(_on_remove_water)
@@ -41,7 +46,48 @@ func _ready() -> void:
 	MapState.water_changed.connect(_on_water_state)
 	ToolState.mask_target_changed.connect(_on_mask_target)
 	ToolState.mask_paint_changed.connect(_on_mask_paint)
+	_apply_header_icons()
 	_rebuild()
+
+
+func is_collapsed() -> bool:
+	return _collapsed
+
+
+func set_collapsed(on: bool) -> void:
+	if _collapsed == on:
+		return
+	_collapsed = on
+	_apply_collapse()
+	collapsed_changed.emit(on)
+
+
+func _install_collapse() -> void:
+	var title := find_child("Title", true, false) as Label
+	if title == null:
+		return
+	_collapse = PanelCollapse.make_toggle("Features", true)
+	var parent := title.get_parent()
+	parent.add_child(_collapse)
+	parent.move_child(_collapse, title.get_index())
+	title.visible = false
+	_collapse.toggled.connect(func(on: bool) -> void: set_collapsed(not on))
+
+
+func _apply_collapse() -> void:
+	var box := get_node_or_null("Box") as VBoxContainer
+	if box:
+		for child in box.get_children():
+			if child.name == "Head":
+				continue
+			child.visible = not _collapsed
+	custom_minimum_size.y = 40.0 if _collapsed else 200.0
+	PanelCollapse.apply_toggle(_collapse, "Features", not _collapsed)
+
+
+func _apply_header_icons() -> void:
+	if _paint and _paint.icon == null:
+		EditorIcons.apply_button(_paint, "paint", true)
 
 
 func _exit_tree() -> void:

@@ -13,6 +13,8 @@ func run(t) -> void:
 	var list: ItemList = panel.find_child("List", true, false)
 	var validate: Button = panel.find_child("Validate", true, false)
 	t.ok(validate.disabled, "Validate disabled with no map")
+	t.ok(validate.icon != null, "Validate has an icon")
+	t.ok((panel.find_child("TitleIcon", true, false) as TextureRect).texture != null)
 	t.ok(list.item_count >= 1)
 	t.ok(list.is_item_disabled(0), "empty placeholder disabled")
 
@@ -63,6 +65,12 @@ func run(t) -> void:
 	MapState.has_session = false
 	MapState.session_changed.emit()
 	t.ok(validate.disabled, "Validate disables when the map closes")
+	t.ok(panel.has_method("set_collapsed"))
+	panel.set_collapsed(true)
+	t.ok(not list.visible, "Findings collapse hides the list")
+	t.ok((panel.find_child("Validate", true, false) as Button).visible, "header stays")
+	panel.set_collapsed(false)
+	t.ok(list.visible)
 
 	panel.queue_free()
 	await t.tree.process_frame

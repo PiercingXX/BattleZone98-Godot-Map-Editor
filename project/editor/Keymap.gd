@@ -50,10 +50,12 @@ const ACTION_DESELECT := "select.none"
 const ACTION_INVERT := "select.invert"
 const ACTION_FRAME := "frame"
 const ACTION_TOP_DOWN := "top_down"
+const ACTION_MAP_MODE := "map_mode"
 const ACTION_SLOPE := "slope_overlay"
 const ACTION_GRID := "grid"
 const ACTION_WALK := "walk"
 const ACTION_HELP := "help"
+const ACTION_FOCUS := "focus"
 const ACTION_UNDO := "undo"
 const ACTION_REDO := "redo"
 const ACTION_SAVE := "save"
@@ -98,8 +100,8 @@ const BOOKMARK_RECALL_ACTIONS: PackedStringArray = [
 ]
 
 const NON_TOOL_ACTIONS: PackedStringArray = [
-	ACTION_FRAME, ACTION_TOP_DOWN, ACTION_SLOPE, ACTION_GRID, ACTION_WALK,
-	ACTION_HELP, ACTION_UNDO, ACTION_REDO, ACTION_SAVE,
+	ACTION_FRAME, ACTION_TOP_DOWN, ACTION_MAP_MODE, ACTION_SLOPE, ACTION_GRID, ACTION_WALK,
+	ACTION_HELP, ACTION_FOCUS, ACTION_UNDO, ACTION_REDO, ACTION_SAVE,
 	ACTION_SELECT_ALL, ACTION_DESELECT, ACTION_INVERT,
 	ACTION_TEAM_0, ACTION_TEAM_1, ACTION_TEAM_2, ACTION_TEAM_3,
 	ACTION_TEAM_4, ACTION_TEAM_5, ACTION_TEAM_6, ACTION_TEAM_7,
@@ -113,8 +115,8 @@ const ALL_ACTIONS: PackedStringArray = [
 	ACTION_FLY, ACTION_RAISE, ACTION_LOWER, ACTION_FLATTEN, ACTION_SMOOTH,
 	ACTION_RAMP, ACTION_PAINT, ACTION_PLACE, ACTION_SELECT, ACTION_NOISE,
 	ACTION_QSEL, ACTION_RSEL, ACTION_WAND, ACTION_CLONE,
-	ACTION_FRAME, ACTION_TOP_DOWN, ACTION_SLOPE, ACTION_GRID, ACTION_WALK,
-	ACTION_HELP, ACTION_UNDO, ACTION_REDO, ACTION_SAVE,
+	ACTION_FRAME, ACTION_TOP_DOWN, ACTION_MAP_MODE, ACTION_SLOPE, ACTION_GRID, ACTION_WALK,
+	ACTION_HELP, ACTION_FOCUS, ACTION_UNDO, ACTION_REDO, ACTION_SAVE,
 	ACTION_SELECT_ALL, ACTION_DESELECT, ACTION_INVERT,
 	ACTION_TEAM_0, ACTION_TEAM_1, ACTION_TEAM_2, ACTION_TEAM_3,
 	ACTION_TEAM_4, ACTION_TEAM_5, ACTION_TEAM_6, ACTION_TEAM_7,
@@ -235,7 +237,7 @@ static func help_text(scheme: String = "") -> String:
 
 RMB look     mouse wheel zoom     MMB orbit
 WASD fly     Q/E up down     Shift fast     Ctrl slow
-%s frame map     %s top-down     %s slope tint     %s walk-the-surface
+%s frame map     %s top-down     %s 2D/3D     %s slope tint     %s walk-the-surface
 %s grid     Delete remove selected
 %s fly   %s raise   %s lower   %s flatten   %s smooth   %s ramp
 %s paint   %s place   %s select   %s noise
@@ -246,23 +248,24 @@ Terrain select: QSel paints (LMB add, Alt subtract). RSel drag (Shift add, Alt s
 Empty selection = everything editable. While a selection exists, sculpt and paint multiply by the mask.
 Clone: Ctrl+click sets the source; paint copies height deltas (optional materials).
 [ ] radius     Shift+[ ] strength     Esc cancel / fly
-%s undo     %s redo     %s save     ` log     %s this
+%s undo     %s redo     %s save     ` log     %s focus     %s this
 Shift+0…7 set team on the selection
 Alt+1…5 recall camera bookmark     Ctrl+Alt+1…5 store
 Select + hold M and drag to measure
 LMB sculpt / place / select     Shift+click keep placing
 Alt+LMB eyedropper (paint)
-Autosave     every 30s while unsaved (a crash does not lose the session; %s writes the map files)
+Autosave     every 30s by default while unsaved (Preferences… sets 15s / 30s / 60s / off; a crash does not lose the session; %s writes the map files)
 Other scheme (%s): %s[/code]""" % [
 		scheme_label(id),
-		L.call(ACTION_FRAME), L.call(ACTION_TOP_DOWN), L.call(ACTION_SLOPE), L.call(ACTION_WALK),
+		L.call(ACTION_FRAME), L.call(ACTION_TOP_DOWN), L.call(ACTION_MAP_MODE), L.call(ACTION_SLOPE), L.call(ACTION_WALK),
 		L.call(ACTION_GRID),
 		L.call(ACTION_FLY), L.call(ACTION_RAISE), L.call(ACTION_LOWER),
 		L.call(ACTION_FLATTEN), L.call(ACTION_SMOOTH), L.call(ACTION_RAMP),
 		L.call(ACTION_PAINT), L.call(ACTION_PLACE), L.call(ACTION_SELECT), L.call(ACTION_NOISE),
 		L.call(ACTION_QSEL), L.call(ACTION_RSEL), L.call(ACTION_WAND), L.call(ACTION_CLONE),
 		L.call(ACTION_SELECT_ALL), L.call(ACTION_DESELECT), L.call(ACTION_INVERT),
-		L.call(ACTION_UNDO), L.call(ACTION_REDO), L.call(ACTION_SAVE), L.call(ACTION_HELP),
+		L.call(ACTION_UNDO), L.call(ACTION_REDO), L.call(ACTION_SAVE), L.call(ACTION_FOCUS),
+		L.call(ACTION_HELP),
 		L.call(ACTION_SAVE),
 		scheme_label(other), "   ".join(other_tools),
 	]
@@ -323,10 +326,12 @@ static func _godot_bindings() -> Dictionary:
 		ACTION_INVERT: make_binding(KEY_I, true, true),
 		ACTION_FRAME: make_binding(KEY_F),
 		ACTION_TOP_DOWN: make_binding(KEY_SPACE),
+		ACTION_MAP_MODE: make_binding(KEY_KP_7),
 		ACTION_SLOPE: make_binding(KEY_H),
 		ACTION_GRID: make_binding(KEY_G),
 		ACTION_WALK: make_binding(KEY_V),
 		ACTION_HELP: make_binding(KEY_F1),
+		ACTION_FOCUS: make_binding(KEY_TAB),
 		ACTION_UNDO: make_binding(KEY_Z, true),
 		ACTION_REDO: make_binding(KEY_Z, true, true),
 		ACTION_SAVE: make_binding(KEY_S, true),
@@ -399,6 +404,10 @@ static func _key_label(keycode: int) -> String:
 			return "`"
 		KEY_SPACE:
 			return "Space"
+		KEY_TAB:
+			return "Tab"
+		KEY_KP_7:
+			return "KP 7"
 		_:
 			var named := OS.get_keycode_string(keycode)
 			return named if not named.is_empty() else "?"

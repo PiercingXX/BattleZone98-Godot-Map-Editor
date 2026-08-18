@@ -106,6 +106,12 @@ func _settings_persist(t) -> void:
 	Settings.view_water = false
 	Settings.view_plants = true
 	Settings.view_sky = true
+	Settings.view_ghost_variants = true
+	Settings.view_balance = true
+	Settings.view_aipaths = false
+	Settings.view_grid = true
+	Settings.view_slope = false
+	Settings.view_labels = true
 	Settings.save()
 	Settings.view_geysers = false
 	Settings.view_scrap = true
@@ -113,6 +119,7 @@ func _settings_persist(t) -> void:
 	Settings.view_props = true
 	Settings.view_water = true
 	Settings.view_sky = false
+	Settings.view_labels = false
 	Settings._load()
 	t.eq(Settings.view_geysers, true, "view_geysers persists")
 	t.eq(Settings.view_scrap, false, "view_scrap persists")
@@ -123,6 +130,12 @@ func _settings_persist(t) -> void:
 	t.eq(Settings.view_water, false, "view_water persists")
 	t.eq(Settings.view_plants, true)
 	t.eq(Settings.view_sky, true, "view_sky persists")
+	t.eq(Settings.view_ghost_variants, true, "view_ghost_variants persists")
+	t.eq(Settings.view_balance, true)
+	t.eq(Settings.view_aipaths, false)
+	t.eq(Settings.view_grid, true)
+	t.eq(Settings.view_slope, false)
+	t.eq(Settings.view_labels, true, "view_labels persists")
 	t.eq(Settings.view_flag("scrap"), false)
 	t.eq(Settings.view_group_visible("scrap"), false)
 	t.ok(Settings.view_group_visible("units"))
@@ -184,6 +197,15 @@ func _snapshot() -> Dictionary:
 		"view_water": Settings.view_water,
 		"view_plants": Settings.view_plants,
 		"view_sky": Settings.view_sky,
+		"view_ghost_variants": Settings.view_ghost_variants,
+		"view_balance": Settings.view_balance,
+		"view_aipaths": Settings.view_aipaths,
+		"view_grid": Settings.view_grid,
+		"view_slope": Settings.view_slope,
+		"view_labels": Settings.view_labels,
+		"ghost": ObjectMarkers.ghost_other_variants,
+		"balance": BalanceOverlay.enabled,
+		"aipaths": AiPathOverlay.enabled,
 		"session": MapState.has_session,
 		"objects": MapState.objects.duplicate(true),
 		"sel": MapState.selected_ids.duplicate(),
@@ -212,6 +234,15 @@ func _restore(snap: Dictionary) -> void:
 	Settings.view_water = bool(snap["view_water"])
 	Settings.view_plants = bool(snap["view_plants"])
 	Settings.view_sky = bool(snap["view_sky"])
+	Settings.view_ghost_variants = bool(snap.get("view_ghost_variants", false))
+	Settings.view_balance = bool(snap.get("view_balance", false))
+	Settings.view_aipaths = bool(snap.get("view_aipaths", false))
+	Settings.view_grid = bool(snap.get("view_grid", false))
+	Settings.view_slope = bool(snap.get("view_slope", false))
+	Settings.view_labels = bool(snap.get("view_labels", false))
+	ObjectMarkers.ghost_other_variants = bool(snap.get("ghost", false))
+	BalanceOverlay.enabled = bool(snap.get("balance", false))
+	AiPathOverlay.enabled = bool(snap.get("aipaths", false))
 	MapState.has_session = bool(snap["session"])
 	MapState.objects = snap["objects"]
 	MapState.selected_ids = snap["sel"]

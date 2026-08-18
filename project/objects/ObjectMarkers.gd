@@ -8,6 +8,33 @@ const VIEW_SPAWNS := "spawns"
 const VIEW_BUILDINGS := "buildings"
 const VIEW_UNITS := "units"
 const VIEW_PROPS := "props"
+const LABEL_RANGE_M := 400.0
+const LABEL_MAX := 48
+const LABEL_NAME := "ObjectLabel"
+const OUTLINE_NAME := "OutlineHull"
+const OUTLINE_SCALE := 1.10
+const _SKIP_STYLE := [LABEL_NAME, OUTLINE_NAME, "VariantTag"]
+
+## Shared team tint tables. Index 0 is team 1; team 0 is TEAM_NEUTRAL.
+const TEAM_NEUTRAL := Color(0.55, 0.55, 0.58)
+const TEAM_PALETTE: Array[Color] = [
+	Color(0.22, 0.82, 0.35),
+	Color(0.88, 0.22, 0.20),
+	Color(0.25, 0.48, 0.95),
+	Color(0.95, 0.85, 0.18),
+	Color(0.85, 0.35, 0.85),
+	Color(0.18, 0.82, 0.82),
+	Color(0.95, 0.55, 0.15),
+]
+const TEAM_PALETTE_COLORBLIND: Array[Color] = [
+	Color(0.90, 0.62, 0.00),
+	Color(0.34, 0.71, 0.91),
+	Color(0.00, 0.62, 0.45),
+	Color(0.94, 0.89, 0.26),
+	Color(0.00, 0.45, 0.70),
+	Color(0.84, 0.37, 0.00),
+	Color(0.80, 0.47, 0.65),
+]
 
 ## When true, objects on non-active variants stay in the viewport as
 ## unpickable onion-skin ghosts. Session-only (Settings is not the owner).
@@ -19,13 +46,20 @@ var _by_id: Dictionary = {}
 var _gltf_cache: Dictionary = {}
 var _selected_set: Dictionary = {}
 var _hover_id: String = ""
-var _outline: StandardMaterial3D
+var _hull_mat: StandardMaterial3D
 
 
 func _ready() -> void:
 	_box = BoxMesh.new()
 	_box.size = Vector3(8, 6, 8)
 	set_process(false)
+	if Settings != null and Settings.has_signal("prefs_changed"):
+		if not Settings.prefs_changed.is_connected(_on_prefs_changed):
+			Settings.prefs_changed.connect(_on_prefs_changed)
+
+
+func _on_prefs_changed() -> void:
+	apply_visibility()
 
 
 func _process(_delta: float) -> void:
@@ -117,6 +151,65 @@ func highlight(ids: Array) -> void:
 	for id in ids:
 		_selected_set[str(id)] = true
 	_refresh_styles()
+
+
+func preview_poses(poses: Dictionary) -> void:
+	for key in poses.keys():
+		var inst := _by_id.get(str(key)) as Node3D
+		if inst == null:
+			continue
+		var raw: Variant = poses[key]
+		if typeof(raw) != TYPE_DICTIONARY:
+			continue
+		var pose: Dictionary = raw
+		inst.position = Vector3(
+			float(pose.get("x", inst.position.x)),
+			float(pose.get("y", inst.position.y)),
+			float(pose.get("z", inst.position.z)),
+		)
+		inst.rotation.y = deg_to_rad(float(pose.get("yaw_deg", rad_to_deg(inst.rotation.y))))
+
+
+func restore_placed() -> void:
+	for id in _by_id.keys():
+		var inst := _by_id[id] as Node3D
+		if inst == null:
+			continue
+		var rec := MapState.find_object(str(id))
+		if rec.is_empty():
+			continue
+		var variant := str(inst.get_meta("variant", MapState.find_object_variant(str(id))))
+		_update_placed(inst, rec, MapState.field, is_variant_ghosted(variant), variant)
+	_refresh_styles()
+
+
+func refresh_labels(camera: Camera3D) -> void:
+	if not Settings.view_labels or camera == null:
+		_hide_all_labels()
+		return
+	var cam := camera.global_position
+	var cands: Array = []
+	for id in _by_id.keys():
+		var inst := _by_id[id] as Node3D
+		if inst == null or not inst.visible:
+			continue
+		var rec := MapState.find_object(str(id))
+		if rec.is_empty():
+			continue
+		var dist := cam.distance_to(inst.global_position)
+		cands.append({"id": str(id), "dist": dist})
+	var keep := SelectionGizmo.pick_nearest_label_ids(cands, LABEL_RANGE_M, LABEL_MAX)
+	var shown: Dictionary = {}
+	for id in keep:
+		shown[id] = true
+	for id in _by_id.keys():
+		var inst := _by_id[id] as Node3D
+		if inst == null:
+			continue
+		if shown.has(str(id)):
+			_show_label(inst, MapState.find_object(str(id)))
+		else:
+			_hide_label(inst)
 
 
 func set_hover(id: String) -> void:
@@ -229,18 +322,16 @@ static func variant_tint(variant: String) -> Color:
 	return Color(0.70, 0.74, 0.80)
 
 
+static func team_palette(colorblind: bool = false) -> Array[Color]:
+	if colorblind:
+		return TEAM_PALETTE_COLORBLIND
+	return TEAM_PALETTE
+
+
 static func team_color(team: int) -> Color:
 	if team <= 0:
-		return Color(0.55, 0.55, 0.58)
-	var cycle: Array[Color] = [
-		Color(0.22, 0.82, 0.35),
-		Color(0.88, 0.22, 0.20),
-		Color(0.25, 0.48, 0.95),
-		Color(0.95, 0.85, 0.18),
-		Color(0.85, 0.35, 0.85),
-		Color(0.18, 0.82, 0.82),
-		Color(0.95, 0.55, 0.15),
-	]
+		return TEAM_NEUTRAL
+	var cycle := team_palette(Settings.colorblind_teams)
 	return cycle[(team - 1) % cycle.size()]
 
 
@@ -300,17 +391,16 @@ func _apply_style(root: Node3D, selected: bool, hovered: bool) -> void:
 	if not root.has_meta("base_scale"):
 		root.set_meta("base_scale", root.scale)
 	var base_s: Vector3 = root.get_meta("base_scale")
-	if selected:
-		root.scale = base_s * 1.08
-	elif hovered:
+	if hovered and not selected:
 		root.scale = base_s * 1.05
 	else:
 		root.scale = base_s
 	_style_mats(root, selected, hovered)
+	_sync_outline(root, selected)
 
 
 func _style_mats(node: Node, selected: bool, hovered: bool) -> void:
-	if node is MeshInstance3D:
+	if node is MeshInstance3D and str(node.name) != OUTLINE_NAME:
 		var mi := node as MeshInstance3D
 		var mat := mi.material_override as StandardMaterial3D
 		if mat == null:
@@ -320,13 +410,13 @@ func _style_mats(node: Node, selected: bool, hovered: bool) -> void:
 			mat.set_meta("base_albedo", mat.albedo_color)
 		var base: Color = mat.get_meta("base_albedo")
 		if selected:
-			var tinted := base.lerp(Color(1.0, 0.92, 0.15, base.a), 0.62)
+			var tinted := base.lerp(Color(1.0, 0.92, 0.15, base.a), 0.38)
 			tinted.a = base.a
 			mat.albedo_color = tinted
 			mat.emission_enabled = true
 			mat.emission = Color(1.0, 0.88, 0.12)
-			mat.emission_energy_multiplier = 2.6
-			mat.next_pass = _outline_mat()
+			mat.emission_energy_multiplier = 1.15
+			mat.next_pass = null
 		elif hovered:
 			var tinted := base.lerp(Color(0.45, 0.92, 1.0, base.a), 0.42)
 			tinted.a = base.a
@@ -341,21 +431,106 @@ func _style_mats(node: Node, selected: bool, hovered: bool) -> void:
 			mat.emission_energy_multiplier = 1.0
 			mat.next_pass = null
 	for child in node.get_children():
-		if str(child.name) == "VariantTag":
+		if _skip_style(child):
 			continue
 		_style_mats(child, selected, hovered)
 
 
+func _sync_outline(root: Node, selected: bool) -> void:
+	if selected:
+		_ensure_outlines(root)
+	else:
+		_clear_outlines(root)
+
+
+func _ensure_outlines(node: Node) -> void:
+	if node is MeshInstance3D and str(node.name) != OUTLINE_NAME:
+		var mi := node as MeshInstance3D
+		var hull := mi.get_node_or_null(OUTLINE_NAME) as MeshInstance3D
+		if hull == null:
+			hull = MeshInstance3D.new()
+			hull.name = OUTLINE_NAME
+			hull.mesh = mi.mesh
+			hull.material_override = _outline_mat()
+			hull.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			hull.scale = Vector3.ONE * OUTLINE_SCALE
+			mi.add_child(hull)
+		else:
+			hull.mesh = mi.mesh
+			hull.visible = true
+	for child in node.get_children():
+		if _skip_style(child) and str(child.name) != OUTLINE_NAME:
+			continue
+		if str(child.name) == OUTLINE_NAME:
+			continue
+		_ensure_outlines(child)
+
+
+func _clear_outlines(node: Node) -> void:
+	var hull := node.get_node_or_null(OUTLINE_NAME)
+	if hull:
+		node.remove_child(hull)
+		hull.free()
+	for child in node.get_children():
+		if _skip_style(child):
+			continue
+		_clear_outlines(child)
+
+
 func _outline_mat() -> StandardMaterial3D:
-	if _outline == null:
-		_outline = StandardMaterial3D.new()
-		_outline.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		_outline.albedo_color = Color(1.0, 0.94, 0.2)
-		_outline.cull_mode = BaseMaterial3D.CULL_FRONT
-		_outline.grow = true
-		_outline.grow_amount = 0.18
-		_outline.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
-	return _outline
+	if _hull_mat == null:
+		_hull_mat = StandardMaterial3D.new()
+		_hull_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_hull_mat.albedo_color = Color(1.0, 0.88, 0.16)
+		_hull_mat.cull_mode = BaseMaterial3D.CULL_FRONT
+		_hull_mat.grow = false
+		_hull_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+		_hull_mat.no_depth_test = false
+	return _hull_mat
+
+
+func _skip_style(node: Node) -> bool:
+	return str(node.name) in _SKIP_STYLE
+
+
+func _show_label(inst: Node3D, rec: Dictionary) -> void:
+	if rec.is_empty():
+		_hide_label(inst)
+		return
+	var tag := inst.get_node_or_null(LABEL_NAME) as Label3D
+	if tag == null:
+		tag = Label3D.new()
+		tag.name = LABEL_NAME
+		tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		tag.no_depth_test = true
+		tag.font_size = 22
+		tag.pixel_size = 0.038
+		tag.outline_size = 5
+		tag.outline_modulate = Color(0.02, 0.02, 0.04, 0.9)
+		tag.modulate = Color(0.96, 0.96, 0.90, 0.95)
+		tag.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		inst.add_child(tag)
+	tag.visible = true
+	tag.text = SelectionGizmo.label_text_for(rec)
+	var size := _size_for(str(rec.get("prjid", "")))
+	var lift := size.y + 1.6
+	var vtag := inst.get_node_or_null("VariantTag") as Label3D
+	if vtag != null and vtag.visible:
+		lift += 1.4
+	tag.position = Vector3(0.0, lift, 0.0)
+
+
+func _hide_label(inst: Node) -> void:
+	if inst == null:
+		return
+	var tag := inst.get_node_or_null(LABEL_NAME) as Label3D
+	if tag:
+		tag.visible = false
+
+
+func _hide_all_labels() -> void:
+	for id in _by_id.keys():
+		_hide_label(_by_id[id] as Node)
 
 
 func pick(origin: Vector3, direction: Vector3) -> String:
@@ -420,7 +595,7 @@ func _apply_fade(node: Node, faded: bool) -> void:
 			mat.albedo_color = c
 			mat.set_meta("base_albedo", c)
 	for child in node.get_children():
-		if str(child.name) == "VariantTag":
+		if _skip_style(child):
 			continue
 		_apply_fade(child, faded)
 
@@ -451,7 +626,7 @@ func _paint_ghost_mats(node: Node, col: Color) -> void:
 		mat.emission = Color(col.r, col.g, col.b)
 		mat.emission_energy_multiplier = 0.35
 	for child in node.get_children():
-		if str(child.name) == "VariantTag":
+		if _skip_style(child):
 			continue
 		_paint_ghost_mats(child, col)
 
@@ -466,7 +641,7 @@ func _tint_ghost_toward(node: Node, accent: Color, weight: float) -> void:
 			mat.albedo_color = mixed
 			mat.set_meta("base_albedo", mixed)
 	for child in node.get_children():
-		if str(child.name) == "VariantTag":
+		if _skip_style(child):
 			continue
 		_tint_ghost_toward(child, accent, weight)
 
@@ -542,7 +717,7 @@ func _paint_accent(node: Node, col: Color) -> void:
 		mat.albedo_color = painted
 		mat.set_meta("base_albedo", painted)
 	for child in node.get_children():
-		if str(child.name) == "VariantTag":
+		if _skip_style(child):
 			continue
 		_paint_accent(child, col)
 

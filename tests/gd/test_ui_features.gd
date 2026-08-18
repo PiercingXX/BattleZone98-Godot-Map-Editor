@@ -26,8 +26,18 @@ func _enablement(t) -> void:
 	t.ok(_btn(panel, "RemoveWater").disabled)
 	t.ok(_btn(panel, "RemovePlant").disabled)
 	t.ok(_btn(panel, "PaintRegion").disabled, "paint locked with no session")
+	t.ok(_btn(panel, "PaintRegion").icon != null, "Paint region has an icon")
+	t.ok(panel.find_child("WaterIcon", true, false) is TextureRect)
+	t.ok((panel.find_child("WaterIcon", true, false) as TextureRect).texture != null)
+	t.ok((panel.find_child("PlantIcon", true, false) as TextureRect).texture != null)
 	t.ok("Open a map" in _btn(panel, "AddWater").tooltip_text)
 	t.ok("Open a map" in _btn(panel, "PaintRegion").tooltip_text)
+	t.ok(panel.has_method("set_collapsed"))
+	panel.set_collapsed(true)
+	t.ok(not (panel.find_child("WaterList", true, false) as Control).is_visible_in_tree())
+	t.ok(_btn(panel, "PaintRegion").is_visible_in_tree(), "Features header stays")
+	panel.set_collapsed(false)
+	t.ok((panel.find_child("WaterList", true, false) as Control).is_visible_in_tree())
 
 	MapState.has_session = true
 	MapState.stem = "testmap"

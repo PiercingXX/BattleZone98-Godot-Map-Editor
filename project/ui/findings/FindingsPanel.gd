@@ -4,9 +4,12 @@ extends PanelContainer
 signal finding_selected(f: Dictionary)
 signal finding_activated(f: Dictionary)
 signal validate_requested
+signal collapsed_changed(collapsed: bool)
 
 @onready var _list: ItemList = %List
 @onready var _validate: Button = %Validate
+var _collapse: Button
+var _collapsed: bool = false
 
 const _SEVERITY := {
 	"error": Color(0.95, 0.38, 0.34),
@@ -22,6 +25,7 @@ var _empty: bool = true
 
 
 func _ready() -> void:
+	_install_collapse()
 	_validate.pressed.connect(_on_validate)
 	_list.item_selected.connect(_on_selected)
 	_list.item_activated.connect(_on_activated)
@@ -30,8 +34,42 @@ func _ready() -> void:
 	Backend.call_finished.connect(func(_v, _r): _busy = false; _refresh_validate())
 	Backend.call_failed.connect(func(_v, _e): _busy = false; _refresh_validate())
 	_refresh_validate()
+	if _validate and _validate.icon == null:
+		EditorIcons.apply_button(_validate, "validate", true)
+	if _validate:
+		_validate.clip_text = false
 	if _list.item_count == 0:
 		set_findings([], false)
+
+
+func is_collapsed() -> bool:
+	return _collapsed
+
+
+func set_collapsed(on: bool) -> void:
+	if _collapsed == on:
+		return
+	_collapsed = on
+	_apply_collapse()
+	collapsed_changed.emit(on)
+
+
+func _install_collapse() -> void:
+	var title := find_child("Title", true, false) as Label
+	if title == null:
+		return
+	_collapse = PanelCollapse.make_toggle("Findings", true)
+	var parent := title.get_parent()
+	parent.add_child(_collapse)
+	parent.move_child(_collapse, title.get_index())
+	title.visible = false
+	_collapse.toggled.connect(func(on: bool) -> void: set_collapsed(not on))
+
+
+func _apply_collapse() -> void:
+	if _list:
+		_list.visible = not _collapsed
+	PanelCollapse.apply_toggle(_collapse, "Findings", not _collapsed)
 
 
 func set_findings(list: Array, stale: bool) -> void:

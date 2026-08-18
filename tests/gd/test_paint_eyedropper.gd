@@ -99,8 +99,8 @@ func _dispatch(t) -> void:
 	ev.alt_pressed = true
 	scene._on_view_gui_input(ev)
 	t.ok(not bool(scene.get("_stroking")), "Alt+LMB does not start a paint stroke")
-	var console: TextEdit = scene.find_child("Console", true, false)
-	t.ok(console != null and "nothing to sample" in console.text, "miss logs instead of painting")
+	var console: Node = scene.find_child("Console", true, false)
+	t.ok(console != null and "nothing to sample" in str(console.get("text")), "miss logs instead of painting")
 
 	scene.queue_free()
 	await t.tree.process_frame

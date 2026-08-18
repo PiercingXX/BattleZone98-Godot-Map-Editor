@@ -220,9 +220,11 @@ func _snapshot() -> Dictionary:
 	return {
 		"enabled": BalanceOverlay.enabled,
 		"session": MapState.has_session,
+		"view_balance": Settings.view_balance,
 	}
 
 
 func _restore(snap: Dictionary) -> void:
 	BalanceOverlay.enabled = bool(snap["enabled"])
+	Settings.view_balance = bool(snap.get("view_balance", false))
 	MapState.has_session = bool(snap["session"])

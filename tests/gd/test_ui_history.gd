@@ -19,8 +19,13 @@ func run(t) -> void:
 
 	toggle.button_pressed = false
 	t.ok(not list.visible, "collapse hides the list")
+	t.ok(panel.is_collapsed())
 	toggle.button_pressed = true
 	t.ok(list.visible)
+	t.ok(not panel.is_collapsed())
+	panel.set_collapsed(true)
+	t.ok(not list.visible)
+	t.ok("▸" in toggle.text)
 
 	var log: Array = []
 	UndoStack.push(_Cmd.new(log, "a"))

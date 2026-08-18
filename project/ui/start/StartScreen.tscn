@@ -1,0 +1,124 @@
+[gd_scene load_steps=2 format=3 uid="uid://c8bzstart000001"]
+
+[ext_resource type="Script" path="res://project/ui/start/StartScreen.gd" id="1_script"]
+
+[node name="StartScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+z_index = 40
+script = ExtResource("1_script")
+
+[node name="Dim" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.07, 0.075, 0.085, 0.92)
+
+[node name="Scroll" type="ScrollContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_scroll_mode = 0
+
+[node name="Center" type="CenterContainer" parent="Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Card" type="PanelContainer" parent="Scroll/Center"]
+custom_minimum_size = Vector2(560, 0)
+layout_mode = 2
+
+[node name="Pad" type="MarginContainer" parent="Scroll/Center/Card"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="Col" type="VBoxContainer" parent="Scroll/Center/Card/Pad"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="Scroll/Center/Card/Pad/Col"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "BattleZone 98 Godot Map Editor"
+
+[node name="Version" type="Label" parent="Scroll/Center/Card/Pad/Col"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.62, 0.64, 1)
+text = "v0.08"
+
+[node name="Actions" type="HBoxContainer" parent="Scroll/Center/Card/Pad/Col"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="New" type="Button" parent="Scroll/Center/Card/Pad/Col/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "New"
+
+[node name="Open" type="Button" parent="Scroll/Center/Card/Pad/Col/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Open"
+
+[node name="Gallery" type="Button" parent="Scroll/Center/Card/Pad/Col/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Gallery"
+
+[node name="Hints" type="VBoxContainer" parent="Scroll/Center/Card/Pad/Col"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="RecentsLabel" type="Label" parent="Scroll/Center/Card/Pad/Col"]
+layout_mode = 2
+text = "Recent Maps"
+
+[node name="RecentsEmpty" type="Label" parent="Scroll/Center/Card/Pad/Col"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.62, 0.64, 1)
+text = "No recent maps."
+
+[node name="Recents" type="VBoxContainer" parent="Scroll/Center/Card/Pad/Col"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TemplatesLabel" type="Label" parent="Scroll/Center/Card/Pad/Col"]
+layout_mode = 2
+text = "Templates"
+
+[node name="TemplatesEmpty" type="Label" parent="Scroll/Center/Card/Pad/Col"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.62, 0.64, 1)
+text = "No templates."
+
+[node name="Templates" type="HBoxContainer" parent="Scroll/Center/Card/Pad/Col"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8

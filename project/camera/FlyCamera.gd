@@ -1,17 +1,35 @@
 extends Camera3D
 class_name FlyCamera
-## RMB look, wheel zoom, MMB orbit, WASD fly.
+## RMB look, wheel zoom, MMB orbit, WASD fly. Ortho map mode is north-up.
 
 signal speed_changed(mps: float)
+signal map_mode_changed(on: bool)
+
+const MAP_CAM_Y := 2500.0
+const MAP_SIZE_MIN := 40.0
+const MAP_SIZE_MAX := 20000.0
+const ZOOM_FACTOR := 0.85
+const HOVER_LIFT_M := 40.0
+const HOVER_BACK_M := 40.0
+## Godot identity looks −Z (south). Yaw π faces +Z (north).
+const NORTH_YAW := PI
+const COMPASS_HUB_RATIO := 0.28
 
 var base_speed: float = 80.0
 var looking: bool = false
 var orbiting: bool = false
+var panning: bool = false
 var pivot: Vector3 = Vector3.ZERO
+var map_mode: bool = false
 var _look_sens: float = 0.003
+var _saved_3d: Dictionary = {}
+var _map_size: float = 800.0
 
 
 func handle_event(event: InputEvent) -> void:
+	if map_mode:
+		_handle_map_event(event)
+		return
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
@@ -33,14 +51,55 @@ func handle_event(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
 		if looking:
-			rotate_y(-mm.relative.x * _look_sens)
-			rotation.x = clampf(rotation.x - mm.relative.y * _look_sens, -1.35, 1.35)
+			rotate_y(look_yaw_delta(mm.relative.x, _look_sens))
+			rotation.x = clampf(
+				rotation.x + look_pitch_delta(mm.relative.y, Settings.invert_look, _look_sens),
+				-1.35,
+				1.35,
+			)
 		elif orbiting:
 			_orbit(mm.relative)
 
 
+func _handle_map_event(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_MIDDLE:
+			if mb.pressed:
+				begin_pan()
+			else:
+				end_pan()
+		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
+			zoom_to_cursor(-1.0)
+		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			zoom_to_cursor(1.0)
+	elif event is InputEventMouseMotion:
+		if panning:
+			pan_by_pixels((event as InputEventMouseMotion).relative)
+
+
+func begin_pan() -> void:
+	if not map_mode:
+		return
+	panning = true
+	looking = false
+	orbiting = false
+	_end_pointer_capture()
+
+
+func end_pan() -> void:
+	panning = false
+	_end_pointer_capture()
+
+
+func _end_pointer_capture() -> void:
+	looking = false
+	orbiting = false
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
 func _dolly(sign: float) -> void:
-	var step := maxf(8.0, base_speed * 0.35) * sign
+	var step := maxf(8.0, base_speed * Settings.coerce_camera_speed(Settings.camera_speed_mul) * 0.35) * sign
 	global_position += global_transform.basis.z * step
 
 
@@ -63,6 +122,9 @@ func _orbit(rel: Vector2) -> void:
 func _process(delta: float) -> void:
 	if _text_focused():
 		return
+	if map_mode:
+		_process_map_pan(delta)
+		return
 	var wish := Vector3.ZERO
 	if Input.is_key_pressed(KEY_W):
 		wish -= global_transform.basis.z
@@ -78,22 +140,64 @@ func _process(delta: float) -> void:
 		wish -= Vector3.UP
 	if wish.length_squared() < 0.0001:
 		return
-	var mul := 1.0
-	if Input.is_key_pressed(KEY_SHIFT):
-		mul = 4.0
-	elif Input.is_key_pressed(KEY_CTRL):
-		mul = 0.25
+	var mul := speed_multiplier(
+		Input.is_key_pressed(KEY_SHIFT),
+		Input.is_key_pressed(KEY_CTRL),
+		Settings.coerce_camera_speed(Settings.camera_speed_mul),
+	)
 	global_position += wish.normalized() * base_speed * mul * delta
 	if Settings.walk_mode and MapState.has_session and MapState.field.grid_x > 1:
 		var ground := MapState.field.height_at(global_position.x, global_position.z)
 		global_position.y = maxf(global_position.y, ground + 4.0)
 
 
+func _process_map_pan(delta: float) -> void:
+	var wish := Vector2.ZERO
+	if Input.is_key_pressed(KEY_W):
+		wish.y += 1.0
+	if Input.is_key_pressed(KEY_S):
+		wish.y -= 1.0
+	if Input.is_key_pressed(KEY_A):
+		wish.x -= 1.0
+	if Input.is_key_pressed(KEY_D):
+		wish.x += 1.0
+	if wish.length_squared() < 0.0001:
+		return
+	var mul := speed_multiplier(
+		Input.is_key_pressed(KEY_SHIFT),
+		Input.is_key_pressed(KEY_CTRL),
+		Settings.coerce_camera_speed(Settings.camera_speed_mul),
+	)
+	var step := wish.normalized() * base_speed * mul * delta
+	global_position.x += step.x
+	global_position.z += step.y
+	pivot.x = global_position.x
+	pivot.z = global_position.z
+	_apply_map_orientation()
+
+
 func frame_map(width_m: float, depth_m: float, height_m: float) -> void:
 	base_speed = maxf(40.0, maxf(width_m, depth_m) * 0.08)
+	if map_mode:
+		frame_map_ortho(width_m, depth_m)
+		return
 	pivot = Vector3(width_m * 0.5, height_m, depth_m * 0.5)
 	global_position = Vector3(width_m * 0.5, height_m + maxf(120.0, depth_m * 0.22), depth_m * -0.02)
 	look_at(pivot, Vector3.UP)
+	speed_changed.emit(base_speed)
+
+
+func frame_map_ortho(width_m: float, depth_m: float) -> void:
+	var aspect := 16.0 / 9.0
+	if is_inside_tree():
+		var r := get_viewport().get_visible_rect().size
+		if r.y > 1.0:
+			aspect = r.x / r.y
+	size = ortho_frame_size(width_m, depth_m, aspect)
+	_map_size = size
+	global_position = Vector3(width_m * 0.5, MAP_CAM_Y, depth_m * 0.5)
+	pivot = Vector3(width_m * 0.5, 0.0, depth_m * 0.5)
+	_apply_map_orientation()
 	speed_changed.emit(base_speed)
 
 
@@ -102,6 +206,233 @@ func top_down(width_m: float, depth_m: float) -> void:
 	global_position = Vector3(width_m * 0.5, maxf(width_m, depth_m) * 0.95, depth_m * 0.5)
 	look_at(pivot, Vector3.FORWARD)
 	speed_changed.emit(base_speed)
+
+
+func set_map_mode(on: bool) -> void:
+	if map_mode == on:
+		return
+	if on:
+		_saved_3d = _pose_dict()
+		map_mode = true
+		projection = PROJECTION_ORTHOGONAL
+		var focus := Vector2(pivot.x, pivot.z)
+		_map_size = clampf(maxf(global_position.y * 1.15, 80.0), MAP_SIZE_MIN, MAP_SIZE_MAX)
+		size = _map_size
+		global_position = Vector3(focus.x, MAP_CAM_Y, focus.y)
+		pivot = Vector3(focus.x, 0.0, focus.y)
+		_apply_map_orientation()
+		panning = false
+		_end_pointer_capture()
+	else:
+		map_mode = false
+		panning = false
+		_end_pointer_capture()
+		_restore_3d_pose()
+	map_mode_changed.emit(map_mode)
+
+
+func hover_point(world: Vector3) -> void:
+	pivot = world
+	if map_mode:
+		global_position.x = world.x
+		global_position.z = world.z
+		global_position.y = MAP_CAM_Y
+		_apply_map_orientation()
+		return
+	global_position = hover_perspective_position(world)
+	look_at(world, Vector3.UP)
+
+
+func snap_yaw_north() -> void:
+	if map_mode:
+		_apply_map_orientation()
+		return
+	rotation.y = NORTH_YAW
+
+
+func zoom_to_cursor(wheel_sign: float) -> void:
+	if not map_mode:
+		_dolly(wheel_sign)
+		return
+	var mouse := Vector2.ZERO
+	if is_inside_tree():
+		mouse = get_viewport().get_mouse_position()
+	var old_size := size
+	var new_size := ortho_zoom_size(old_size, wheel_sign)
+	var before := _ground_xz_at_screen(mouse)
+	size = new_size
+	_map_size = new_size
+	var after := _ground_xz_at_screen(mouse)
+	global_position.x += before.x - after.x
+	global_position.z += before.y - after.y
+	pivot.x = global_position.x
+	pivot.z = global_position.z
+	_apply_map_orientation()
+
+
+func pan_by_pixels(rel: Vector2) -> void:
+	if not map_mode:
+		return
+	var height := 1.0
+	if is_inside_tree():
+		height = get_viewport().get_visible_rect().size.y
+	var d := ortho_pan_delta(rel, size, height)
+	global_position.x += d.x
+	global_position.z += d.y
+	pivot.x = global_position.x
+	pivot.z = global_position.z
+	_apply_map_orientation()
+
+
+func _apply_map_orientation() -> void:
+	var origin := Vector3(global_position.x, global_position.y, global_position.z)
+	var xf := Transform3D(map_mode_basis(), origin)
+	global_transform = xf
+
+
+func _ground_xz_at_screen(screen: Vector2) -> Vector2:
+	if not is_inside_tree():
+		return Vector2(global_position.x, global_position.z)
+	var origin := project_ray_origin(screen)
+	var dir := project_ray_normal(screen)
+	if absf(dir.y) < 0.0000001:
+		return Vector2(origin.x, origin.z)
+	var t := (0.0 - origin.y) / dir.y
+	var p := origin + dir * t
+	return Vector2(p.x, p.z)
+
+
+func _pose_dict() -> Dictionary:
+	var pos := global_position if is_inside_tree() else position
+	var d := make_bookmark(pos, rotation, pivot)
+	d["map_mode"] = map_mode
+	d["size"] = size
+	d["fov"] = fov
+	d["projection"] = projection
+	return d
+
+
+func _restore_3d_pose() -> void:
+	if _saved_3d.is_empty():
+		projection = PROJECTION_PERSPECTIVE
+		return
+	projection = int(_saved_3d.get("projection", PROJECTION_PERSPECTIVE))
+	if _saved_3d.has("fov"):
+		fov = float(_saved_3d["fov"])
+	if _saved_3d.has("size"):
+		size = float(_saved_3d["size"])
+	_apply_pose_transform(_saved_3d)
+
+
+func _apply_pose_transform(d: Dictionary) -> void:
+	var pos := bookmark_position(d)
+	if is_inside_tree():
+		global_position = pos
+	else:
+		position = pos
+	rotation = bookmark_rotation(d)
+	pivot = bookmark_pivot(d)
+
+
+static func map_mode_basis() -> Basis:
+	## Screen-right = +x (east), screen-up = +z (north), look = −y.
+	## Left-handed so both north-up and east-right hold when looking down.
+	return Basis(Vector3(1.0, 0.0, 0.0), Vector3(0.0, 0.0, 1.0), Vector3(0.0, 1.0, 0.0))
+
+
+static func hover_perspective_position(world: Vector3) -> Vector3:
+	return Vector3(world.x, world.y + HOVER_LIFT_M, world.z - HOVER_BACK_M)
+
+
+static func north_yaw() -> float:
+	return NORTH_YAW
+
+
+static func look_dir_from_basis_z(basis_z: Vector3) -> Vector3:
+	return Vector3(-basis_z.x, 0.0, -basis_z.z)
+
+
+static func rose_radians_from_look(look: Vector3) -> float:
+	## 0 when facing +z (north); Godot 2D-positive (clockwise) so N stays screen-up.
+	if look.x * look.x + look.z * look.z < 0.0000001:
+		return 0.0
+	return -atan2(look.x, look.z)
+
+
+static func compass_hit(local: Vector2, widget_size: Vector2, rose_radians: float) -> String:
+	if widget_size.x < 2.0 or widget_size.y < 2.0:
+		return ""
+	var center := widget_size * 0.5
+	var delta := local - center
+	var radius := minf(widget_size.x, widget_size.y) * 0.5
+	var dist := delta.length()
+	if dist > radius:
+		return ""
+	if dist <= radius * COMPASS_HUB_RATIO:
+		return "center"
+	var unrot := delta.rotated(-rose_radians)
+	if absf(unrot.y) >= absf(unrot.x):
+		return "n" if unrot.y < 0.0 else "s"
+	return "e" if unrot.x >= 0.0 else "w"
+
+
+static func ortho_zoom_size(current_size: float, wheel_sign: float) -> float:
+	var factor := ZOOM_FACTOR if wheel_sign < 0.0 else 1.0 / ZOOM_FACTOR
+	return clampf(current_size * factor, MAP_SIZE_MIN, MAP_SIZE_MAX)
+
+
+static func zoom_keep_point(old_size: float, new_size: float, cam_xz: Vector2, point_xz: Vector2) -> Vector2:
+	if old_size <= 0.0001:
+		return cam_xz
+	return point_xz - (point_xz - cam_xz) * (new_size / old_size)
+
+
+static func ortho_pan_delta(mouse_delta: Vector2, ortho_size: float, viewport_height: float) -> Vector2:
+	## Content follows the cursor. North-up, east-right: +x screen = +x world.
+	if viewport_height <= 0.0001:
+		return Vector2.ZERO
+	var wpp := ortho_size / viewport_height
+	return Vector2(-mouse_delta.x * wpp, mouse_delta.y * wpp)
+
+
+static func ortho_frame_size(width_m: float, depth_m: float, aspect: float) -> float:
+	var pad := 1.08
+	var need_v := depth_m * pad
+	var need_from_h := (width_m * pad) / maxf(aspect, 0.05)
+	return clampf(maxf(need_v, need_from_h), MAP_SIZE_MIN, MAP_SIZE_MAX)
+
+
+static func look_yaw_delta(rel_x: float, sens: float) -> float:
+	return -rel_x * sens
+
+
+static func look_pitch_delta(rel_y: float, invert: bool, sens: float) -> float:
+	var sign := 1.0 if invert else -1.0
+	return sign * rel_y * sens
+
+
+static func speed_multiplier(sprint: bool, slow: bool, settings_mul: float) -> float:
+	var m := settings_mul
+	if sprint:
+		m *= 4.0
+	elif slow:
+		m *= 0.25
+	return m
+
+
+static func parse_goto(text: String) -> Vector2:
+	## "x, z" (comma or whitespace). First two floats. INF on failure.
+	var s := text.strip_edges()
+	if s.is_empty():
+		return Vector2.INF
+	s = s.replace(",", " ")
+	s = s.replace(";", " ")
+	var parts := s.split(" ", false)
+	if parts.size() < 2:
+		return Vector2.INF
+	if not str(parts[0]).is_valid_float() or not str(parts[1]).is_valid_float():
+		return Vector2.INF
+	return Vector2(str(parts[0]).to_float(), str(parts[1]).to_float())
 
 
 static func make_bookmark(pos: Vector3, rot: Vector3, pivot_pt: Vector3) -> Dictionary:
@@ -132,22 +463,38 @@ static func _vec3_from(v: Variant, fallback: Vector3) -> Vector3:
 
 
 func capture_bookmark() -> Dictionary:
-	var pos := global_position if is_inside_tree() else position
-	return make_bookmark(pos, rotation, pivot)
+	return _pose_dict()
 
 
 func apply_bookmark(d: Dictionary) -> void:
 	if d.is_empty():
 		return
-	var pos := bookmark_position(d)
-	if is_inside_tree():
-		global_position = pos
+	var want_map := bool(d.get("map_mode", false))
+	var was_map := map_mode
+	if want_map:
+		if not map_mode:
+			_saved_3d = _pose_dict()
+		map_mode = true
+		projection = PROJECTION_ORTHOGONAL
+		_apply_pose_transform(d)
+		if d.has("size"):
+			size = maxf(float(d["size"]), MAP_SIZE_MIN)
+			_map_size = size
+		global_position.y = MAP_CAM_Y
+		_apply_map_orientation()
 	else:
-		position = pos
-	rotation = bookmark_rotation(d)
-	pivot = bookmark_pivot(d)
+		map_mode = false
+		panning = false
+		projection = int(d.get("projection", PROJECTION_PERSPECTIVE))
+		if d.has("fov"):
+			fov = float(d["fov"])
+		_apply_pose_transform(d)
+		if was_map:
+			_end_pointer_capture()
+	if was_map != map_mode:
+		map_mode_changed.emit(map_mode)
 
 
 func _text_focused() -> bool:
 	var focus := get_viewport().gui_get_focus_owner()
-	return focus is LineEdit or focus is TextEdit or focus is SpinBox or focus is TextEdit
+	return focus is LineEdit or focus is TextEdit or focus is SpinBox or focus is RichTextLabel

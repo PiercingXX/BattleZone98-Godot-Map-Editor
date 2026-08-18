@@ -308,6 +308,7 @@ func _view_menu(t) -> void:
 	await t.tree.process_frame
 	MapState.has_session = saved_session
 	AiPathOverlay.enabled = false
+	Settings.view_aipaths = false
 
 
 func _fixture_two_paths() -> String:

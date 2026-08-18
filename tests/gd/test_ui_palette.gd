@@ -28,6 +28,12 @@ func run(t) -> void:
 	var list: ItemList = pal.find_child("ClassList", true, false)
 	t.ok(list.item_count >= 1, "empty placeholder present")
 	t.ok(list.is_item_disabled(0), "placeholder disabled")
+	t.ok(pal.has_method("set_collapsed"))
+	pal.set_collapsed(true)
+	t.ok(not (pal.find_child("FlyHint", true, false) as Control).is_visible_in_tree())
+	t.ok((pal.find_child("Collapse", true, false) as Button).is_visible_in_tree())
+	pal.set_collapsed(false)
+	t.ok((pal.find_child("FlyHint", true, false) as Control).is_visible_in_tree())
 
 	var index := {
 		"classes": [
@@ -114,6 +120,9 @@ func run(t) -> void:
 	var cat: OptionButton = pal.find_child("CategoryFilter", true, false)
 	var clone: CheckBox = pal.find_child("CloneSafe", true, false)
 	t.ok(cat != null and clone != null, "filter controls exist")
+	t.ok(search.right_icon != null, "search field has a search icon")
+	t.ok(cat.icon != null, "category filter has an icon")
+	t.ok((pal.find_child("PaletteIcon", true, false) as TextureRect).texture != null)
 	t.eq(cat.get_item_text(0), "All")
 	t.eq(cat.item_count, 3, "All + categories present in the index")
 	t.ok(_select_option(cat, "craft") >= 0)
@@ -254,6 +263,12 @@ func _visibility_matrix(t, pal: Node) -> void:
 	t.ok(hint != null and hint.is_visible_in_tree())
 	t.ok("nudge" in hint.text.to_lower())
 	t.ok("rotate" in hint.text.to_lower())
+	var snap_grid: OptionButton = pal.find_child("SnapGrid", true, false)
+	var snap_ang: OptionButton = pal.find_child("SnapAngle", true, false)
+	t.ok(snap_grid != null and snap_grid.is_visible_in_tree(), "select shows grid snap")
+	t.ok(snap_ang != null and snap_ang.is_visible_in_tree(), "select shows angle snap")
+	t.eq(snap_grid.item_count, 5)
+	t.eq(snap_ang.item_count, 4)
 	MapState.selected_ids = ["a"] as Array[String]
 	pal.refresh_context()
 	t.eq(summary.text, "1 selected")

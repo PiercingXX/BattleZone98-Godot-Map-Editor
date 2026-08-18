@@ -20,6 +20,12 @@ func run(t) -> void:
 
 	t.ok(_btn(insp, "Apply").disabled, "Apply disabled with no selection")
 	t.ok(_btn(insp, "Delete").disabled, "Delete disabled with no selection")
+	t.ok(insp.has_method("set_collapsed"))
+	insp.set_collapsed(true)
+	t.ok(not _btn(insp, "Apply").is_visible_in_tree(), "Inspector collapse hides the body")
+	t.ok((insp.find_child("Collapse", true, false) as Button).is_visible_in_tree())
+	insp.set_collapsed(false)
+	t.ok(_btn(insp, "Apply").is_visible_in_tree())
 	t.ok(_btn(insp, "Team0") != null and _btn(insp, "Team4") != null, "team quick-set row")
 	t.ok(_btn(insp, "Team0").disabled, "team 0 locked with no selection")
 	t.ok(not (insp.find_child("Label", true, false) as LineEdit).editable)

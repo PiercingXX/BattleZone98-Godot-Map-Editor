@@ -1,6 +1,11 @@
-[gd_scene load_steps=3 format=3 uid="uid://c8bzpalette0001"]
+[gd_scene load_steps=8 format=3 uid="uid://c8bzpalette0001"]
 
 [ext_resource type="Script" path="res://project/ui/palette/PalettePanel.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://project/ui/icons/search.svg" id="2_search"]
+[ext_resource type="Texture2D" path="res://project/ui/icons/filter.svg" id="3_filter"]
+[ext_resource type="Texture2D" path="res://project/ui/icons/place.svg" id="4_place"]
+[ext_resource type="Texture2D" path="res://project/ui/icons/raise.svg" id="5_raise"]
+[ext_resource type="Texture2D" path="res://project/ui/icons/eyedropper.svg" id="6_drop"]
 
 [sub_resource type="ButtonGroup" id="ShapeGroup"]
 
@@ -55,14 +60,27 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 8
 
-[node name="PaletteLabel" type="Label" parent="Box/PaletteSection"]
+[node name="PaletteHead" type="HBoxContainer" parent="Box/PaletteSection"]
 layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="PaletteIcon" type="TextureRect" parent="Box/PaletteSection/PaletteHead"]
+custom_minimum_size = Vector2(16, 16)
+layout_mode = 2
+mouse_filter = 2
+texture = ExtResource("4_place")
+stretch_mode = 5
+
+[node name="PaletteLabel" type="Label" parent="Box/PaletteSection/PaletteHead"]
+layout_mode = 2
+size_flags_horizontal = 3
 text = "Palette"
 
 [node name="Search" type="LineEdit" parent="Box/PaletteSection"]
 unique_name_in_owner = true
 layout_mode = 2
 placeholder_text = "Search units…"
+right_icon = ExtResource("2_search")
 
 [node name="FilterRow" type="HBoxContainer" parent="Box/PaletteSection"]
 layout_mode = 2
@@ -73,6 +91,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 tooltip_text = "Filter the unit list by category"
+icon = ExtResource("3_filter")
 
 [node name="CloneSafe" type="CheckBox" parent="Box/PaletteSection/FilterRow"]
 unique_name_in_owner = true
@@ -92,8 +111,20 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="BrushLabel" type="Label" parent="Box/BrushSection"]
+[node name="BrushHead" type="HBoxContainer" parent="Box/BrushSection"]
 layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="BrushIcon" type="TextureRect" parent="Box/BrushSection/BrushHead"]
+custom_minimum_size = Vector2(16, 16)
+layout_mode = 2
+mouse_filter = 2
+texture = ExtResource("5_raise")
+stretch_mode = 5
+
+[node name="BrushLabel" type="Label" parent="Box/BrushSection/BrushHead"]
+layout_mode = 2
+size_flags_horizontal = 3
 text = "Brush"
 
 [node name="RadiusRow" type="HBoxContainer" parent="Box/BrushSection"]
@@ -185,8 +216,20 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="MatsLabel" type="Label" parent="Box/MatsSection"]
+[node name="MatsHead" type="HBoxContainer" parent="Box/MatsSection"]
 layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="MatsIcon" type="TextureRect" parent="Box/MatsSection/MatsHead"]
+custom_minimum_size = Vector2(16, 16)
+layout_mode = 2
+mouse_filter = 2
+texture = ExtResource("6_drop")
+stretch_mode = 5
+
+[node name="MatsLabel" type="Label" parent="Box/MatsSection/MatsHead"]
+layout_mode = 2
+size_flags_horizontal = 3
 text = "Materials"
 
 [node name="Swatches" type="GridContainer" parent="Box/MatsSection"]

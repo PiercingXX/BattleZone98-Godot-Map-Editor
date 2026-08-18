@@ -14,6 +14,7 @@ signal variant_changed
 signal undo_requested
 signal redo_requested
 signal frame_requested
+signal map_mode_requested
 signal view_changed
 signal test_requested
 
@@ -30,6 +31,7 @@ const MORE_EXPORT_HEIGHTMAP := 9
 const MORE_IMPORT_HEIGHTMAP := 10
 const MORE_PUBLISH := 11
 const MORE_SCREENSHOT := 12
+const MORE_PREFS := 13
 const OPEN_BROWSE_ID := 0
 const OPEN_GALLERY_ID := 1
 const VIEW_GEYSERS := 0
@@ -52,6 +54,8 @@ var _open_menu: PopupMenu
 var _scheme_menu: PopupMenu
 var _view_menu: PopupMenu
 var _btn_test: Button
+var _btn_map: Button
+var _map_mode: bool = false
 
 @onready var _map_label: Label = %MapLabel
 @onready var _variant: OptionButton = %Variant
@@ -71,6 +75,7 @@ func _ready() -> void:
 	_install_open_menu()
 	_install_view_menu()
 	_install_test_button()
+	_install_map_button()
 	%New.pressed.connect(func(): new_requested.emit())
 	%Save.pressed.connect(func(): save_requested.emit())
 	%Validate.pressed.connect(func(): validate_requested.emit())
@@ -91,6 +96,7 @@ func _ready() -> void:
 	pop.add_item("Export heightmap PNG…", MORE_EXPORT_HEIGHTMAP)
 	pop.add_item("Import heightmap PNG…", MORE_IMPORT_HEIGHTMAP)
 	pop.add_item("Hotkeys  F1", MORE_HELP)
+	pop.add_item("Preferences…", MORE_PREFS)
 	_scheme_menu = PopupMenu.new()
 	_scheme_menu.name = "KeymapScheme"
 	_scheme_menu.add_radio_check_item("Godot", MORE_SCHEME_GODOT)
@@ -106,6 +112,7 @@ func _ready() -> void:
 	)
 	pop.about_to_popup.connect(_refresh_more)
 	_install_extra_tools()
+	_apply_chrome_icons()
 	for child in _tools.get_children():
 		if child is Button:
 			var tool_name := String(child.name).to_lower()
@@ -142,7 +149,8 @@ func _install_extra_tools() -> void:
 		b.name = id
 		b.text = str(spec.get("text", id))
 		b.toggle_mode = true
-		b.focus_mode = Control.FOCUS_NONE
+		b.focus_mode = Control.FOCUS_ALL
+		b.theme_type_variation = "ToolButton"
 		if group:
 			b.button_group = group
 		_tools.add_child(b)
@@ -155,6 +163,7 @@ func _install_test_button() -> void:
 	_btn_test.name = "Test"
 	_btn_test.text = "Test"
 	_btn_test.pressed.connect(_on_test)
+	EditorIcons.apply_button(_btn_test, "test", true)
 	var parent := _btn_validate.get_parent()
 	parent.add_child(_btn_test)
 	parent.move_child(_btn_test, _btn_validate.get_index() + 1)
@@ -207,6 +216,8 @@ func _on_view_id(id: int) -> void:
 		return
 	if id == VIEW_GHOST_VARIANTS:
 		ObjectMarkers.ghost_other_variants = not ObjectMarkers.ghost_other_variants
+		Settings.view_ghost_variants = ObjectMarkers.ghost_other_variants
+		Settings.save()
 		EditorFeedback.log("view ghost_other_variants %s" % (
 			"on" if ObjectMarkers.ghost_other_variants else "off"
 		))
@@ -217,6 +228,8 @@ func _on_view_id(id: int) -> void:
 		if not MapState.has_session:
 			return
 		BalanceOverlay.enabled = not BalanceOverlay.enabled
+		Settings.view_balance = BalanceOverlay.enabled
+		Settings.save()
 		EditorFeedback.log("view balance %s" % ("on" if BalanceOverlay.enabled else "off"))
 		view_changed.emit()
 		_refresh_view_menu()
@@ -225,6 +238,8 @@ func _on_view_id(id: int) -> void:
 		if not MapState.has_session:
 			return
 		AiPathOverlay.enabled = not AiPathOverlay.enabled
+		Settings.view_aipaths = AiPathOverlay.enabled
+		Settings.save()
 		EditorFeedback.log("view aipaths %s" % ("on" if AiPathOverlay.enabled else "off"))
 		view_changed.emit()
 		_refresh_view_menu()
@@ -422,6 +437,53 @@ func _on_frame() -> void:
 	frame_requested.emit()
 
 
+func _install_map_button() -> void:
+	if _btn_frame == null:
+		return
+	_btn_map = Button.new()
+	_btn_map.name = "MapMode"
+	_btn_map.toggle_mode = true
+	_btn_map.focus_mode = Control.FOCUS_ALL
+	_btn_map.text = "3D"
+	_btn_map.pressed.connect(_on_map_mode)
+	var parent := _btn_frame.get_parent()
+	parent.add_child(_btn_map)
+	parent.move_child(_btn_map, _btn_frame.get_index() + 1)
+	_refresh_map_button()
+
+
+func _on_map_mode() -> void:
+	if _btn_map != null and _btn_map.disabled:
+		set_map_mode(_map_mode)
+		return
+	if not MapState.has_session:
+		EditorFeedback.log("open a map first")
+		set_map_mode(false)
+		return
+	map_mode_requested.emit()
+
+
+func set_map_mode(on: bool) -> void:
+	_map_mode = on
+	_refresh_map_button()
+
+
+func _refresh_map_button() -> void:
+	if _btn_map == null:
+		return
+	_btn_map.set_pressed_no_signal(_map_mode)
+	_btn_map.text = "2D" if _map_mode else "3D"
+	var session := MapState.has_session
+	_btn_map.disabled = not session
+	if session:
+		_btn_map.tooltip_text = "%s map mode  (%s)" % [
+			"2D" if _map_mode else "3D",
+			Keymap.format_action(Keymap.ACTION_MAP_MODE),
+		]
+	else:
+		_btn_map.tooltip_text = "Open a map first"
+
+
 func set_map_label(text: String) -> void:
 	_map_label.text = text
 
@@ -480,6 +542,7 @@ func _refresh_actions() -> void:
 		_btn_open.tooltip_text = "Busy…" if _busy else "Open a map"
 	if _btn_new:
 		_btn_new.disabled = _busy
+		_btn_new.tooltip_text = "Busy…" if _busy else "New map"
 	if _btn_save:
 		_btn_save.disabled = not can_act
 		_btn_save.tooltip_text = "Save  (%s)" % Keymap.format_action(Keymap.ACTION_SAVE) if can_act else (
@@ -500,7 +563,12 @@ func _refresh_actions() -> void:
 	if _btn_frame:
 		_btn_frame.disabled = not session
 		_btn_frame.tooltip_text = "Frame the map  (%s)" % Keymap.format_action(Keymap.ACTION_FRAME) if session else "Open a map first"
+	_refresh_map_button()
 	_refresh_tool_tips()
+	if _more:
+		_more.tooltip_text = "More"
+	if _view:
+		_view.tooltip_text = "View filters"
 	if _variant:
 		_variant.disabled = not session or _variant.item_count == 0
 		_variant.tooltip_text = "Active variant (DM / _S / _ST / _SW)" if session else "Open a map first"
@@ -557,6 +625,7 @@ func _refresh_more() -> void:
 	_set_more_item(pop, MORE_EXPORT_HEIGHTMAP, hmap_ok, hmap_tip)
 	_set_more_item(pop, MORE_IMPORT_HEIGHTMAP, hmap_ok, hmap_tip)
 	_set_more_item(pop, MORE_HELP, true, "Keyboard reference  (%s)" % Keymap.format_action(Keymap.ACTION_HELP))
+	_set_more_item(pop, MORE_PREFS, true, "Editor preferences")
 	_refresh_scheme_menu()
 
 
@@ -571,6 +640,7 @@ func _set_more_item(pop: PopupMenu, id: int, enabled: bool, disabled_tip: String
 func refresh_keymap() -> void:
 	_refresh_scheme_menu()
 	_refresh_tool_tips()
+	_refresh_map_button()
 	_refresh_more()
 
 
@@ -618,3 +688,31 @@ func _refresh_tool_tips() -> void:
 		(node as Button).tooltip_text = "%s  (%s)" % [
 			caption, Keymap.format_action(str(labels[node_name])),
 		]
+
+
+func _apply_chrome_icons() -> void:
+	EditorIcons.apply_button(_btn_open, "open", true)
+	EditorIcons.apply_button(_btn_new, "new", true)
+	EditorIcons.apply_button(_btn_save, "save", true)
+	EditorIcons.apply_button(_btn_validate, "validate", true)
+	if _btn_test:
+		EditorIcons.apply_button(_btn_test, "test", true)
+	EditorIcons.apply_button(_btn_undo, "undo", false)
+	EditorIcons.apply_button(_btn_redo, "redo", false)
+	EditorIcons.apply_button(_btn_frame, "frame", false)
+	if _more:
+		EditorIcons.apply_button(_more, "more", false)
+		_more.tooltip_text = "More"
+	if _view:
+		EditorIcons.apply_button(_view, "view", false)
+		_view.tooltip_text = "View filters"
+	if _tools == null:
+		return
+	for node_name in EditorIcons.TOOL_ICONS:
+		var node := _tools.get_node_or_null(str(node_name))
+		if not (node is Button):
+			continue
+		var b := node as Button
+		b.theme_type_variation = "ToolButton"
+		b.focus_mode = Control.FOCUS_ALL
+		EditorIcons.apply_button(b, str(EditorIcons.TOOL_ICONS[node_name]), false)

@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3 uid="uid://c8bzfindings001"]
+[gd_scene load_steps=3 format=3 uid="uid://c8bzfindings001"]
 
 [ext_resource type="Script" path="res://project/ui/findings/FindingsPanel.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://project/ui/icons/validate.svg" id="2_validate"]
 
 [node name="FindingsPanel" type="PanelContainer"]
 script = ExtResource("1_script")
@@ -11,6 +12,15 @@ theme_override_constants/separation = 8
 
 [node name="Head" type="HBoxContainer" parent="Box"]
 layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="TitleIcon" type="TextureRect" parent="Box/Head"]
+custom_minimum_size = Vector2(16, 16)
+layout_mode = 2
+mouse_filter = 2
+texture = ExtResource("2_validate")
+expand_mode = 0
+stretch_mode = 5
 
 [node name="Title" type="Label" parent="Box/Head"]
 layout_mode = 2
@@ -20,6 +30,7 @@ text = "Findings"
 [node name="Validate" type="Button" parent="Box/Head"]
 unique_name_in_owner = true
 layout_mode = 2
+icon = ExtResource("2_validate")
 text = "Validate"
 
 [node name="List" type="ItemList" parent="Box"]

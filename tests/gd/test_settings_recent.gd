@@ -50,7 +50,42 @@ func run(t) -> void:
 
 	DirAccess.remove_absolute(a)
 	DirAccess.remove_absolute(tmp)
+
+	_test_ui_scale(t)
+
 	_restore_settings(snap)
+
+
+func _test_ui_scale(t) -> void:
+	t.eq(Settings.coerce_ui_scale(1.0), 1.0)
+	t.eq(Settings.coerce_ui_scale(0.5), Settings.UI_SCALE_MIN)
+	t.eq(Settings.coerce_ui_scale(3.0), Settings.UI_SCALE_MAX)
+	t.eq(Settings.coerce_ui_scale("1.25"), 1.25)
+	t.eq(Settings.coerce_ui_scale("nope"), Settings.UI_SCALE_DEFAULT)
+	t.eq(Settings.coerce_ui_scale(null), Settings.UI_SCALE_DEFAULT)
+
+	Settings.ui_scale = 1.5
+	Settings.save()
+	Settings.ui_scale = 1.0
+	Settings._load()
+	t.eq(Settings.ui_scale, 1.5, "ui_scale persists through the settings file")
+
+	var cfg := ConfigFile.new()
+	t.eq(cfg.load(Settings.PATH), OK)
+	cfg.set_value("ui", "ui_scale", 0.4)
+	cfg.save(Settings.PATH)
+	Settings._load()
+	t.eq(Settings.ui_scale, Settings.UI_SCALE_MIN, "file value below min clamps")
+
+	cfg.set_value("ui", "ui_scale", 2.5)
+	cfg.save(Settings.PATH)
+	Settings._load()
+	t.eq(Settings.ui_scale, Settings.UI_SCALE_MAX, "file value above max clamps")
+
+	cfg.set_value("ui", "ui_scale", 1.0)
+	cfg.save(Settings.PATH)
+	Settings._load()
+	t.eq(Settings.ui_scale, 1.0)
 
 
 func _write(path: String, text: String) -> void:
@@ -70,6 +105,8 @@ func _snapshot_settings() -> Dictionary:
 		"walk_mode": Settings.walk_mode,
 		"last_cache_fingerprint": Settings.last_cache_fingerprint,
 		"recent_maps": Settings.recent_maps.duplicate(),
+		"ever_had_recents": Settings.ever_had_recents,
+		"ui_scale": Settings.ui_scale,
 		"cfg": cfg,
 	}
 
@@ -90,6 +127,8 @@ func _restore_settings(snap: Dictionary) -> void:
 	Settings.last_save_dir = str(snap["last_save_dir"])
 	Settings.walk_mode = bool(snap["walk_mode"])
 	Settings.last_cache_fingerprint = str(snap["last_cache_fingerprint"])
+	Settings.ui_scale = float(snap.get("ui_scale", Settings.UI_SCALE_DEFAULT))
+	Settings.ever_had_recents = bool(snap.get("ever_had_recents", false))
 	Settings.recent_maps.clear()
 	for path in snap["recent_maps"]:
 		Settings.recent_maps.append(str(path))

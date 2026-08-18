@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3 uid="uid://c8bzprefs000001"]
+
+[ext_resource type="Script" path="res://project/ui/prefs/PrefsDialog.gd" id="1_script"]
+
+[node name="PrefsDialog" type="Window"]
+title = "Preferences"
+size = Vector2i(480, 560)
+visible = false
+unresizable = false
+script = ExtResource("1_script")
