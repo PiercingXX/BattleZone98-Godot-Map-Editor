@@ -43,10 +43,6 @@ func run(t) -> void:
 	t.eq(_btn(bar, "Save").text, "Save")
 	t.eq(_btn(bar, "Validate").text, "Validate")
 	t.ok(_btn(bar, "Open").icon != null, "Open has an icon")
-	t.ok(_btn(bar, "Raise").icon != null, "tool row has icons")
-	t.eq(_btn(bar, "Raise").text, "", "tool row is icon-only")
-	t.eq(_btn(bar, "Qsel").text, "", "extra tools are icon-only")
-	t.eq(str(_btn(bar, "Raise").theme_type_variation), "ToolButton")
 	t.ok(_btn(bar, "Undo").icon != null and _btn(bar, "Undo").text == "")
 	t.ok(_btn(bar, "Test").icon != null)
 	t.eq(_btn(bar, "Test").text, "Test")
@@ -59,24 +55,6 @@ func run(t) -> void:
 	t.ok(not more0.is_item_disabled(more0.get_item_index(bar.MORE_SCREENSHOT)), "Screenshot stays available")
 	t.eq(more0.get_item_text(more0.get_item_index(bar.MORE_PREFS)), "Preferences…")
 	t.ok(not more0.is_item_disabled(more0.get_item_index(bar.MORE_PREFS)), "Preferences stays available")
-
-	var tools: Array = []
-	bar.tool_selected.connect(func(n): tools.append(n))
-	_btn(bar, "Raise").pressed.emit()
-	_btn(bar, "Place").pressed.emit()
-	_btn(bar, "Noise").pressed.emit()
-	_btn(bar, "Qsel").pressed.emit()
-	_btn(bar, "Wand").pressed.emit()
-	t.eq(tools, ["raise", "place", "noise", "qsel", "wand"], "tool buttons emit lower-case names")
-
-	bar.set_tool("flatten")
-	t.ok(_btn(bar, "Flatten").button_pressed, "set_tool flatten presses Flat")
-	bar.set_tool("select")
-	t.ok(_btn(bar, "Select").button_pressed, "set_tool select")
-	bar.set_tool("rsel")
-	t.ok(_btn(bar, "Rsel").button_pressed, "set_tool rsel")
-	bar.set_tool("clone")
-	t.ok(_btn(bar, "Clone").button_pressed, "set_tool clone")
 
 	var framed := [0]
 	bar.frame_requested.connect(func(): framed[0] += 1)
@@ -201,7 +179,6 @@ func run(t) -> void:
 	bar.refresh_keymap()
 	t.ok(scheme_menu.is_item_checked(scheme_menu.get_item_index(bar.MORE_SCHEME_GIMP)), "GIMP checks after scheme flip")
 	t.ok(not scheme_menu.is_item_checked(scheme_menu.get_item_index(bar.MORE_SCHEME_GODOT)))
-	t.eq(_btn(bar, "Raise").tooltip_text, "Raise  (W)", "tooltips follow the active scheme")
 	scheme_menu.id_pressed.emit(bar.MORE_SCHEME_GODOT)
 	t.eq(
 		more_ids,
@@ -210,7 +187,6 @@ func run(t) -> void:
 	)
 	Settings.keymap_scheme = "godot"
 	bar.refresh_keymap()
-	t.eq(_btn(bar, "Raise").tooltip_text, "Raise  (2)")
 
 	var view: MenuButton = bar.find_child("View", true, false)
 	t.ok(view != null, "View menu sits next to More")

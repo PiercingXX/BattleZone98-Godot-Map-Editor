@@ -5,26 +5,33 @@
 [node name="InspectorPanel" type="PanelContainer"]
 script = ExtResource("1_script")
 
-[node name="Box" type="VBoxContainer" parent="."]
+[node name="Scroll" type="ScrollContainer" parent="."]
+custom_minimum_size = Vector2(0, 260)
 layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="Box" type="VBoxContainer" parent="Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 theme_override_constants/separation = 8
 
-[node name="ObjLabel" type="Label" parent="Box"]
+[node name="ObjLabel" type="Label" parent="Scroll/Box"]
 layout_mode = 2
 text = "Object"
 
-[node name="Prj" type="LineEdit" parent="Box"]
+[node name="Prj" type="LineEdit" parent="Scroll/Box"]
 unique_name_in_owner = true
 layout_mode = 2
 editable = false
 placeholder_text = "class"
 
-[node name="Label" type="LineEdit" parent="Box"]
+[node name="Label" type="LineEdit" parent="Scroll/Box"]
 unique_name_in_owner = true
 layout_mode = 2
 placeholder_text = "label"
 
-[node name="X" type="SpinBox" parent="Box"]
+[node name="X" type="SpinBox" parent="Scroll/Box"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -33,7 +40,7 @@ max_value = 20000.0
 step = 0.1
 prefix = "x m "
 
-[node name="Y" type="SpinBox" parent="Box"]
+[node name="Y" type="SpinBox" parent="Scroll/Box"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -42,7 +49,7 @@ max_value = 900.0
 step = 0.1
 prefix = "y m "
 
-[node name="Z" type="SpinBox" parent="Box"]
+[node name="Z" type="SpinBox" parent="Scroll/Box"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -51,7 +58,7 @@ max_value = 20000.0
 step = 0.1
 prefix = "z m "
 
-[node name="Yaw" type="SpinBox" parent="Box"]
+[node name="Yaw" type="SpinBox" parent="Scroll/Box"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -60,12 +67,12 @@ max_value = 180.0
 step = 1.0
 prefix = "yaw ° "
 
-[node name="TeamRow" type="HBoxContainer" parent="Box"]
+[node name="TeamRow" type="HBoxContainer" parent="Scroll/Box"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="Team0" type="Button" parent="Box/TeamRow"]
+[node name="Team0" type="Button" parent="Scroll/Box/TeamRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(28, 0)
 layout_mode = 2
@@ -73,7 +80,7 @@ toggle_mode = true
 tooltip_text = "Team 0  (Shift+0)"
 text = "0"
 
-[node name="Team1" type="Button" parent="Box/TeamRow"]
+[node name="Team1" type="Button" parent="Scroll/Box/TeamRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(28, 0)
 layout_mode = 2
@@ -81,7 +88,7 @@ toggle_mode = true
 tooltip_text = "Team 1  (Shift+1)"
 text = "1"
 
-[node name="Team2" type="Button" parent="Box/TeamRow"]
+[node name="Team2" type="Button" parent="Scroll/Box/TeamRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(28, 0)
 layout_mode = 2
@@ -89,7 +96,7 @@ toggle_mode = true
 tooltip_text = "Team 2  (Shift+2)"
 text = "2"
 
-[node name="Team3" type="Button" parent="Box/TeamRow"]
+[node name="Team3" type="Button" parent="Scroll/Box/TeamRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(28, 0)
 layout_mode = 2
@@ -97,7 +104,7 @@ toggle_mode = true
 tooltip_text = "Team 3  (Shift+3)"
 text = "3"
 
-[node name="Team4" type="Button" parent="Box/TeamRow"]
+[node name="Team4" type="Button" parent="Scroll/Box/TeamRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(28, 0)
 layout_mode = 2
@@ -105,42 +112,42 @@ toggle_mode = true
 tooltip_text = "Team 4  (Shift+4)"
 text = "4"
 
-[node name="Team" type="SpinBox" parent="Box/TeamRow"]
+[node name="Team" type="SpinBox" parent="Scroll/Box/TeamRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 max_value = 15.0
 prefix = "team "
 
-[node name="PinHeight" type="CheckBox" parent="Box"]
+[node name="PinHeight" type="CheckBox" parent="Scroll/Box"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "pin height"
 
-[node name="Mode" type="Label" parent="Box"]
+[node name="Mode" type="Label" parent="Scroll/Box"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "nothing selected"
 
-[node name="Row" type="HBoxContainer" parent="Box"]
+[node name="Row" type="HBoxContainer" parent="Scroll/Box"]
 layout_mode = 2
 
-[node name="Apply" type="Button" parent="Box/Row"]
+[node name="Apply" type="Button" parent="Scroll/Box/Row"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Apply"
 
-[node name="Delete" type="Button" parent="Box/Row"]
+[node name="Delete" type="Button" parent="Scroll/Box/Row"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Delete"
 
-[node name="WaterLabel" type="Label" parent="Box"]
+[node name="WaterLabel" type="Label" parent="Scroll/Box"]
 layout_mode = 2
 text = "Water"
 
-[node name="Water" type="SpinBox" parent="Box"]
+[node name="Water" type="SpinBox" parent="Scroll/Box"]
 unique_name_in_owner = true
 layout_mode = 2
 min_value = -1.0

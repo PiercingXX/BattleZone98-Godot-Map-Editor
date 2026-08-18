@@ -9,7 +9,6 @@ signal save_requested
 signal save_as_requested
 signal validate_requested
 signal more_selected(id: int)
-signal tool_selected(name: String)
 signal variant_changed
 signal undo_requested
 signal redo_requested
@@ -47,7 +46,6 @@ const VIEW_GHOST_VARIANTS := 9
 const VIEW_BALANCE := 10
 const VIEW_AIPATHS := 11
 
-var _setting_tool: bool = false
 var _busy: bool = false
 var _testing: bool = false
 var _open_menu: PopupMenu
@@ -66,7 +64,6 @@ var _map_mode: bool = false
 @onready var _btn_undo: Button = %Undo
 @onready var _btn_redo: Button = %Redo
 @onready var _btn_frame: Button = %Frame
-@onready var _tools: HBoxContainer = %Tools
 @onready var _more: MenuButton = %More
 @onready var _view: MenuButton = %View
 
@@ -111,13 +108,7 @@ func _ready() -> void:
 			more_selected.emit(id)
 	)
 	pop.about_to_popup.connect(_refresh_more)
-	_install_extra_tools()
 	_apply_chrome_icons()
-	for child in _tools.get_children():
-		if child is Button:
-			var tool_name := String(child.name).to_lower()
-			child.pressed.connect(_on_tool_button.bind(tool_name))
-	ToolState.tool_changed.connect(set_tool)
 	MapState.session_changed.connect(_refresh_actions)
 	MapState.features_changed.connect(_refresh_view_menu)
 	MapState.objects_mutated.connect(_refresh_variant_counts)
@@ -126,34 +117,6 @@ func _ready() -> void:
 	Backend.call_finished.connect(func(_v, _r): set_busy(false))
 	Backend.call_failed.connect(func(_v, _e): set_busy(false))
 	_refresh_actions()
-
-
-func _install_extra_tools() -> void:
-	if _tools == null:
-		return
-	var group: ButtonGroup = null
-	var fly := _tools.get_node_or_null("Fly")
-	if fly is Button:
-		group = (fly as Button).button_group
-	var specs: Array = [
-		{"name": "Qsel", "text": "QSel"},
-		{"name": "Rsel", "text": "RSel"},
-		{"name": "Wand", "text": "Wand"},
-		{"name": "Clone", "text": "Clone"},
-	]
-	for spec in specs:
-		var id := str(spec.get("name", ""))
-		if _tools.get_node_or_null(id) != null:
-			continue
-		var b := Button.new()
-		b.name = id
-		b.text = str(spec.get("text", id))
-		b.toggle_mode = true
-		b.focus_mode = Control.FOCUS_ALL
-		b.theme_type_variation = "ToolButton"
-		if group:
-			b.button_group = group
-		_tools.add_child(b)
 
 
 func _install_test_button() -> void:
@@ -410,12 +373,6 @@ func _on_open_menu_id(id: int) -> void:
 	recent_open_requested.emit(path)
 
 
-func _on_tool_button(tool_name: String) -> void:
-	if _setting_tool:
-		return
-	tool_selected.emit(tool_name)
-
-
 func _on_undo() -> void:
 	if not UndoStack.can_undo():
 		EditorFeedback.log("nothing to undo")
@@ -493,16 +450,6 @@ func set_busy(value: bool) -> void:
 	_refresh_actions()
 
 
-func set_tool(name: String) -> void:
-	_setting_tool = true
-	var node := _tools.get_node_or_null(name.capitalize())
-	if name == "flatten":
-		node = _tools.get_node_or_null("Flatten")
-	if node is Button:
-		(node as Button).button_pressed = true
-	_setting_tool = false
-
-
 func fill_variants(variants: Array, active: String) -> void:
 	_variant.clear()
 	for v in variants:
@@ -564,7 +511,6 @@ func _refresh_actions() -> void:
 		_btn_frame.disabled = not session
 		_btn_frame.tooltip_text = "Frame the map  (%s)" % Keymap.format_action(Keymap.ACTION_FRAME) if session else "Open a map first"
 	_refresh_map_button()
-	_refresh_tool_tips()
 	if _more:
 		_more.tooltip_text = "More"
 	if _view:
@@ -639,7 +585,6 @@ func _set_more_item(pop: PopupMenu, id: int, enabled: bool, disabled_tip: String
 
 func refresh_keymap() -> void:
 	_refresh_scheme_menu()
-	_refresh_tool_tips()
 	_refresh_map_button()
 	_refresh_more()
 
@@ -654,40 +599,6 @@ func _refresh_scheme_menu() -> void:
 		_scheme_menu.set_item_checked(godot_idx, scheme == Keymap.SCHEME_GODOT)
 	if gimp_idx >= 0:
 		_scheme_menu.set_item_checked(gimp_idx, scheme == Keymap.SCHEME_GIMP)
-
-
-func _refresh_tool_tips() -> void:
-	if _tools == null:
-		return
-	var labels := {
-		"Fly": Keymap.ACTION_FLY,
-		"Raise": Keymap.ACTION_RAISE,
-		"Lower": Keymap.ACTION_LOWER,
-		"Flatten": Keymap.ACTION_FLATTEN,
-		"Smooth": Keymap.ACTION_SMOOTH,
-		"Ramp": Keymap.ACTION_RAMP,
-		"Paint": Keymap.ACTION_PAINT,
-		"Place": Keymap.ACTION_PLACE,
-		"Select": Keymap.ACTION_SELECT,
-		"Noise": Keymap.ACTION_NOISE,
-		"Qsel": Keymap.ACTION_QSEL,
-		"Rsel": Keymap.ACTION_RSEL,
-		"Wand": Keymap.ACTION_WAND,
-		"Clone": Keymap.ACTION_CLONE,
-	}
-	var captions := {
-		"Flatten": "Flat",
-		"Qsel": "QSel",
-		"Rsel": "RSel",
-	}
-	for node_name in labels:
-		var node := _tools.get_node_or_null(str(node_name))
-		if not (node is Button):
-			continue
-		var caption := str(captions.get(str(node_name), str(node_name)))
-		(node as Button).tooltip_text = "%s  (%s)" % [
-			caption, Keymap.format_action(str(labels[node_name])),
-		]
 
 
 func _apply_chrome_icons() -> void:
@@ -706,13 +617,3 @@ func _apply_chrome_icons() -> void:
 	if _view:
 		EditorIcons.apply_button(_view, "view", false)
 		_view.tooltip_text = "View filters"
-	if _tools == null:
-		return
-	for node_name in EditorIcons.TOOL_ICONS:
-		var node := _tools.get_node_or_null(str(node_name))
-		if not (node is Button):
-			continue
-		var b := node as Button
-		b.theme_type_variation = "ToolButton"
-		b.focus_mode = Control.FOCUS_ALL
-		EditorIcons.apply_button(b, str(EditorIcons.TOOL_ICONS[node_name]), false)

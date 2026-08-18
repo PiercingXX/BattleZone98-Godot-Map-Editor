@@ -7,18 +7,24 @@
 [ext_resource type="Texture2D" path="res://project/ui/icons/paint.svg" id="5_paint"]
 
 [node name="FeaturesPanel" type="PanelContainer"]
-custom_minimum_size = Vector2(0, 200)
+custom_minimum_size = Vector2(0, 160)
 script = ExtResource("1_script")
 
-[node name="Box" type="VBoxContainer" parent="."]
+[node name="Scroll" type="ScrollContainer" parent="."]
 layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="Box" type="VBoxContainer" parent="Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 theme_override_constants/separation = 8
 
-[node name="Head" type="HBoxContainer" parent="Box"]
+[node name="Head" type="HBoxContainer" parent="Scroll/Box"]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="TitleIcon" type="TextureRect" parent="Box/Head"]
+[node name="TitleIcon" type="TextureRect" parent="Scroll/Box/Head"]
 custom_minimum_size = Vector2(16, 16)
 layout_mode = 2
 mouse_filter = 2
@@ -26,23 +32,23 @@ texture = ExtResource("2_view")
 expand_mode = 0
 stretch_mode = 5
 
-[node name="Title" type="Label" parent="Box/Head"]
+[node name="Title" type="Label" parent="Scroll/Box/Head"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Features"
 
-[node name="PaintRegion" type="Button" parent="Box/Head"]
+[node name="PaintRegion" type="Button" parent="Scroll/Box/Head"]
 unique_name_in_owner = true
 layout_mode = 2
 toggle_mode = true
 icon = ExtResource("5_paint")
 text = "Paint region"
 
-[node name="WaterHead" type="HBoxContainer" parent="Box"]
+[node name="WaterHead" type="HBoxContainer" parent="Scroll/Box"]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="WaterIcon" type="TextureRect" parent="Box/WaterHead"]
+[node name="WaterIcon" type="TextureRect" parent="Scroll/Box/WaterHead"]
 custom_minimum_size = Vector2(16, 16)
 layout_mode = 2
 mouse_filter = 2
@@ -50,37 +56,37 @@ texture = ExtResource("3_water")
 expand_mode = 0
 stretch_mode = 5
 
-[node name="WaterLabel" type="Label" parent="Box/WaterHead"]
+[node name="WaterLabel" type="Label" parent="Scroll/Box/WaterHead"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Water bodies"
 
-[node name="AddWater" type="Button" parent="Box/WaterHead"]
+[node name="AddWater" type="Button" parent="Scroll/Box/WaterHead"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Add"
 
-[node name="RemoveWater" type="Button" parent="Box/WaterHead"]
+[node name="RemoveWater" type="Button" parent="Scroll/Box/WaterHead"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Remove"
 
-[node name="WaterScroll" type="ScrollContainer" parent="Box"]
+[node name="WaterScroll" type="ScrollContainer" parent="Scroll/Box"]
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="WaterList" type="VBoxContainer" parent="Box/WaterScroll"]
+[node name="WaterList" type="VBoxContainer" parent="Scroll/Box/WaterScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="PlantHead" type="HBoxContainer" parent="Box"]
+[node name="PlantHead" type="HBoxContainer" parent="Scroll/Box"]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="PlantIcon" type="TextureRect" parent="Box/PlantHead"]
+[node name="PlantIcon" type="TextureRect" parent="Scroll/Box/PlantHead"]
 custom_minimum_size = Vector2(16, 16)
 layout_mode = 2
 mouse_filter = 2
@@ -88,27 +94,27 @@ texture = ExtResource("4_plants")
 expand_mode = 0
 stretch_mode = 5
 
-[node name="PlantLabel" type="Label" parent="Box/PlantHead"]
+[node name="PlantLabel" type="Label" parent="Scroll/Box/PlantHead"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Plant regions"
 
-[node name="AddPlant" type="Button" parent="Box/PlantHead"]
+[node name="AddPlant" type="Button" parent="Scroll/Box/PlantHead"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Add"
 
-[node name="RemovePlant" type="Button" parent="Box/PlantHead"]
+[node name="RemovePlant" type="Button" parent="Scroll/Box/PlantHead"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Remove"
 
-[node name="PlantScroll" type="ScrollContainer" parent="Box"]
+[node name="PlantScroll" type="ScrollContainer" parent="Scroll/Box"]
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="PlantList" type="VBoxContainer" parent="Box/PlantScroll"]
+[node name="PlantList" type="VBoxContainer" parent="Scroll/Box/PlantScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3

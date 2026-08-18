@@ -408,12 +408,14 @@ static func package_session(
 					return cres
 				copied.append(str(name2))
 		var shared: Array = _copy_shared_lua(staging, addon)
+		var custom: Array = _copy_custom_assets(session_dir, addon)
 		return {
 			"ok": true,
 			"mode": "addon",
 			"dest": addon,
 			"files": copied,
 			"shared_lua": shared,
+			"custom_assets": custom,
 			"warnings": saved.get("warnings", []),
 		}
 	if mode == "pack":
@@ -488,6 +490,80 @@ static func _copy_shared_lua(staging: String, dest_dir: String) -> Array:
 							seen[sub] = true
 							queue.append(sub)
 				break
+	return copied
+
+
+## Copy map-private object assets (odf/mesh/material/textures) that ship
+## beside the source map into ``dest_dir``. The engine aborts the mission
+## load on the first GameObject whose .odf it cannot find, and workshop
+## maps commonly define custom classes next to the map set. Chases
+## references transitively: a copied odf/material/ini may name further
+## files (meshes, textures, weapon odfs) that also live in the source dir.
+static func _copy_custom_assets(session_dir: String, dest_dir: String) -> Array:
+	var paths: Dictionary = BzSession.session_paths(session_dir)
+	var manifest_v: Variant = BzSession.read_json(str(paths["manifest"]))
+	if typeof(manifest_v) != TYPE_DICTIONARY:
+		return []
+	var source_path := str((manifest_v as Dictionary).get("source_path", ""))
+	if source_path.is_empty():
+		return []
+	var src_dir := source_path.get_base_dir()
+	var da := DirAccess.open(src_dir)
+	if da == null:
+		return []
+	var names: Array = []
+	var by_stem: Dictionary = {}
+	for name in da.get_files():
+		var n := str(name)
+		names.append(n)
+		var stem := n.get_basename().to_lower()
+		var lst: Array = by_stem.get(stem, [])
+		lst.append(n)
+		by_stem[stem] = lst
+	var queue: Array = []
+	var seen := {}
+	var objects_v: Variant = BzSession.read_json(str(paths["objects"]))
+	if typeof(objects_v) == TYPE_DICTIONARY:
+		for variant in (objects_v as Dictionary):
+			var recs: Variant = (objects_v as Dictionary)[variant]
+			if typeof(recs) != TYPE_ARRAY:
+				continue
+			for rec in recs:
+				if typeof(rec) != TYPE_DICTIONARY:
+					continue
+				var prjid := str((rec as Dictionary).get("prjid", "")).to_lower()
+				if not prjid.is_empty() and not seen.has(prjid) and by_stem.has(prjid):
+					seen[prjid] = true
+					queue.append(prjid)
+	var copied: Array = []
+	while not queue.is_empty():
+		var stem2: String = str(queue.pop_front())
+		for fname in by_stem.get(stem2, []):
+			var f := str(fname)
+			var dest := dest_dir.path_join(f)
+			if FileAccess.file_exists(dest):
+				continue
+			var res: Dictionary = _copy_file(src_dir.path_join(f), dest)
+			if not res.get("ok", false):
+				continue
+			copied.append(f)
+			var ext := f.get_extension().to_lower()
+			if ext == "odf" or ext == "material" or ext == "ini":
+				var text := FileAccess.get_file_as_string(
+					src_dir.path_join(f)
+				).to_lower()
+				for other in names:
+					var o := str(other)
+					var ostem := o.get_basename().to_lower()
+					if seen.has(ostem):
+						continue
+					# Full filename match, or a bare stem mention (odfs
+					# often name geometry without an extension). Short
+					# stems over-match, so require 4+ characters there.
+					if text.contains(o.to_lower()) \
+							or (ostem.length() >= 4 and text.contains(ostem)):
+						seen[ostem] = true
+						queue.append(ostem)
 	return copied
 
 

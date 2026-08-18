@@ -73,6 +73,8 @@ func apply_keymap_scheme(scheme: String) -> void:
 		shell._help.refresh()
 	if shell._top and shell._top.has_method("refresh_keymap"):
 		shell._top.refresh_keymap()
+	if shell.get("_rail") and shell._rail.has_method("refresh_keymap"):
+		shell._rail.refresh_keymap()
 
 
 func import_assets() -> void:

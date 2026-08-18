@@ -1,4 +1,4 @@
-[gd_scene load_steps=23 format=3 uid="uid://c8bzmapmain0001"]
+[gd_scene load_steps=24 format=3 uid="uid://c8bzmapmain0001"]
 
 [ext_resource type="Script" path="res://scenes/main.gd" id="1_main"]
 [ext_resource type="Script" path="res://project/camera/FlyCamera.gd" id="2_cam"]
@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://project/objects/ObjectMarkers.gd" id="4_objs"]
 [ext_resource type="Script" path="res://project/objects/BalanceOverlay.gd" id="14_balance"]
 [ext_resource type="PackedScene" path="res://project/ui/top_bar/TopBar.tscn" id="5_top"]
+[ext_resource type="PackedScene" path="res://project/ui/tool_rail/ToolRail.tscn" id="20_rail"]
 [ext_resource type="PackedScene" path="res://project/ui/palette/PalettePanel.tscn" id="6_pal"]
 [ext_resource type="PackedScene" path="res://project/ui/inspector/InspectorPanel.tscn" id="7_insp"]
 [ext_resource type="PackedScene" path="res://project/ui/findings/FindingsPanel.tscn" id="8_find"]
@@ -67,20 +68,19 @@ anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
-grow_vertical = 2
+grow_vertical = 1
 theme_override_constants/separation = 0
 
 [node name="TopBar" parent="Root" instance=ExtResource("5_top")]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="Body" type="HSplitContainer" parent="Root"]
+[node name="Body" type="HBoxContainer" parent="Root"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-split_offset = 252
 
-[node name="PalettePanel" parent="Root/Body" instance=ExtResource("6_pal")]
+[node name="ToolRail" parent="Root/Body" instance=ExtResource("20_rail")]
 unique_name_in_owner = true
 layout_mode = 2
 
@@ -88,7 +88,7 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-split_offset = -280
+split_offset = -310
 
 [node name="Center" type="SubViewportContainer" parent="Root/Body/Mid"]
 unique_name_in_owner = true
@@ -175,34 +175,43 @@ script = ExtResource("18_toast")
 unique_name_in_owner = true
 custom_minimum_size = Vector2(276, 0)
 layout_mode = 2
-split_offset = 440
+split_offset = 260
 
-[node name="Upper" type="VSplitContainer" parent="Root/Body/Mid/Right"]
+[node name="PalettePanel" parent="Root/Body/Mid/Right" instance=ExtResource("6_pal")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Stack" type="VSplitContainer" parent="Root/Body/Mid/Right"]
+layout_mode = 2
+size_flags_vertical = 3
+split_offset = 300
+
+[node name="Upper" type="VSplitContainer" parent="Root/Body/Mid/Right/Stack"]
 unique_name_in_owner = true
 layout_mode = 2
 split_offset = 240
 
-[node name="InspectorPanel" parent="Root/Body/Mid/Right/Upper" instance=ExtResource("7_insp")]
+[node name="InspectorPanel" parent="Root/Body/Mid/Right/Stack/Upper" instance=ExtResource("7_insp")]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="FeaturesPanel" parent="Root/Body/Mid/Right/Upper" instance=ExtResource("12_feat")]
+[node name="FeaturesPanel" parent="Root/Body/Mid/Right/Stack/Upper" instance=ExtResource("12_feat")]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="Lower" type="VSplitContainer" parent="Root/Body/Mid/Right"]
+[node name="Lower" type="VSplitContainer" parent="Root/Body/Mid/Right/Stack"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 split_offset = 160
 
-[node name="FindingsPanel" parent="Root/Body/Mid/Right/Lower" instance=ExtResource("8_find")]
+[node name="FindingsPanel" parent="Root/Body/Mid/Right/Stack/Lower" instance=ExtResource("8_find")]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="HistoryPanel" parent="Root/Body/Mid/Right/Lower" instance=ExtResource("15_hist")]
+[node name="HistoryPanel" parent="Root/Body/Mid/Right/Stack/Lower" instance=ExtResource("15_hist")]
 unique_name_in_owner = true
 layout_mode = 2
 

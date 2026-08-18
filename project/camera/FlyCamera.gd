@@ -1,6 +1,7 @@
 extends Camera3D
 class_name FlyCamera
-## RMB look, wheel zoom, MMB orbit, WASD fly. Ortho map mode is north-up.
+## RMB look, wheel zoom (Ctrl+wheel too), Shift+wheel truck, Alt+wheel orbit,
+## Ctrl+move orbit, Shift+move pan, MMB orbit, WASD fly. Map mode is north-up.
 
 signal speed_changed(mps: float)
 signal map_mode_changed(on: bool)
@@ -9,6 +10,8 @@ const MAP_CAM_Y := 2500.0
 const MAP_SIZE_MIN := 40.0
 const MAP_SIZE_MAX := 20000.0
 const ZOOM_FACTOR := 0.85
+const ORBIT_WHEEL_STEP_PX := 60.0
+const MAP_WHEEL_PAN_PX := 60.0
 const HOVER_LIFT_M := 40.0
 const HOVER_BACK_M := 40.0
 ## Godot identity looks −Z (south). Yaw π faces +Z (north).
@@ -44,10 +47,19 @@ func handle_event(event: InputEvent) -> void:
 			Input.mouse_mode = (
 				Input.MOUSE_MODE_CAPTURED if orbiting else Input.MOUSE_MODE_VISIBLE
 			)
-		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_dolly(-1.0)
-		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_dolly(1.0)
+		elif mb.pressed and (
+			mb.button_index == MOUSE_BUTTON_WHEEL_UP
+			or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN
+		):
+			var dir := -1.0 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0
+			# GIMP-style modifiers: Shift+wheel trucks left/right,
+			# Alt+wheel orbits the pivot, plain and Ctrl+wheel zoom.
+			if mb.shift_pressed:
+				_truck(dir)
+			elif mb.alt_pressed:
+				_orbit_step(dir)
+			else:
+				_dolly(dir)
 	elif event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
 		if looking:
@@ -59,6 +71,14 @@ func handle_event(event: InputEvent) -> void:
 			)
 		elif orbiting:
 			_orbit(mm.relative)
+		elif mm.button_mask == 0 and _fly_keys_down():
+			# Shift/Ctrl also modulate WASD speed; never hijack mid-flight.
+			pass
+		elif mm.button_mask == 0 and mm.ctrl_pressed:
+			# Buttonless Ctrl+move orbits the pivot (perspective change).
+			_orbit(mm.relative)
+		elif mm.button_mask == 0 and mm.shift_pressed:
+			_pan_ground(mm.relative)
 
 
 func _handle_map_event(event: InputEvent) -> void:
@@ -69,13 +89,21 @@ func _handle_map_event(event: InputEvent) -> void:
 				begin_pan()
 			else:
 				end_pan()
-		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
-			zoom_to_cursor(-1.0)
-		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			zoom_to_cursor(1.0)
+		elif mb.pressed and (
+			mb.button_index == MOUSE_BUTTON_WHEEL_UP
+			or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN
+		):
+			var dir := -1.0 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0
+			if mb.shift_pressed:
+				pan_by_pixels(Vector2(dir * MAP_WHEEL_PAN_PX, 0.0))
+			else:
+				zoom_to_cursor(dir)
 	elif event is InputEventMouseMotion:
+		var mmm := event as InputEventMouseMotion
 		if panning:
-			pan_by_pixels((event as InputEventMouseMotion).relative)
+			pan_by_pixels(mmm.relative)
+		elif mmm.button_mask == 0 and mmm.shift_pressed:
+			pan_by_pixels(mmm.relative)
 
 
 func begin_pan() -> void:
@@ -92,6 +120,14 @@ func end_pan() -> void:
 	_end_pointer_capture()
 
 
+static func _fly_keys_down() -> bool:
+	return (
+		Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_A)
+		or Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_D)
+		or Input.is_key_pressed(KEY_Q) or Input.is_key_pressed(KEY_E)
+	)
+
+
 func _end_pointer_capture() -> void:
 	looking = false
 	orbiting = false
@@ -101,6 +137,32 @@ func _end_pointer_capture() -> void:
 func _dolly(sign: float) -> void:
 	var step := maxf(8.0, base_speed * Settings.coerce_camera_speed(Settings.camera_speed_mul) * 0.35) * sign
 	global_position += global_transform.basis.z * step
+
+
+## Shift+wheel: slide left/right along the ground plane.
+func _truck(sign: float) -> void:
+	var step := maxf(8.0, base_speed * Settings.coerce_camera_speed(Settings.camera_speed_mul) * 0.35) * sign
+	var right := global_transform.basis.x
+	right.y = 0.0
+	right = right.normalized() if right.length_squared() > 0.001 else Vector3.RIGHT
+	global_position += right * step
+
+
+## Alt+wheel: step the orbit around the pivot.
+func _orbit_step(sign: float) -> void:
+	_orbit(Vector2(sign * ORBIT_WHEEL_STEP_PX, 0.0))
+
+
+## Shift+move: grab-pan the world, ground-parallel, scaled by height.
+func _pan_ground(rel: Vector2) -> void:
+	var scale := maxf(global_position.y, 40.0) * 0.0016
+	var right := global_transform.basis.x
+	right.y = 0.0
+	right = right.normalized() if right.length_squared() > 0.001 else Vector3.RIGHT
+	var fwd := -global_transform.basis.z
+	fwd.y = 0.0
+	fwd = fwd.normalized() if fwd.length_squared() > 0.001 else Vector3.FORWARD
+	global_position += (-right * rel.x + fwd * rel.y) * scale
 
 
 func _orbit(rel: Vector2) -> void:

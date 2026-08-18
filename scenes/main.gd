@@ -26,12 +26,12 @@ var _aipaths: AiPathOverlay
 @onready var _camera: Camera3D = %Camera
 @onready var _center: Control = %Center
 @onready var _viewport: SubViewport = %SubViewport
-@onready var _body_split: HSplitContainer = %Body
 @onready var _mid_split: HSplitContainer = %Mid
 @onready var _right_split: VSplitContainer = %Right
 @onready var _upper_split: VSplitContainer = %Upper
 @onready var _lower_split: VSplitContainer = %Lower
 @onready var _top = %TopBar
+@onready var _rail = %ToolRail
 @onready var _palette = %PalettePanel
 @onready var _inspector = %InspectorPanel
 @onready var _features = %FeaturesPanel
@@ -186,7 +186,7 @@ func _wire() -> void:
 	_top.validate_requested.connect(_io.validate)
 	_top.test_requested.connect(_io.test_in_game)
 	_top.more_selected.connect(_on_more_selected)
-	_top.tool_selected.connect(_set_tool)
+	_rail.tool_selected.connect(_set_tool)
 	_top.variant_changed.connect(func():
 		MapState.active_variant = _top.selected_variant()
 		_on_objects_mutated()
@@ -329,7 +329,7 @@ func _process(_delta: float) -> void:
 		var nav := (
 			"wheel zoom  MMB/Space+LMB pan  WASD pan"
 			if _camera.map_mode
-			else "RMB look  wheel zoom  MMB orbit  WASD fly"
+			else "RMB look  wheel zoom  Shift+wheel truck  Ctrl+move orbit  Shift+move pan  WASD fly"
 		)
 		_status.set_cursor("xz %.1f, %.1f  h %.1f m  mat %d  %s   ·  %s" % [
 			p.x, p.z, p.y, MapState.material_at(p.x, p.z), ToolState.tool, nav,
@@ -1706,7 +1706,7 @@ func _install_layout_persistence() -> void:
 	_layout_timer.wait_time = Settings.LAYOUT_SAVE_IDLE_S
 	_layout_timer.timeout.connect(_on_layout_idle)
 	add_child(_layout_timer)
-	for split in [_body_split, _mid_split, _right_split, _upper_split, _lower_split]:
+	for split in [_mid_split, _right_split, _upper_split, _lower_split]:
 		if split == null:
 			continue
 		if split.has_signal("dragged"):
@@ -1752,8 +1752,6 @@ func _on_layout_idle() -> void:
 
 func _flush_layout(persist: bool) -> void:
 	if not Settings.focus_mode:
-		if _body_split:
-			Settings.layout_split_body = _body_split.split_offset
 		if _mid_split:
 			Settings.layout_split_mid = _mid_split.split_offset
 		if _right_split:
@@ -1791,8 +1789,6 @@ func _apply_layout_settings() -> void:
 
 
 func _apply_split_offsets() -> void:
-	if _body_split:
-		_body_split.split_offset = Settings.layout_split_body
 	if _mid_split:
 		_mid_split.split_offset = Settings.layout_split_mid
 	if _right_split:

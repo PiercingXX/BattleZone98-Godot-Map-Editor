@@ -1,8 +1,6 @@
-[gd_scene load_steps=3 format=3 uid="uid://c8bztopbar00001"]
+[gd_scene load_steps=2 format=3 uid="uid://c8bztopbar00001"]
 
 [ext_resource type="Script" path="res://project/ui/top_bar/TopBar.gd" id="1_script"]
-
-[sub_resource type="ButtonGroup" id="ToolGroup"]
 
 [node name="TopBar" type="PanelContainer"]
 custom_minimum_size = Vector2(0, 44)
@@ -62,82 +60,6 @@ custom_minimum_size = Vector2(1, 18)
 layout_mode = 2
 size_flags_vertical = 4
 color = Color(1, 1, 1, 0.1)
-
-[node name="Tools" type="HBoxContainer" parent="Inner"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 4
-
-[node name="Fly" type="Button" parent="Inner/Tools"]
-layout_mode = 2
-toggle_mode = true
-button_pressed = true
-button_group = SubResource("ToolGroup")
-tooltip_text = "Fly  (1)"
-text = "Fly"
-
-[node name="Raise" type="Button" parent="Inner/Tools"]
-layout_mode = 2
-toggle_mode = true
-button_group = SubResource("ToolGroup")
-tooltip_text = "Raise  (2)"
-text = "Raise"
-
-[node name="Lower" type="Button" parent="Inner/Tools"]
-layout_mode = 2
-toggle_mode = true
-button_group = SubResource("ToolGroup")
-tooltip_text = "Lower  (3)"
-text = "Lower"
-
-[node name="Flatten" type="Button" parent="Inner/Tools"]
-layout_mode = 2
-toggle_mode = true
-button_group = SubResource("ToolGroup")
-tooltip_text = "Flat  (4)"
-text = "Flat"
-
-[node name="Smooth" type="Button" parent="Inner/Tools"]
-layout_mode = 2
-toggle_mode = true
-button_group = SubResource("ToolGroup")
-tooltip_text = "Smooth  (5)"
-text = "Smooth"
-
-[node name="Ramp" type="Button" parent="Inner/Tools"]
-layout_mode = 2
-toggle_mode = true
-button_group = SubResource("ToolGroup")
-tooltip_text = "Ramp  (6)"
-text = "Ramp"
-
-[node name="Paint" type="Button" parent="Inner/Tools"]
-layout_mode = 2
-toggle_mode = true
-button_group = SubResource("ToolGroup")
-tooltip_text = "Paint  (7)"
-text = "Paint"
-
-[node name="Place" type="Button" parent="Inner/Tools"]
-layout_mode = 2
-toggle_mode = true
-button_group = SubResource("ToolGroup")
-tooltip_text = "Place  (8)"
-text = "Place"
-
-[node name="Select" type="Button" parent="Inner/Tools"]
-layout_mode = 2
-toggle_mode = true
-button_group = SubResource("ToolGroup")
-tooltip_text = "Select  (9)"
-text = "Select"
-
-[node name="Noise" type="Button" parent="Inner/Tools"]
-layout_mode = 2
-toggle_mode = true
-button_group = SubResource("ToolGroup")
-tooltip_text = "Noise  (0)"
-text = "Noise"
 
 [node name="Sep3" type="ColorRect" parent="Inner"]
 custom_minimum_size = Vector2(1, 18)

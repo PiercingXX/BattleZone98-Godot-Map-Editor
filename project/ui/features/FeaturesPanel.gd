@@ -75,13 +75,13 @@ func _install_collapse() -> void:
 
 
 func _apply_collapse() -> void:
-	var box := get_node_or_null("Box") as VBoxContainer
+	var box := find_child("Box", true, false) as VBoxContainer
 	if box:
 		for child in box.get_children():
 			if child.name == "Head":
 				continue
 			child.visible = not _collapsed
-	custom_minimum_size.y = 40.0 if _collapsed else 200.0
+	custom_minimum_size.y = 40.0 if _collapsed else 160.0
 	PanelCollapse.apply_toggle(_collapse, "Features", not _collapsed)
 
 

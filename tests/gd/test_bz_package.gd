@@ -11,6 +11,47 @@ func run(t) -> void:
 	_test_package_install(t, tmp)
 	_test_package_errors(t, tmp)
 	_test_install_safety(t, tmp)
+	_test_addon_custom_assets(t, tmp)
+
+
+func _test_addon_custom_assets(t, tmp: String) -> void:
+	# A map that places a class shipped beside the source map must carry
+	# that class (and what it references) into addon/, or the engine
+	# aborts the mission load on the missing .odf.
+	var session: String = tmp.path_join("session_custom")
+	_build_session(session, "xxcust")
+	var srcmap: String = tmp.path_join("wsitem")
+	DirAccess.make_dir_recursive_absolute(srcmap)
+	_write_text(srcmap.path_join("xxcust.trn"), "[Size]\n")
+	_write_text(srcmap.path_join("xxprop.odf"), "[GameObjectClass]\ngeometryName = \"xxpropgeo\"\n")
+	_write_text(srcmap.path_join("xxpropgeo.mesh"), "meshdata")
+	_write_text(srcmap.path_join("xxpropgeo.material"), "material xxpropgeo { texture xxproptex.dds }")
+	_write_text(srcmap.path_join("xxproptex.dds"), "dds")
+	_write_text(srcmap.path_join("unrelated.odf"), "[GameObjectClass]\n")
+	var manifest_v: Variant = BzSession.read_json(session.path_join("manifest.json"))
+	var manifest: Dictionary = manifest_v
+	manifest["source_path"] = srcmap.path_join("xxcust.trn")
+	_write_json(session.path_join("manifest.json"), manifest)
+	_write_json(session.path_join("objects.json"), {
+		"": [{"id": "n-1", "prjid": "xxprop", "x": 0.0, "y": 0.0, "z": 0.0}],
+	})
+	var game: String = tmp.path_join("game_custom")
+	DirAccess.make_dir_recursive_absolute(game)
+	var result: Dictionary = BzPackage.package_session(session, "addon", game, "", "")
+	t.eq(result.get("ok"), true, "addon package ok")
+	var addon: String = game.path_join("addon")
+	t.ok(FileAccess.file_exists(addon.path_join("xxprop.odf")), "custom odf copied")
+	t.ok(FileAccess.file_exists(addon.path_join("xxpropgeo.mesh")), "referenced mesh chased")
+	t.ok(
+		FileAccess.file_exists(addon.path_join("xxproptex.dds")),
+		"texture chased through material"
+	)
+	t.ok(
+		not FileAccess.file_exists(addon.path_join("unrelated.odf")),
+		"unreferenced classes stay home"
+	)
+	var listed: Array = result.get("custom_assets", [])
+	t.ok("xxprop.odf" in listed, "custom assets reported")
 
 
 func _test_assemble_pack_success(t, tmp: String) -> void:
