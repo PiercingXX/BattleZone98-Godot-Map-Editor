@@ -22,6 +22,10 @@ uniform float brush_radius = 40.0;
 uniform float brush_falloff = 0.65;
 uniform int brush_shape = 0;
 uniform float water_level = -1.0;
+uniform sampler2D mask_tex : filter_nearest, repeat_disable;
+uniform bool show_mask = false;
+uniform vec3 mask_tint = vec3(0.12, 0.32, 0.62);
+uniform float mask_water_level = -1.0;
 
 varying vec2 v_uv;
 varying vec3 v_world;
@@ -129,6 +133,16 @@ void fragment() {
 	}
 	if (water_level >= 0.0 && h <= water_level + 0.05) {
 		ground = mix(ground, vec3(0.12, 0.32, 0.62), 0.55);
+	}
+	if (show_mask) {
+		float m = texture(mask_tex, v_uv).r;
+		if (m > 0.001) {
+			float a = 0.42;
+			if (mask_water_level >= 0.0 && h <= mask_water_level + 0.05) {
+				a = 0.62;
+			}
+			ground = mix(ground, mask_tint, a);
+		}
 	}
 	ALBEDO = ground;
 	ROUGHNESS = 0.92;

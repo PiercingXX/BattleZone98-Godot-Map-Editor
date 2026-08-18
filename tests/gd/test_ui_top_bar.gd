@@ -5,12 +5,16 @@ extends RefCounted
 func run(t) -> void:
 	var saved_session := MapState.has_session
 	var saved_root := Settings.game_root
+	var saved_scheme := Settings.keymap_scheme
+	var saved_scrap := Settings.view_scrap
+	var saved_plants := Settings.view_plants
 	var saved_recent: Array[String] = []
 	for recent_path in Settings.recent_maps:
 		saved_recent.append(recent_path)
 	UndoStack.clear()
 	MapState.has_session = false
 	Settings.game_root = ""
+	Settings.keymap_scheme = "godot"
 	Settings.recent_maps.clear()
 
 	var bar: Node = load("res://project/ui/top_bar/TopBar.tscn").instantiate()
@@ -101,6 +105,37 @@ func run(t) -> void:
 	t.eq(more_ids, [bar.MORE_PROBE], "Save As is intercepted")
 	t.eq(save_as[0], 1)
 
+	var has_scheme := false
+	for i in pop.item_count:
+		if pop.get_item_text(i) == "Keyboard scheme":
+			has_scheme = true
+	t.ok(has_scheme, "More menu lists Keyboard scheme")
+	var scheme_menu: PopupMenu = bar.find_child("KeymapScheme", true, false)
+	t.ok(scheme_menu != null, "More owns a Keyboard scheme submenu")
+	t.ok(scheme_menu.get_item_index(bar.MORE_SCHEME_GODOT) >= 0)
+	t.ok(scheme_menu.get_item_index(bar.MORE_SCHEME_GIMP) >= 0)
+	bar.refresh_keymap()
+	t.ok(scheme_menu.is_item_checked(scheme_menu.get_item_index(bar.MORE_SCHEME_GODOT)), "Godot checked by default")
+	t.ok(not scheme_menu.is_item_checked(scheme_menu.get_item_index(bar.MORE_SCHEME_GIMP)))
+	Settings.keymap_scheme = "gimp"
+	bar.refresh_keymap()
+	t.ok(scheme_menu.is_item_checked(scheme_menu.get_item_index(bar.MORE_SCHEME_GIMP)), "GIMP checks after scheme flip")
+	t.ok(not scheme_menu.is_item_checked(scheme_menu.get_item_index(bar.MORE_SCHEME_GODOT)))
+	t.eq(_btn(bar, "Raise").tooltip_text, "Raise  (W)", "tooltips follow the active scheme")
+	scheme_menu.id_pressed.emit(bar.MORE_SCHEME_GODOT)
+	t.eq(more_ids, [bar.MORE_PROBE, bar.MORE_SCHEME_GODOT], "scheme submenu emits more_selected")
+	Settings.keymap_scheme = "godot"
+	bar.refresh_keymap()
+	t.eq(_btn(bar, "Raise").tooltip_text, "Raise  (2)")
+
+	var view: MenuButton = bar.find_child("View", true, false)
+	t.ok(view != null, "View menu sits next to More")
+	var view_pop: PopupMenu = view.get_popup()
+	t.ok(view_pop.get_item_index(bar.VIEW_GEYSERS) >= 0)
+	t.ok(view_pop.get_item_index(bar.VIEW_UNITS) >= 0)
+	t.ok(view_pop.is_item_disabled(view_pop.get_item_index(bar.VIEW_PLANTS)))
+	t.eq(view_pop.get_item_tooltip(view_pop.get_item_index(bar.VIEW_PLANTS)), "no plant regions")
+
 	var menu: PopupMenu = bar.find_child("OpenMenu", true, false)
 	t.ok(menu != null, "Open owns a recent-maps menu")
 	bar.refresh_open_menu()
@@ -150,6 +185,9 @@ func run(t) -> void:
 	UndoStack.clear()
 	MapState.has_session = saved_session
 	Settings.game_root = saved_root
+	Settings.keymap_scheme = saved_scheme
+	Settings.view_scrap = saved_scrap
+	Settings.view_plants = saved_plants
 	Settings.recent_maps.clear()
 	for recent_path in saved_recent:
 		Settings.recent_maps.append(recent_path)

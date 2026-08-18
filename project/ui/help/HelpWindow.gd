@@ -3,21 +3,22 @@ extends Window
 
 func _ready() -> void:
 	close_requested.connect(hide)
-	if size.y < 400:
-		size.y = 400
-	%Body.text = """[code]RMB look     mouse wheel zoom     MMB orbit
-WASD fly     Q/E up down     Shift fast     Ctrl slow
-F frame map     Space top-down     H slope tint     V walk-the-surface
-G grid     Delete remove selected
-1 fly   2 raise   3 lower   4 flatten   5 smooth   6 ramp
-7 paint   8 place   9 select   0 noise
-Select: arrows nudge 1 m (Shift 5 m)     R rotate +15° (Shift+R +90°)
-[ ] radius     Shift+[ ] strength     Esc fly
-Ctrl+Z undo     Ctrl+Shift+Z redo     Ctrl+S save     ` log     F1 this
-LMB sculpt / place / select     Shift+click keep placing
-Alt+LMB eyedropper (paint)
-Autosave     every 30s while unsaved (a crash does not lose the session; Ctrl+S writes the map files)[/code]"""
+	if size.y < 420:
+		size.y = 420
+	refresh()
+
+
+func refresh() -> void:
+	var text := Keymap.help_text()
+	var extra := "Select  drag empty ground to box-select (marquee); Shift adds to the selection\nPaint region  select a water/plant feature then Paint region; LMB paints the mask, Alt+LMB erases\nTeam  Shift+0…7 assign the selection (inspector Team row for 0–4; SpinBox for higher)\nView  top-bar checkboxes hide categories / water / plants / sky (view only; hidden objects still save)\n"
+	if text.ends_with("[/code]"):
+		text = text.substr(0, text.length() - 7) + extra + "[/code]"
+	else:
+		text += extra
+	%Body.text = text
+	title = "Hotkeys  (%s)" % Keymap.scheme_label()
 
 
 func popup_help() -> void:
+	refresh()
 	popup_centered()

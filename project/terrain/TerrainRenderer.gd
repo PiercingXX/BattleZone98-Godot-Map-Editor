@@ -8,6 +8,10 @@ var field: HeightField
 var _chunk_mesh: ArrayMesh
 var _shader: Shader
 var _show_slope: bool = false
+var _show_water: bool = true
+var _mask_on: bool = false
+var _mask_tint: Color = Color(0.12, 0.32, 0.62)
+var _mask_water_level: float = -1.0
 
 
 func _ready() -> void:
@@ -34,7 +38,29 @@ func set_brush(on: bool, center: Vector2, radius: float, falloff: float, square:
 
 
 func set_water_level(level: float) -> void:
-	_set_all("water_level", level)
+	_set_all("water_level", level if _show_water else -1.0)
+
+
+func set_water_visible(on: bool) -> void:
+	if _show_water == on:
+		return
+	_show_water = on
+	set_water_level(MapState.water_level())
+
+
+func is_water_visible() -> bool:
+	return _show_water
+
+
+func set_feature_mask(on: bool, tex: Texture2D = null, tint: Color = Color(0.12, 0.32, 0.62), water_m: float = -1.0) -> void:
+	_mask_on = on and tex != null
+	_mask_tint = tint
+	_mask_water_level = water_m
+	_set_all("show_mask", _mask_on)
+	if tex != null:
+		_set_all("mask_tex", tex)
+	_set_all("mask_tint", Vector3(tint.r, tint.g, tint.b))
+	_set_all("mask_water_level", water_m)
 
 
 func set_show_grid(on: bool) -> void:
@@ -161,7 +187,11 @@ func rebuild(p_field: HeightField) -> void:
 		for cx in chunks_x:
 			_add_chunk(cx, cz)
 	refresh_materials()
-	set_water_level(MapState.water_level())
+	set_water_level(MapState.water_level() if _show_water else -1.0)
+	if _mask_on and MapState.mask_texture:
+		set_feature_mask(true, MapState.mask_texture, _mask_tint, _mask_water_level)
+	else:
+		set_feature_mask(false)
 
 
 func _add_chunk(cx: int, cz: int) -> void:
@@ -190,7 +220,12 @@ func _add_chunk(cx: int, cz: int) -> void:
 		mat.set_shader_parameter("mat_tex", MapState.mat_texture)
 	mat.set_shader_parameter("mat_colors", MaterialPalette.colors())
 	mat.set_shader_parameter("show_materials", MapState.mat_grid_x > 0)
-	mat.set_shader_parameter("water_level", MapState.water_level())
+	mat.set_shader_parameter("water_level", MapState.water_level() if _show_water else -1.0)
+	mat.set_shader_parameter("show_mask", _mask_on)
+	if MapState.mask_texture:
+		mat.set_shader_parameter("mask_tex", MapState.mask_texture)
+	mat.set_shader_parameter("mask_tint", Vector3(_mask_tint.r, _mask_tint.g, _mask_tint.b))
+	mat.set_shader_parameter("mask_water_level", _mask_water_level)
 	inst.material_override = mat
 	inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(inst)

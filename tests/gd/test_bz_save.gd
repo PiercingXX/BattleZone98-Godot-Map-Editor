@@ -12,6 +12,9 @@ func run(t) -> void:
 	_test_dirty_materials(t, tmp)
 	_test_dirty_objects(t, tmp)
 	_test_features_copy(t, tmp)
+	_test_save_with_features(t, tmp)
+	_test_managed_carriers_not_duplicated(t, tmp)
+	_test_feature_stem_errors(t, tmp)
 	_rm_rf(tmp)
 
 
@@ -262,6 +265,178 @@ func _test_features_copy(t, tmp: String) -> void:
 	t.ok((saved.get("files", []) as Array).has("features.json"))
 	t.ok(FileAccess.file_exists(out_dir.path_join("features.json")))
 	t.eq((saved.get("features", {}) as Dictionary).get("water", []).size(), 1)
+
+
+func _test_save_with_features(t, tmp: String) -> void:
+	var sess: String = tmp.path_join("feat_gen")
+	var src: String = sess.path_join("residue").path_join("source")
+	DirAccess.make_dir_recursive_absolute(src)
+	DirAccess.make_dir_recursive_absolute(sess.path_join("masks"))
+	var hm: BzHg2.HeightMap = _pit_heightmap()
+	hm.write(src.path_join("featmap.hg2"))
+	var paths: Dictionary = _paths(sess)
+	_write_r16(str(paths["terrain"]), hm.data, true)
+	_write_flags(str(paths["hg2_flags"]), hm.data)
+	_write_json(str(paths["hg2_header"]), {
+		"version": 1, "depth": 8, "zonesX": 1, "zonesZ": 1, "unknownA": 10, "unknownB": 0,
+	})
+	var fixture: String = ProjectSettings.globalize_path("res://tests/gd/fixtures/bzn/untouched.bzn")
+	DirAccess.copy_absolute(fixture, src.path_join("featmap.bzn"))
+	DirAccess.copy_absolute(fixture, src.path_join("featmap_S.bzn"))
+	_write_mask(sess.path_join("masks").path_join("wtr1.u8"), _pit_mask())
+	_write_mask(sess.path_join("masks").path_join("plnt1.u8"), _flat_plant_mask())
+	_write_json(sess.path_join("features.json"), {
+		"water": [{
+			"stem": "wtr1", "level_m": 70.0, "mask": "masks/wtr1.u8", "variant_scope": "all",
+		}],
+		"plants": [{
+			"stem": "plnt1", "mask": "masks/plnt1.u8", "density": 16, "seed": 7,
+		}],
+	})
+	_write_json(sess.path_join("manifest.json"), {
+		"contract_version": 1, "stem": "featmap", "variants": ["", "_S"],
+		"mat_grid_x": 64, "mat_grid_z": 64,
+	})
+	_write_json(sess.path_join("dirty.json"), {
+		"terrain": false, "materials": false, "objects": {"": [], "_S": []},
+		"features": false, "meta": [],
+	})
+	var out_dir: String = tmp.path_join("out_feat_gen")
+	var saved: Dictionary = BzSave.save_session(sess, out_dir)
+	t.eq(saved.get("ok"), true, "save-with-features ok: %s" % str(saved))
+	if saved.get("ok") != true:
+		return
+	t.ok(saved.has("features"), "payload features block stays")
+	t.eq((saved.get("features", {}) as Dictionary).get("water", []).size(), 1)
+	var regen: Array = saved.get("regenerated", [])
+	for name in ["wtr1.mesh", "wtr1.material", "wtr1.odf", "plnt1.mesh", "plnt1.material", "plnt1.odf"]:
+		t.ok(FileAccess.file_exists(out_dir.path_join(name)), "emitted %s" % name)
+		t.ok(regen.has(name), "regenerated lists %s" % name)
+	t.ok(regen.has("featmap.bzn"), "base bzn regenerated with carriers")
+	t.ok(regen.has("featmap_S.bzn"), "strategy bzn regenerated with carriers")
+	_assert_one_carrier(t, out_dir.path_join("featmap.bzn"), "wtr1")
+	_assert_one_carrier(t, out_dir.path_join("featmap.bzn"), "plnt1")
+	_assert_one_carrier(t, out_dir.path_join("featmap_S.bzn"), "wtr1")
+	_assert_one_carrier(t, out_dir.path_join("featmap_S.bzn"), "plnt1")
+	var loaded: Dictionary = BzBzn.read_bzn(out_dir.path_join("featmap.bzn"))
+	t.ok(bool(loaded.get("ok")), "emitted bzn readable")
+	var bzn: BzBzn.BznFile = loaded.get("bznfile")
+	var problems: PackedStringArray = bzn.validate()
+	t.eq(problems.size(), 0, "validate: %s" % ", ".join(problems))
+	var odf: String = FileAccess.get_file_as_string(out_dir.path_join("wtr1.odf"))
+	t.ok(odf.contains('classLabel = "i76building2"'))
+
+
+func _test_managed_carriers_not_duplicated(t, tmp: String) -> void:
+	var sess: String = tmp.path_join("feat_dup")
+	var src: String = sess.path_join("residue").path_join("source")
+	DirAccess.make_dir_recursive_absolute(src)
+	DirAccess.make_dir_recursive_absolute(sess.path_join("masks"))
+	var hm: BzHg2.HeightMap = _pit_heightmap()
+	hm.write(src.path_join("dupmap.hg2"))
+	var paths: Dictionary = _paths(sess)
+	_write_r16(str(paths["terrain"]), hm.data, true)
+	_write_flags(str(paths["hg2_flags"]), hm.data)
+	_write_json(str(paths["hg2_header"]), {
+		"version": 1, "depth": 8, "zonesX": 1, "zonesZ": 1, "unknownA": 10, "unknownB": 0,
+	})
+	var fixture: String = ProjectSettings.globalize_path("res://tests/gd/fixtures/bzn/untouched.bzn")
+	DirAccess.copy_absolute(fixture, src.path_join("dupmap.bzn"))
+	_write_mask(sess.path_join("masks").path_join("wtr1.u8"), _pit_mask())
+	_write_json(sess.path_join("features.json"), {
+		"water": [{"stem": "wtr1", "level_m": 70.0, "mask": "masks/wtr1.u8", "variant_scope": "all"}],
+		"plants": [],
+	})
+	_write_json(sess.path_join("manifest.json"), {
+		"contract_version": 1, "stem": "dupmap", "variants": [""],
+	})
+	_write_json(sess.path_join("dirty.json"), {
+		"terrain": false, "materials": false, "objects": {"": []}, "features": false, "meta": [],
+	})
+	var out1: String = tmp.path_join("out_dup1")
+	var s1: Dictionary = BzSave.save_session(sess, out1)
+	t.eq(s1.get("ok"), true, "first save ok")
+	_assert_one_carrier(t, out1.path_join("dupmap.bzn"), "wtr1")
+	# Simulate re-opening the previous save: residue now already has the carrier.
+	DirAccess.copy_absolute(out1.path_join("dupmap.bzn"), src.path_join("dupmap.bzn"))
+	var out2: String = tmp.path_join("out_dup2")
+	var s2: Dictionary = BzSave.save_session(sess, out2)
+	t.eq(s2.get("ok"), true, "second save ok")
+	_assert_one_carrier(t, out2.path_join("dupmap.bzn"), "wtr1")
+	var loaded: Dictionary = BzBzn.read_bzn(out2.path_join("dupmap.bzn"))
+	var bzn: BzBzn.BznFile = loaded.get("bznfile")
+	t.eq(bzn.validate().size(), 0, "second save still validates")
+
+
+func _test_feature_stem_errors(t, tmp: String) -> void:
+	var sess: String = tmp.path_join("feat_bad")
+	var src: String = sess.path_join("residue").path_join("source")
+	DirAccess.make_dir_recursive_absolute(src)
+	_write_bytes(src.path_join("badmap.trn"), "trn".to_utf8_buffer())
+	_write_json(sess.path_join("manifest.json"), {"contract_version": 1, "stem": "badmap", "variants": [""]})
+	_write_json(sess.path_join("dirty.json"), {
+		"terrain": false, "materials": false, "objects": {"": []}, "features": false, "meta": [],
+	})
+	_write_json(sess.path_join("features.json"), {
+		"water": [{"stem": "badmap", "level_m": 70.0}],
+		"plants": [],
+	})
+	var saved: Dictionary = BzSave.save_session(sess, tmp.path_join("out_bad"))
+	t.ok(BzErrors.is_err(saved), "map-stem collision is an error")
+	t.eq(saved["error"].get("code"), "stem_collision")
+
+
+func _assert_one_carrier(t, bzn_path: String, stem: String) -> void:
+	var loaded: Dictionary = BzBzn.read_bzn(bzn_path)
+	t.ok(bool(loaded.get("ok")), "read %s" % bzn_path.get_file())
+	var bzn: BzBzn.BznFile = loaded.get("bznfile")
+	var n := 0
+	var pos: Variant = null
+	for obj in bzn.objects:
+		var prj: String = "" if obj.prjid == null else str(obj.prjid)
+		if prj == stem:
+			n += 1
+			pos = obj.position()
+	t.eq(n, 1, "%s has exactly one %s carrier" % [bzn_path.get_file(), stem])
+	if n == 1 and pos is Array and (pos as Array).size() >= 3:
+		t.near(float(pos[0]), 0.0, 0.001, "%s carrier x" % stem)
+		t.near(float(pos[2]), 0.0, 0.001, "%s carrier z" % stem)
+
+
+func _pit_heightmap() -> BzHg2.HeightMap:
+	var data := PackedInt32Array()
+	data.resize(256 * 256)
+	data.fill(1000)
+	for z in range(40, 81):
+		for x in range(40, 81):
+			data[z * 256 + x] = 400
+	return BzHg2.HeightMap.new(1, 1, data)
+
+
+func _pit_mask() -> PackedByteArray:
+	var mask := PackedByteArray()
+	mask.resize(256 * 256)
+	for z in range(40, 81):
+		for x in range(40, 81):
+			mask[z * 256 + x] = 1
+	return mask
+
+
+func _flat_plant_mask() -> PackedByteArray:
+	var mask := PackedByteArray()
+	mask.resize(256 * 256)
+	mask.fill(1)
+	for z in range(40, 81):
+		for x in range(40, 81):
+			mask[z * 256 + x] = 0
+	return mask
+
+
+func _write_mask(path: String, mask: PackedByteArray) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f:
+		f.store_buffer(mask)
+		f.close()
 
 
 func _write_json(path: String, payload: Variant) -> void:

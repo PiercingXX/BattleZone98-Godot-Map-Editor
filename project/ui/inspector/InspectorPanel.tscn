@@ -60,7 +60,52 @@ max_value = 180.0
 step = 1.0
 prefix = "yaw ° "
 
-[node name="Team" type="SpinBox" parent="Box"]
+[node name="TeamRow" type="HBoxContainer" parent="Box"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Team0" type="Button" parent="Box/TeamRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(28, 0)
+layout_mode = 2
+toggle_mode = true
+tooltip_text = "Team 0  (Shift+0)"
+text = "0"
+
+[node name="Team1" type="Button" parent="Box/TeamRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(28, 0)
+layout_mode = 2
+toggle_mode = true
+tooltip_text = "Team 1  (Shift+1)"
+text = "1"
+
+[node name="Team2" type="Button" parent="Box/TeamRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(28, 0)
+layout_mode = 2
+toggle_mode = true
+tooltip_text = "Team 2  (Shift+2)"
+text = "2"
+
+[node name="Team3" type="Button" parent="Box/TeamRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(28, 0)
+layout_mode = 2
+toggle_mode = true
+tooltip_text = "Team 3  (Shift+3)"
+text = "3"
+
+[node name="Team4" type="Button" parent="Box/TeamRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(28, 0)
+layout_mode = 2
+toggle_mode = true
+tooltip_text = "Team 4  (Shift+4)"
+text = "4"
+
+[node name="Team" type="SpinBox" parent="Box/TeamRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3

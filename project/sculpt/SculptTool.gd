@@ -4,6 +4,7 @@ class_name SculptTool
 
 const HeightStrokeCommandScript = preload("res://project/commands/HeightStrokeCommand.gd")
 const MaterialStrokeCommandScript = preload("res://project/commands/MaterialStrokeCommand.gd")
+const MaskStrokeCommandScript = preload("res://project/commands/MaskStrokeCommand.gd")
 
 const RAW_MIN := 1
 const RAW_MAX := 4095
@@ -23,13 +24,19 @@ var _stroke_x1: int = 0
 var _stroke_z1: int = 0
 var _stroke_before: PackedInt32Array = PackedInt32Array()
 var _stroke_snapshot: PackedInt32Array = PackedInt32Array()
+var _mask_snapshot: PackedByteArray = PackedByteArray()
 var _active: bool = false
 var _is_paint: bool = false
+var _is_mask: bool = false
+var _mask_stem: String = ""
+var _mask_value: int = 255
 
 
 func begin_stroke(field: HeightField, cx_m: float, cz_m: float, paint: bool) -> void:
 	_active = true
 	_is_paint = paint
+	_is_mask = false
+	_mask_stem = ""
 	_touch_reset()
 	if paint:
 		_stroke_snapshot = MapState.materials.duplicate()
@@ -39,8 +46,24 @@ func begin_stroke(field: HeightField, cx_m: float, cz_m: float, paint: bool) -> 
 	stamp(field, cx_m, cz_m)
 
 
+func begin_mask_stroke(field: HeightField, cx_m: float, cz_m: float, stem: String, value: int) -> void:
+	_active = true
+	_is_paint = false
+	_is_mask = true
+	_mask_stem = stem
+	_mask_value = value & 0xFF
+	_touch_reset()
+	_mask_snapshot = MapState.ensure_mask(stem).duplicate()
+	stamp(field, cx_m, cz_m)
+
+
 func stamp(field: HeightField, cx_m: float, cz_m: float) -> void:
-	if not _active or field == null or field.grid_x < 2:
+	if not _active or field == null:
+		return
+	if _is_mask:
+		_stamp_mask(cx_m, cz_m)
+		return
+	if field.grid_x < 2:
 		return
 	if _is_paint:
 		_stamp_paint(cx_m, cz_m)
@@ -75,7 +98,7 @@ func stamp(field: HeightField, cx_m: float, cz_m: float) -> void:
 
 
 func end_stroke(field: HeightField):
-	if not _active or _is_paint:
+	if not _active or _is_paint or _is_mask:
 		_active = false
 		return null
 	_active = false
@@ -126,6 +149,68 @@ func end_paint():
 	var cmd = MaterialStrokeCommandScript.new()
 	cmd.setup(_stroke_x0, _stroke_z0, w, d, before, after)
 	return cmd
+
+
+func end_mask_paint():
+	if not _active or not _is_mask:
+		_active = false
+		_is_mask = false
+		return null
+	_active = false
+	_is_mask = false
+	if _stroke_x1 < _stroke_x0 or _mask_stem.is_empty():
+		return null
+	var w := _stroke_x1 - _stroke_x0 + 1
+	var d := _stroke_z1 - _stroke_z0 + 1
+	var before := PackedByteArray()
+	var after := PackedByteArray()
+	before.resize(w * d)
+	after.resize(w * d)
+	var gx := MapState.field.grid_x if MapState.field != null else 0
+	var live := MapState.get_mask(_mask_stem)
+	if gx < 1 or live.is_empty() or _mask_snapshot.size() != live.size():
+		return null
+	var i := 0
+	for z in range(_stroke_z0, _stroke_z1 + 1):
+		for x in range(_stroke_x0, _stroke_x1 + 1):
+			var idx := z * gx + x
+			before[i] = _mask_snapshot[idx]
+			after[i] = live[idx]
+			i += 1
+	var cmd = MaskStrokeCommandScript.new()
+	cmd.setup(_mask_stem, _stroke_x0, _stroke_z0, w, d, before, after)
+	return cmd
+
+
+func _stamp_mask(cx_m: float, cz_m: float) -> void:
+	var field: HeightField = MapState.field
+	if field == null or field.grid_x < 1 or _mask_stem.is_empty():
+		return
+	var mask := MapState.ensure_mask(_mask_stem)
+	var cell := HeightField.CELL_M
+	var r_cells := int(ceil(radius_m / cell))
+	var cx := int(floor(cx_m / cell))
+	var cz := int(floor(cz_m / cell))
+	var x0 := maxi(0, cx - r_cells)
+	var z0 := maxi(0, cz - r_cells)
+	var x1 := mini(field.grid_x - 1, cx + r_cells)
+	var z1 := mini(field.grid_z - 1, cz + r_cells)
+	if x1 < x0 or z1 < z0:
+		return
+	_expand(x0, z0, x1, z1)
+	var gx := field.grid_x
+	if mask.size() != gx * field.grid_z:
+		return
+	for z in range(z0, z1 + 1):
+		for x in range(x0, x1 + 1):
+			var wx := (float(x) + 0.5) * cell
+			var wz := (float(z) + 0.5) * cell
+			if _weight(cx_m, cz_m, wx, wz) <= 0.0:
+				continue
+			mask[z * gx + x] = _mask_value
+	MapState.upload_mask(_mask_stem)
+	MapState.mark_features_dirty()
+	last_uploaded = (x1 - x0 + 1) * (z1 - z0 + 1)
 
 
 func _stamp_paint(cx_m: float, cz_m: float) -> void:

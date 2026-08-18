@@ -13,6 +13,7 @@ var _kind: String = "info"
 @onready var _walk: Button = %Walk
 @onready var _grid: Button = %Grid
 @onready var _slope: Button = %Slope
+var _sel: Label
 
 
 func _ready() -> void:
@@ -22,6 +23,13 @@ func _ready() -> void:
 	_slope.toggled.connect(_on_slope)
 	_walk.set_pressed_no_signal(Settings.walk_mode)
 	tooltip_text = "Unsaved sessions autosave every 30s. A crash does not lose the session. Save (Ctrl+S) writes the map files."
+	_sel = Label.new()
+	_sel.name = "SelectionCount"
+	_sel.visible = false
+	_sel.add_theme_color_override("font_color", Color(1.0, 0.88, 0.38))
+	var inner: HBoxContainer = $Inner
+	inner.add_child(_sel)
+	inner.move_child(_sel, _map.get_index() + 1)
 	set_status("info", "starting")
 
 
@@ -59,6 +67,13 @@ func set_map_info(text: String) -> void:
 
 func set_debug(text: String) -> void:
 	_debug.text = text
+
+
+func set_selection_count(count: int, show: bool) -> void:
+	if _sel == null:
+		return
+	_sel.visible = show
+	_sel.text = "%d selected" % count if show else ""
 
 
 func set_log_visible(on: bool) -> void:

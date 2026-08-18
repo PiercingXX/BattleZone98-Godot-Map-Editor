@@ -13,6 +13,7 @@ signal variant_changed
 signal undo_requested
 signal redo_requested
 signal frame_requested
+signal view_changed
 
 const MORE_IMPORT := 0
 const MORE_RENDER := 1
@@ -21,11 +22,24 @@ const MORE_PACK := 3
 const MORE_PROBE := 4
 const MORE_HELP := 5
 const MORE_SAVE_AS := 6
+const MORE_SCHEME_GODOT := 7
+const MORE_SCHEME_GIMP := 8
 const OPEN_BROWSE_ID := 0
+const VIEW_GEYSERS := 0
+const VIEW_SCRAP := 1
+const VIEW_SPAWNS := 2
+const VIEW_BUILDINGS := 3
+const VIEW_UNITS := 4
+const VIEW_PROPS := 5
+const VIEW_WATER := 6
+const VIEW_PLANTS := 7
+const VIEW_SKY := 8
 
 var _setting_tool: bool = false
 var _busy: bool = false
 var _open_menu: PopupMenu
+var _scheme_menu: PopupMenu
+var _view_menu: PopupMenu
 
 @onready var _map_label: Label = %MapLabel
 @onready var _variant: OptionButton = %Variant
@@ -38,10 +52,12 @@ var _open_menu: PopupMenu
 @onready var _btn_frame: Button = %Frame
 @onready var _tools: HBoxContainer = %Tools
 @onready var _more: MenuButton = %More
+@onready var _view: MenuButton = %View
 
 
 func _ready() -> void:
 	_install_open_menu()
+	_install_view_menu()
 	%New.pressed.connect(func(): new_requested.emit())
 	%Save.pressed.connect(func(): save_requested.emit())
 	%Validate.pressed.connect(func(): validate_requested.emit())
@@ -58,6 +74,13 @@ func _ready() -> void:
 	pop.add_item("Re-probe install", MORE_PROBE)
 	pop.add_item("Save As…", MORE_SAVE_AS)
 	pop.add_item("Hotkeys  F1", MORE_HELP)
+	_scheme_menu = PopupMenu.new()
+	_scheme_menu.name = "KeymapScheme"
+	_scheme_menu.add_radio_check_item("Godot", MORE_SCHEME_GODOT)
+	_scheme_menu.add_radio_check_item("GIMP", MORE_SCHEME_GIMP)
+	pop.add_child(_scheme_menu)
+	pop.add_submenu_item("Keyboard scheme", _scheme_menu.name)
+	_scheme_menu.id_pressed.connect(func(id): more_selected.emit(id))
 	pop.id_pressed.connect(func(id):
 		if id == MORE_SAVE_AS:
 			save_as_requested.emit()
@@ -71,11 +94,127 @@ func _ready() -> void:
 			child.pressed.connect(_on_tool_button.bind(tool_name))
 	ToolState.tool_changed.connect(set_tool)
 	MapState.session_changed.connect(_refresh_actions)
+	MapState.features_changed.connect(_refresh_view_menu)
 	UndoStack.changed.connect(_refresh_actions)
 	Backend.call_started.connect(func(_v): set_busy(true))
 	Backend.call_finished.connect(func(_v, _r): set_busy(false))
 	Backend.call_failed.connect(func(_v, _e): set_busy(false))
 	_refresh_actions()
+
+
+func _install_view_menu() -> void:
+	if _view == null:
+		return
+	_view_menu = _view.get_popup()
+	_view_menu.hide_on_checkable_item_selection = false
+	_view_menu.clear()
+	_view_menu.add_check_item("Geysers", VIEW_GEYSERS)
+	_view_menu.add_check_item("Scrap", VIEW_SCRAP)
+	_view_menu.add_check_item("Spawns", VIEW_SPAWNS)
+	_view_menu.add_check_item("Buildings", VIEW_BUILDINGS)
+	_view_menu.add_check_item("Units", VIEW_UNITS)
+	_view_menu.add_check_item("Props", VIEW_PROPS)
+	_view_menu.add_separator()
+	_view_menu.add_check_item("Water", VIEW_WATER)
+	_view_menu.add_check_item("Plants", VIEW_PLANTS)
+	_view_menu.add_check_item("Sky", VIEW_SKY)
+	_view_menu.id_pressed.connect(_on_view_id)
+	_view_menu.about_to_popup.connect(_refresh_view_menu)
+	_refresh_view_menu()
+
+
+func _on_view_id(id: int) -> void:
+	if _view_menu == null:
+		return
+	var idx := _view_menu.get_item_index(id)
+	if idx < 0:
+		return
+	if _view_menu.is_item_disabled(idx):
+		return
+	var key := _view_key(id)
+	if key.is_empty():
+		return
+	var on := not Settings.view_flag(key)
+	Settings.set_view_group(key, on)
+	Settings.save()
+	EditorFeedback.log("view %s %s" % [key, "on" if on else "off"])
+	view_changed.emit()
+	_refresh_view_menu()
+
+
+func _view_key(id: int) -> String:
+	match id:
+		VIEW_GEYSERS:
+			return "geysers"
+		VIEW_SCRAP:
+			return "scrap"
+		VIEW_SPAWNS:
+			return "spawns"
+		VIEW_BUILDINGS:
+			return "buildings"
+		VIEW_UNITS:
+			return "units"
+		VIEW_PROPS:
+			return "props"
+		VIEW_WATER:
+			return "water"
+		VIEW_PLANTS:
+			return "plants"
+		VIEW_SKY:
+			return "sky"
+	return ""
+
+
+func _refresh_view_menu() -> void:
+	if _view_menu == null or _view_menu.get_item_count() == 0:
+		return
+	_set_view_check(VIEW_GEYSERS, Settings.view_geysers, true, "")
+	_set_view_check(VIEW_SCRAP, Settings.view_scrap, true, "")
+	_set_view_check(VIEW_SPAWNS, Settings.view_spawns, true, "")
+	_set_view_check(VIEW_BUILDINGS, Settings.view_buildings, true, "")
+	_set_view_check(VIEW_UNITS, Settings.view_units, true, "")
+	_set_view_check(VIEW_PROPS, Settings.view_props, true, "")
+	_set_view_check(VIEW_WATER, Settings.view_water, true, "")
+	var plants_ok := _plants_overlay_ready()
+	_set_view_check(VIEW_PLANTS, Settings.view_plants, plants_ok, "no plant regions")
+	_set_view_check(VIEW_SKY, Settings.view_sky, true, "")
+
+
+func _set_view_check(id: int, on: bool, enabled: bool, disabled_tip: String) -> void:
+	var idx := _view_menu.get_item_index(id)
+	if idx < 0:
+		return
+	_view_menu.set_item_checked(idx, on)
+	_view_menu.set_item_disabled(idx, not enabled)
+	if enabled:
+		_view_menu.set_item_tooltip(idx, "")
+	else:
+		_view_menu.set_item_tooltip(idx, disabled_tip)
+
+
+func _plants_overlay_ready() -> bool:
+	var plants: Variant = MapState.features.get("plants", [])
+	var has_regions := typeof(plants) == TYPE_ARRAY and not (plants as Array).is_empty()
+	if not has_regions:
+		return false
+	var shell := _shell()
+	if shell == null:
+		return false
+	var terrain: Object = shell.get("_terrain")
+	if terrain == null:
+		return false
+	return (
+		terrain.has_method("set_plants_overlay")
+		or terrain.has_method("set_show_plants")
+		or terrain.has_method("set_plants_visible")
+	)
+
+
+func _shell() -> Node:
+	var tree := get_tree()
+	if tree == null:
+		return null
+	return tree.get_first_node_in_group("editor_shell")
 
 
 func _install_open_menu() -> void:
@@ -209,7 +348,7 @@ func _refresh_actions() -> void:
 		_btn_new.disabled = _busy
 	if _btn_save:
 		_btn_save.disabled = not can_act
-		_btn_save.tooltip_text = "Save  (Ctrl+S)" if can_act else (
+		_btn_save.tooltip_text = "Save  (%s)" % Keymap.format_action(Keymap.ACTION_SAVE) if can_act else (
 			"Busy…" if _busy else "Open a map first"
 		)
 	if _btn_validate:
@@ -219,17 +358,19 @@ func _refresh_actions() -> void:
 		)
 	if _btn_undo:
 		_btn_undo.disabled = not UndoStack.can_undo()
-		_btn_undo.tooltip_text = "Undo  (Ctrl+Z)" if UndoStack.can_undo() else "Nothing to undo"
+		_btn_undo.tooltip_text = "Undo  (%s)" % Keymap.format_action(Keymap.ACTION_UNDO) if UndoStack.can_undo() else "Nothing to undo"
 	if _btn_redo:
 		_btn_redo.disabled = not UndoStack.can_redo()
-		_btn_redo.tooltip_text = "Redo  (Ctrl+Shift+Z)" if UndoStack.can_redo() else "Nothing to redo"
+		_btn_redo.tooltip_text = "Redo  (%s)" % Keymap.format_action(Keymap.ACTION_REDO) if UndoStack.can_redo() else "Nothing to redo"
 	if _btn_frame:
 		_btn_frame.disabled = not session
-		_btn_frame.tooltip_text = "Frame the map  (F)" if session else "Open a map first"
+		_btn_frame.tooltip_text = "Frame the map  (%s)" % Keymap.format_action(Keymap.ACTION_FRAME) if session else "Open a map first"
+	_refresh_tool_tips()
 	if _variant:
 		_variant.disabled = not session or _variant.item_count == 0
 		_variant.tooltip_text = "Active variant (DM / _S / _ST / _SW)" if session else "Open a map first"
 	_refresh_more()
+	_refresh_view_menu()
 
 
 func _refresh_more() -> void:
@@ -246,7 +387,8 @@ func _refresh_more() -> void:
 	_set_more_item(pop, MORE_PACK, not _busy and session, "Open a map first")
 	_set_more_item(pop, MORE_PROBE, not _busy, "Busy…")
 	_set_more_item(pop, MORE_SAVE_AS, not _busy and session, "Open a map first")
-	_set_more_item(pop, MORE_HELP, true, "Keyboard reference  (F1)")
+	_set_more_item(pop, MORE_HELP, true, "Keyboard reference  (%s)" % Keymap.format_action(Keymap.ACTION_HELP))
+	_refresh_scheme_menu()
 
 
 func _set_more_item(pop: PopupMenu, id: int, enabled: bool, disabled_tip: String) -> void:
@@ -255,3 +397,46 @@ func _set_more_item(pop: PopupMenu, id: int, enabled: bool, disabled_tip: String
 		return
 	pop.set_item_disabled(idx, not enabled)
 	pop.set_item_tooltip(idx, disabled_tip if not enabled else "")
+
+
+func refresh_keymap() -> void:
+	_refresh_scheme_menu()
+	_refresh_tool_tips()
+	_refresh_more()
+
+
+func _refresh_scheme_menu() -> void:
+	if _scheme_menu == null:
+		return
+	var scheme := Keymap.active_scheme()
+	var godot_idx := _scheme_menu.get_item_index(MORE_SCHEME_GODOT)
+	var gimp_idx := _scheme_menu.get_item_index(MORE_SCHEME_GIMP)
+	if godot_idx >= 0:
+		_scheme_menu.set_item_checked(godot_idx, scheme == Keymap.SCHEME_GODOT)
+	if gimp_idx >= 0:
+		_scheme_menu.set_item_checked(gimp_idx, scheme == Keymap.SCHEME_GIMP)
+
+
+func _refresh_tool_tips() -> void:
+	if _tools == null:
+		return
+	var labels := {
+		"Fly": Keymap.ACTION_FLY,
+		"Raise": Keymap.ACTION_RAISE,
+		"Lower": Keymap.ACTION_LOWER,
+		"Flatten": Keymap.ACTION_FLATTEN,
+		"Smooth": Keymap.ACTION_SMOOTH,
+		"Ramp": Keymap.ACTION_RAMP,
+		"Paint": Keymap.ACTION_PAINT,
+		"Place": Keymap.ACTION_PLACE,
+		"Select": Keymap.ACTION_SELECT,
+		"Noise": Keymap.ACTION_NOISE,
+	}
+	for node_name in labels:
+		var node := _tools.get_node_or_null(str(node_name))
+		if not (node is Button):
+			continue
+		var caption := "Flat" if str(node_name) == "Flatten" else str(node_name)
+		(node as Button).tooltip_text = "%s  (%s)" % [
+			caption, Keymap.format_action(str(labels[node_name])),
+		]

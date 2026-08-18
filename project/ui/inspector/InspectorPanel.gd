@@ -12,6 +12,7 @@ signal water_changed(level: float)
 @onready var _z: SpinBox = %Z
 @onready var _yaw: SpinBox = %Yaw
 @onready var _team: SpinBox = %Team
+@onready var _team_btns: Array[Button] = []
 @onready var _pin: CheckBox = %PinHeight
 @onready var _mode: Label = %Mode
 @onready var _water: SpinBox = %Water
@@ -39,6 +40,7 @@ func _ready() -> void:
 	_z.value_changed.connect(func(_v: float) -> void: _mark_dirty("z"))
 	_yaw.value_changed.connect(func(_v: float) -> void: _mark_dirty("yaw"))
 	_team.value_changed.connect(func(_v: float) -> void: _mark_dirty("team"))
+	_install_team_buttons()
 	MapState.water_changed.connect(_on_water_state)
 	MapState.session_changed.connect(_on_session)
 	_water_timer = Timer.new()
@@ -315,6 +317,50 @@ func _edits_match(a: Dictionary, b: Dictionary) -> bool:
 	)
 
 
+func _install_team_buttons() -> void:
+	_team_btns.clear()
+	var colors: Array[Color] = [
+		Color(0.62, 0.62, 0.64),
+		Color(0.35, 0.82, 0.42),
+		Color(0.88, 0.32, 0.28),
+		Color(0.35, 0.55, 0.95),
+		Color(0.92, 0.82, 0.22),
+	]
+	for i in 5:
+		var btn: Button = find_child("Team%d" % i, true, false) as Button
+		if btn == null:
+			continue
+		btn.add_theme_color_override("font_color", colors[i])
+		btn.pressed.connect(_on_team_quick.bind(i))
+		_team_btns.append(btn)
+
+
+func _on_team_quick(team: int) -> void:
+	if _shown.is_empty():
+		EditorFeedback.log("nothing selected")
+		_refresh_fields()
+		return
+	if not MapState.has_session:
+		EditorFeedback.log("open a map first")
+		_refresh_fields()
+		return
+	if MapState.selected_ids.is_empty():
+		var sid := str(_shown.get("id", ""))
+		if sid.is_empty():
+			EditorFeedback.log("nothing selected")
+			_refresh_fields()
+			return
+		MapState.selected_ids = [sid] as Array[String]
+	EditActions.set_selection_team(team, EditorFeedback.log)
+	_syncing_fields = true
+	_team.value = team
+	if not _shown.is_empty():
+		_shown["team"] = team
+	_syncing_fields = false
+	_dirty.erase("team")
+	_refresh_fields()
+
+
 func _refresh_fields() -> void:
 	var has := not _shown.is_empty()
 	var session := MapState.has_session
@@ -336,6 +382,15 @@ func _refresh_fields() -> void:
 	_z.tooltip_text = "" if has else locked
 	_yaw.tooltip_text = "" if has else locked
 	_team.tooltip_text = "" if has else locked
+	var current_team := int(_team.value)
+	for i in _team_btns.size():
+		var btn := _team_btns[i]
+		btn.disabled = not has
+		btn.set_pressed_no_signal(has and current_team == i)
+		if has:
+			btn.tooltip_text = "Team %d  (Shift+%d)" % [i, i]
+		else:
+			btn.tooltip_text = locked
 	_pin.disabled = not has
 	_pin.tooltip_text = "Keep Y off the terrain" if has else locked
 	_y.editable = has and _pin.button_pressed

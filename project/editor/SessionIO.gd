@@ -44,8 +44,23 @@ func handle_more(id: int) -> void:
 			Backend.probe()
 		TopBarScript.MORE_HELP:
 			shell._help.popup_help()
+		TopBarScript.MORE_SCHEME_GODOT:
+			apply_keymap_scheme(Keymap.SCHEME_GODOT)
+		TopBarScript.MORE_SCHEME_GIMP:
+			apply_keymap_scheme(Keymap.SCHEME_GIMP)
 		# MORE_SAVE_AS never reaches here — TopBar intercepts it and emits
 		# save_as_requested instead.
+
+
+func apply_keymap_scheme(scheme: String) -> void:
+	var next := Keymap.normalize_scheme(scheme)
+	Settings.keymap_scheme = next
+	Settings.save()
+	log.call("keyboard scheme %s" % next)
+	if shell._help and shell._help.has_method("refresh"):
+		shell._help.refresh()
+	if shell._top and shell._top.has_method("refresh_keymap"):
+		shell._top.refresh_keymap()
 
 
 func import_assets() -> void:

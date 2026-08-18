@@ -24,14 +24,18 @@ const DarkThemeScript = preload("res://project/ui/DarkTheme.gd")
 @onready var _top = %TopBar
 @onready var _palette = %PalettePanel
 @onready var _inspector = %InspectorPanel
+@onready var _features = %FeaturesPanel
 @onready var _findings = %FindingsPanel
 @onready var _status = %StatusBar
 @onready var _help = %HelpWindow
 @onready var _probe = %ProbeDialog
+@onready var _world_env: WorldEnvironment = %WorldEnvironment
 
 var _sculpt = SculptTool.new()
 var _io: SessionIO
 var _stroking: bool = false
+var _mask_stroking: bool = false
+var _mask_erase: bool = false
 var _show_grid: bool = false
 var _setting_tool: bool = false
 var _ramp_a: Vector3 = Vector3.INF
@@ -42,6 +46,14 @@ var _save_as: bool = false
 var _quit_after_save: bool = false
 var _smoke_path: String = ""
 var _smoke_save: String = ""
+var _select_pressing: bool = false
+var _select_marquee: bool = false
+var _select_from: Vector2 = Vector2.ZERO
+var _select_to: Vector2 = Vector2.ZERO
+var _select_shift: bool = false
+var _select_press_id: String = ""
+var _hover_status: bool = false
+var _marquee: Control
 
 
 func _ready() -> void:
@@ -67,7 +79,10 @@ func _ready() -> void:
 	add_child(autosave)
 	autosave.start()
 	_refresh_map_label()
-	_log.call("BattleZone 98 Godot Map Editor. F1 help. Unsaved sessions autosave every 30s. Open a map to sculpt and place.")
+	var version := str(ProjectSettings.get_setting("application/config/version", ""))
+	if not version.is_empty():
+		get_window().title = "BattleZone 98 Godot Map Editor  v%s" % version
+	_log.call("BattleZone 98 Godot Map Editor v%s. F1 help. Unsaved sessions autosave every 30s. Open a map to sculpt and place." % version)
 	Backend.probe()
 	_queue_smoke_open()
 
@@ -96,6 +111,7 @@ func _wire() -> void:
 	_top.undo_requested.connect(func(): UndoStack.undo())
 	_top.redo_requested.connect(func(): UndoStack.redo())
 	_top.frame_requested.connect(camera_frame)
+	_top.view_changed.connect(_apply_view_settings)
 	_palette.class_armed.connect(func(rec):
 		ToolState.set_armed(rec)
 		_log.call("armed %s  %s  %s" % [rec.get("prjid"), rec.get("placement_mode"), rec.get("mesh_fidelity")])
@@ -153,9 +169,24 @@ func _wire() -> void:
 		if ToolState.armed.is_empty():
 			_objects.set_ghost(false, {}, MapState.field, Vector3.UP)
 	)
+	ToolState.mask_target_changed.connect(_refresh_mask_overlay)
+	ToolState.mask_paint_changed.connect(_refresh_mask_overlay)
+	MapState.mask_changed.connect(_refresh_mask_overlay)
+	MapState.features_changed.connect(_refresh_mask_overlay)
+	MapState.water_changed.connect(func(_l): _refresh_mask_overlay())
 	if _camera.has_signal("speed_changed"):
 		_camera.speed_changed.connect(func(mps): _status.set_status("transient", "cam %.0f m/s" % mps))
 	_sync_sculpt()
+	if _features == null:
+		push_error("FeaturesPanel missing from main.tscn")
+	_marquee = Control.new()
+	_marquee.name = "MarqueeOverlay"
+	_marquee.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_marquee.z_index = 20
+	_marquee.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_marquee.draw.connect(_on_marquee_draw)
+	_center.add_child(_marquee)
+	_apply_view_settings()
 
 
 func _process(_delta: float) -> void:
@@ -164,11 +195,19 @@ func _process(_delta: float) -> void:
 		_terrain.get_child_count() if _terrain else 0,
 		_sculpt.last_uploaded,
 	])
+	if _select_pressing and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		_finish_select_gesture()
+	elif _select_pressing:
+		_update_select_drag(_viewport.get_mouse_position())
 	if not MapState.has_session:
+		_status.set_selection_count(0, false)
 		return
-	if not _center.get_global_rect().has_point(get_global_mouse_position()):
+	var over_view := _center.get_global_rect().has_point(get_global_mouse_position())
+	if not over_view:
 		_terrain.set_brush(false, Vector2.ZERO, 0.0, 0.0, false)
+		_update_select_hover(false)
 		return
+	_update_select_hover(true)
 	var hit := _pick()
 	if hit.get("hit", false):
 		var p: Vector3 = hit["position"]
@@ -176,7 +215,7 @@ func _process(_delta: float) -> void:
 		_status.set_cursor("xz %.1f, %.1f  h %.1f m  mat %d  %s   ·  RMB look  wheel zoom  MMB orbit  WASD fly" % [
 			p.x, p.z, p.y, MapState.material_at(p.x, p.z), ToolState.tool,
 		])
-		var sculpting := ToolState.tool in ["raise", "lower", "flatten", "smooth", "ramp", "noise", "paint"]
+		var sculpting := ToolState.is_mask_painting() or ToolState.tool in ["raise", "lower", "flatten", "smooth", "ramp", "noise", "paint"]
 		if sculpting:
 			_terrain.set_brush(true, Vector2(p.x, p.z), ToolState.radius_m, ToolState.falloff, ToolState.shape == "square")
 		else:
@@ -199,48 +238,32 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	var k := event as InputEventKey
 	var handled := true
-	if k.keycode == KEY_F1:
-		_help.popup_help()
+	# Escape always disarms; in the GIMP scheme it is also tool.fly.
+	if k.keycode == KEY_ESCAPE:
+		if _select_pressing:
+			_cancel_select_gesture()
+		ToolState.clear_armed()
+		if ToolState.mask_paint:
+			ToolState.set_mask_paint(false)
+			_log.call("mask paint off")
+	var action := Keymap.resolve(k)
+	if not action.is_empty():
+		if action.begins_with("team.") and EditActions.gui_text_focused(get_viewport()):
+			handled = false
+		else:
+			_apply_keymap_action(action)
 	elif k.keycode == KEY_QUOTELEFT:
 		_console.visible = not _console.visible
 		_status.set_log_visible(_console.visible)
-	elif k.keycode == KEY_G:
-		_show_grid = not _show_grid
-		_apply_grid()
 	elif k.keycode == KEY_DELETE:
 		EditActions.delete_selected(_log)
 		_on_objects_mutated()
 	elif k.keycode == KEY_ESCAPE:
-		ToolState.clear_armed()
 		_set_tool("fly")
-	elif k.ctrl_pressed and k.keycode == KEY_Z:
-		UndoStack.redo() if k.shift_pressed else UndoStack.undo()
-	elif k.ctrl_pressed and k.keycode == KEY_S:
-		_io.save()
-	elif k.keycode == KEY_V:
-		Settings.walk_mode = not Settings.walk_mode
-		Settings.save()
-		_log.call("walk mode %s" % Settings.walk_mode)
 	elif k.keycode == KEY_BRACKETLEFT:
 		ToolState.set_strength(maxf(0.05, ToolState.strength - 0.05)) if k.shift_pressed else ToolState.set_radius(maxf(5, ToolState.radius_m - 5))
 	elif k.keycode == KEY_BRACKETRIGHT:
 		ToolState.set_strength(minf(1.0, ToolState.strength + 0.05)) if k.shift_pressed else ToolState.set_radius(minf(400, ToolState.radius_m + 5))
-	elif k.keycode >= KEY_1 and k.keycode <= KEY_8:
-		_set_tool(["fly", "raise", "lower", "flatten", "smooth", "ramp", "paint", "place"][k.keycode - KEY_1])
-	elif k.keycode == KEY_9:
-		_set_tool("select")
-	elif k.keycode == KEY_0:
-		_set_tool("noise")
-	elif k.keycode == KEY_F and not k.ctrl_pressed:
-		camera_frame()
-	elif k.keycode == KEY_SPACE:
-		if MapState.has_session:
-			_camera.top_down(float(MapState.width_m), float(MapState.depth_m))
-	elif k.keycode == KEY_H:
-		if _terrain.has_method("set_slope_overlay"):
-			_terrain._show_slope = not _terrain._show_slope
-			_terrain.set_slope_overlay(_terrain._show_slope)
-			_log.call("slope overlay %s" % ("on" if _terrain._show_slope else "off"))
 	elif (
 		not k.ctrl_pressed
 		and not k.alt_pressed
@@ -254,6 +277,45 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+func _apply_keymap_action(action: String) -> void:
+	if action.begins_with("tool."):
+		_set_tool(action.get_slice(".", 1))
+		return
+	if action.begins_with("team."):
+		var team := Keymap.team_from_action(action)
+		if team < 0:
+			return
+		EditActions.set_selection_team(team, _log)
+		_on_objects_mutated()
+		return
+	match action:
+		"help":
+			_help.popup_help()
+		"grid":
+			_show_grid = not _show_grid
+			_apply_grid()
+		"undo":
+			UndoStack.undo()
+		"redo":
+			UndoStack.redo()
+		"save":
+			_io.save()
+		"walk":
+			Settings.walk_mode = not Settings.walk_mode
+			Settings.save()
+			_log.call("walk mode %s" % Settings.walk_mode)
+		"frame":
+			camera_frame()
+		"top_down":
+			if MapState.has_session:
+				_camera.top_down(float(MapState.width_m), float(MapState.depth_m))
+		"slope_overlay":
+			if _terrain.has_method("set_slope_overlay"):
+				_terrain._show_slope = not _terrain._show_slope
+				_terrain.set_slope_overlay(_terrain._show_slope)
+				_log.call("slope overlay %s" % ("on" if _terrain._show_slope else "off"))
+
+
 func _on_view_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
@@ -264,6 +326,14 @@ func _on_view_gui_input(event: InputEvent) -> void:
 		if mb.button_index == MOUSE_BUTTON_LEFT:
 			if not mb.pressed:
 				_on_lmb_up()
+				if _select_pressing:
+					_finish_select_gesture()
+			elif ToolState.is_mask_painting():
+				var mask_hit := _pick()
+				if mask_hit.get("hit", false):
+					_on_lmb_down(mask_hit["position"], mask_hit, mb.shift_pressed, mb.alt_pressed)
+				else:
+					_log.call("nothing to paint")
 			elif ToolState.tool == "paint" and mb.alt_pressed:
 				# Eyedropper: sample only — never start a paint stroke.
 				var sample := _pick()
@@ -273,19 +343,25 @@ func _on_view_gui_input(event: InputEvent) -> void:
 				else:
 					_log.call("nothing to sample")
 			elif ToolState.tool == "select":
-				EditActions.select_click(_objects, _camera, _viewport, mb.shift_pressed)
-				_fill_inspector()
+				_begin_select_gesture(mb.shift_pressed)
 			else:
 				var hit := _pick()
 				if hit.get("hit", false):
-					_on_lmb_down(hit["position"], hit, mb.shift_pressed)
+					_on_lmb_down(hit["position"], hit, mb.shift_pressed, mb.alt_pressed)
 			accept_event()
-	elif event is InputEventMouseMotion and (_camera.looking or _camera.orbiting):
-		_camera.handle_event(event)
-		accept_event()
+	elif event is InputEventMouseMotion:
+		if _select_pressing:
+			_update_select_drag(_viewport.get_mouse_position())
+			accept_event()
+		elif _camera.looking or _camera.orbiting:
+			_camera.handle_event(event)
+			accept_event()
 
 
-func _on_lmb_down(p: Vector3, hit: Dictionary, shift: bool) -> void:
+func _on_lmb_down(p: Vector3, hit: Dictionary, shift: bool, alt: bool = false) -> void:
+	if ToolState.is_mask_painting():
+		_begin_mask_stroke(p, alt)
+		return
 	if ToolState.tool == "place" and not ToolState.armed.is_empty():
 		EditActions.place_at(p, hit.get("normal", Vector3.UP), shift, _log)
 		return
@@ -308,6 +384,14 @@ func _on_lmb_up() -> void:
 	if not _stroking:
 		return
 	_stroking = false
+	if _mask_stroking:
+		_mask_stroking = false
+		var mask_cmd = _sculpt.end_mask_paint()
+		if mask_cmd:
+			UndoStack.push(mask_cmd)
+			var mode := "erase" if _mask_erase else "paint"
+			_log.call("%s mask %s" % [mode, ToolState.mask_stem])
+		return
 	if ToolState.tool == "paint":
 		var paint_cmd = _sculpt.end_paint()
 		if paint_cmd:
@@ -317,6 +401,45 @@ func _on_lmb_up() -> void:
 		if cmd2:
 			UndoStack.push(cmd2, true)
 	_on_objects_mutated()
+
+
+func _begin_mask_stroke(p: Vector3, erase: bool) -> void:
+	if not MapState.has_session:
+		_log.call("open a map to paint a region")
+		return
+	if ToolState.mask_stem.is_empty():
+		_log.call("select a water body or plant region to paint")
+		return
+	if not MapState.has_heightmap():
+		_log.call("map has no heightmap to paint")
+		return
+	_sync_sculpt()
+	var value := 0 if erase else 255
+	_mask_erase = erase
+	_sculpt.begin_mask_stroke(MapState.field, p.x, p.z, ToolState.mask_stem, value)
+	_stroking = true
+	_mask_stroking = true
+	_last_stamp = p
+
+
+func _refresh_mask_overlay() -> void:
+	if _terrain == null or not _terrain.has_method("set_feature_mask"):
+		return
+	var stem := ToolState.mask_stem
+	var kind := ToolState.mask_kind
+	if stem.is_empty() or kind.is_empty() or not MapState.has_session:
+		_terrain.set_feature_mask(false)
+		return
+	MapState.upload_mask(stem)
+	if MapState.mask_texture == null:
+		_terrain.set_feature_mask(false)
+		return
+	var tint := Color(0.12, 0.32, 0.62) if kind == "water" else Color(0.16, 0.62, 0.28)
+	var lvl := -1.0
+	if kind == "water":
+		var rec := MapState.find_feature("water", stem)
+		lvl = float(rec.get("level_m", -1.0))
+	_terrain.set_feature_mask(true, MapState.mask_texture, tint, lvl)
 
 
 func _set_tool(name: String) -> void:
@@ -335,6 +458,13 @@ func _on_tool_state(name: String) -> void:
 		_ramp_a = Vector3.INF
 	if name != "place":
 		_objects.set_ghost(false, {}, MapState.field, Vector3.UP)
+	if name != "select":
+		_cancel_select_gesture()
+		_objects.set_hover("")
+		_clear_hover_status()
+		_status.set_selection_count(0, false)
+	else:
+		_status.set_selection_count(MapState.selected_ids.size(), MapState.has_session)
 
 
 func _sync_sculpt() -> void:
@@ -537,6 +667,120 @@ func _fill_inspector() -> void:
 		_inspector.clear()
 	else:
 		_inspector.show_object(MapState.find_object(MapState.selected_ids[0]))
+	if ToolState.tool == "select" and MapState.has_session:
+		_status.set_selection_count(MapState.selected_ids.size(), true)
+
+
+func _begin_select_gesture(shift: bool) -> void:
+	_select_from = _viewport.get_mouse_position()
+	_select_to = _select_from
+	_select_shift = shift
+	_select_press_id = _objects.pick(
+		_camera.project_ray_origin(_select_from),
+		_camera.project_ray_normal(_select_from),
+	)
+	_select_pressing = true
+	_select_marquee = false
+	_sync_marquee_overlay()
+	if _marquee:
+		_marquee.queue_redraw()
+
+
+func _sync_marquee_overlay() -> void:
+	if _marquee == null or _center == null:
+		return
+	_marquee.position = Vector2.ZERO
+	_marquee.size = _center.size
+
+
+func _update_select_drag(pos: Vector2) -> void:
+	_select_to = pos
+	_sync_marquee_overlay()
+	if _select_marquee:
+		if _marquee:
+			_marquee.queue_redraw()
+		return
+	if _select_press_id.is_empty() and EditActions.is_marquee_drag(_select_from, pos):
+		_select_marquee = true
+		_objects.set_hover("")
+		if _marquee:
+			_marquee.queue_redraw()
+
+
+func _finish_select_gesture() -> void:
+	if not _select_pressing:
+		return
+	var was_marquee := _select_marquee
+	var press_id := _select_press_id
+	var shift := _select_shift
+	_select_pressing = false
+	_select_marquee = false
+	_select_press_id = ""
+	if _marquee:
+		_marquee.queue_redraw()
+	if was_marquee:
+		var rect := EditActions.screen_rect_from_drag(_select_from, _select_to)
+		var ids := EditActions.filter_visible_ids(
+			EditActions.ids_in_screen_rect(_objects.screen_points(_camera), rect)
+		)
+		EditActions.select_marquee(ids, shift, _log)
+	elif not press_id.is_empty():
+		EditActions.select_id(press_id, shift, _log)
+	else:
+		EditActions.select_click(_objects, _camera, _viewport, shift, _log)
+	_objects.highlight(MapState.selected_ids)
+	_fill_inspector()
+
+
+func _cancel_select_gesture() -> void:
+	if not _select_pressing and not _select_marquee:
+		return
+	_select_pressing = false
+	_select_marquee = false
+	_select_press_id = ""
+	if _marquee:
+		_marquee.queue_redraw()
+
+
+func _update_select_hover(over_view: bool) -> void:
+	if ToolState.tool != "select" or not MapState.has_session:
+		_objects.set_hover("")
+		_clear_hover_status()
+		_status.set_selection_count(0, false)
+		return
+	_status.set_selection_count(MapState.selected_ids.size(), true)
+	if not over_view or _select_marquee:
+		_objects.set_hover("")
+		_clear_hover_status()
+		return
+	var mouse := _viewport.get_mouse_position()
+	var hid: String = _objects.pick(_camera.project_ray_origin(mouse), _camera.project_ray_normal(mouse))
+	_objects.set_hover(hid)
+	if hid.is_empty():
+		_clear_hover_status()
+		return
+	var rec := MapState.find_object(hid)
+	_status.set_status("transient", EditActions.hover_status_text(
+		str(rec.get("prjid", "")),
+		str(rec.get("label", "")),
+	))
+	_hover_status = true
+
+
+func _clear_hover_status() -> void:
+	if not _hover_status:
+		return
+	_hover_status = false
+	if _status.get("_kind") == "transient":
+		_status.set_status("info", "")
+
+
+func _on_marquee_draw() -> void:
+	if _marquee == null or not _select_marquee:
+		return
+	var box := EditActions.screen_rect_from_drag(_select_from, _select_to)
+	_marquee.draw_rect(box, Color(0.25, 0.7, 1.0, 0.14), true)
+	_marquee.draw_rect(box, Color(0.55, 0.88, 1.0, 0.95), false, 1.5)
 
 
 func _on_session_changed() -> void:
@@ -548,6 +792,8 @@ func _on_session_changed() -> void:
 	_fill_palette()
 	_inspector.set_water(MapState.water_level())
 	_findings.set_findings(MapState.findings, MapState.findings_stale)
+	_refresh_mask_overlay()
+	_apply_view_settings()
 	if not MapState.has_session:
 		return
 	if _terrain.has_method("rebuild"):
@@ -580,6 +826,55 @@ func _refresh_map_label() -> void:
 	_status.set_map_info("%sx%s  %s" % [MapState.width_m, MapState.depth_m, MapState.world])
 	if MapState.ceiling_hit:
 		_status.set_status("error", "hit raw 4095 ceiling")
+
+
+func _apply_view_settings() -> void:
+	if _objects and _objects.has_method("apply_visibility"):
+		_objects.apply_visibility()
+	EditActions.deselect_hidden(_log)
+	if _objects:
+		_objects.highlight(MapState.selected_ids)
+	_fill_inspector()
+	if _terrain and _terrain.has_method("set_water_visible"):
+		_terrain.set_water_visible(Settings.view_water)
+	_apply_plants_view()
+	_apply_sky_view()
+
+
+func _apply_plants_view() -> void:
+	if _terrain == null:
+		return
+	if _terrain.has_method("set_plants_overlay"):
+		_terrain.call("set_plants_overlay", Settings.view_plants)
+	elif _terrain.has_method("set_show_plants"):
+		_terrain.call("set_show_plants", Settings.view_plants)
+	elif _terrain.has_method("set_plants_visible"):
+		_terrain.call("set_plants_visible", Settings.view_plants)
+	elif ToolState.mask_kind == "plants":
+		if Settings.view_plants:
+			_refresh_mask_overlay()
+		elif _terrain.has_method("set_feature_mask"):
+			_terrain.set_feature_mask(false)
+
+
+func _apply_sky_view() -> void:
+	if _world_env == null or _world_env.environment == null:
+		return
+	var env := _world_env.environment
+	if Settings.view_sky:
+		env.background_mode = Environment.BG_SKY
+		if env.sky == null:
+			var sky := Sky.new()
+			var mat := ProceduralSkyMaterial.new()
+			mat.sky_top_color = Color(0.22, 0.42, 0.72)
+			mat.sky_horizon_color = Color(0.68, 0.74, 0.82)
+			mat.ground_bottom_color = Color(0.14, 0.13, 0.12)
+			mat.ground_horizon_color = Color(0.38, 0.34, 0.28)
+			sky.sky_material = mat
+			env.sky = sky
+	else:
+		env.background_mode = Environment.BG_COLOR
+		env.background_color = Color(0.04, 0.045, 0.055, 1)
 
 
 func camera_frame() -> void:

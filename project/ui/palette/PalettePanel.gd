@@ -1,9 +1,10 @@
 extends PanelContainer
-## Class search, brush controls, material swatches.
+## Context-sensitive left rail: palette, brush, materials, selection.
 
 const _CATEGORY_ORDER: PackedStringArray = [
 	"craft", "building", "prop", "scrap", "geyser", "spawn", "environment", "other",
 ]
+const _PANEL_MIN_X := 252.0
 
 signal class_armed(rec: Dictionary)
 
@@ -20,15 +21,24 @@ signal class_armed(rec: Dictionary)
 @onready var _shape_circle: Button = %ShapeCircle
 @onready var _shape_square: Button = %ShapeSquare
 @onready var _swatches: GridContainer = %Swatches
+@onready var _palette_section: Control = %PaletteSection
+@onready var _brush_section: Control = %BrushSection
+@onready var _mats_section: Control = %MatsSection
+@onready var _select_section: Control = %SelectSection
+@onready var _fly_section: Control = %FlySection
+@onready var _select_summary: Label = %SelectSummary
 
 var _filter: String = ""
 var _index: Dictionary = {}
 var _pack_kind: String = "bzp"
 var _swatch_buttons: Array = []
 var _syncing: bool = false
+var _sel_count: int = -1
 
 
 func _ready() -> void:
+	set_process(false)
+	custom_minimum_size.x = _PANEL_MIN_X
 	_rebuild_category_items()
 	_search.text_changed.connect(func(t): _filter = t.strip_edges(); _fill())
 	_category.item_selected.connect(func(_i): _fill())
@@ -46,7 +56,9 @@ func _ready() -> void:
 	ToolState.tool_changed.connect(_on_tool)
 	ToolState.armed_changed.connect(_on_armed)
 	MapState.session_changed.connect(_on_session)
+	MapState.objects_mutated.connect(_on_objects)
 	_fill()
+	refresh_context()
 
 
 func set_classes(index: Dictionary, pack_kind: String) -> void:
@@ -55,6 +67,38 @@ func set_classes(index: Dictionary, pack_kind: String) -> void:
 	_rebuild_category_items()
 	_fill()
 	refresh_swatches()
+	refresh_context()
+
+
+func refresh_context() -> void:
+	if _palette_section == null:
+		return
+	custom_minimum_size.x = _PANEL_MIN_X
+	var show_palette := false
+	var show_brush := false
+	var show_mats := false
+	var show_select := false
+	var show_fly := false
+	match ToolState.tool:
+		"raise", "lower", "flatten", "smooth", "ramp", "noise":
+			show_brush = true
+		"paint":
+			show_brush = true
+			show_mats = true
+		"place":
+			show_palette = true
+		"select":
+			show_select = true
+		_:
+			show_fly = true
+	_palette_section.visible = show_palette
+	_brush_section.visible = show_brush
+	_mats_section.visible = show_mats
+	_select_section.visible = show_select
+	_fly_section.visible = show_fly
+	set_process(show_select)
+	if show_select:
+		_refresh_selection()
 
 
 func sample_material(idx: int) -> String:
@@ -267,6 +311,7 @@ func _on_shape(shape: String) -> void:
 
 
 func _on_tool(name: String) -> void:
+	refresh_context()
 	_highlight_swatch()
 	if name == "place" and ToolState.armed.is_empty():
 		EditorFeedback.log("pick a class in the palette")
@@ -277,6 +322,7 @@ func _on_armed() -> void:
 		_list.deselect_all()
 	else:
 		_restore_armed_selection()
+	refresh_context()
 
 
 func _on_session() -> void:
@@ -285,6 +331,26 @@ func _on_session() -> void:
 	_fill()
 	if ToolState.armed.is_empty():
 		_list.deselect_all()
+	refresh_context()
+
+
+func _on_objects() -> void:
+	if ToolState.tool == "select":
+		_refresh_selection()
+
+
+func _process(_delta: float) -> void:
+	_refresh_selection()
+
+
+func _refresh_selection() -> void:
+	if _select_summary == null:
+		return
+	var n := MapState.selected_ids.size()
+	if n == _sel_count:
+		return
+	_sel_count = n
+	_select_summary.text = "%d selected" % n
 
 
 func _sync_from_state() -> void:

@@ -20,6 +20,8 @@ func run(t) -> void:
 
 	t.ok(_btn(insp, "Apply").disabled, "Apply disabled with no selection")
 	t.ok(_btn(insp, "Delete").disabled, "Delete disabled with no selection")
+	t.ok(_btn(insp, "Team0") != null and _btn(insp, "Team4") != null, "team quick-set row")
+	t.ok(_btn(insp, "Team0").disabled, "team 0 locked with no selection")
 	t.ok(not (insp.find_child("Label", true, false) as LineEdit).editable)
 	t.ok(not (insp.find_child("Water", true, false) as SpinBox).editable, "water locked with no session")
 

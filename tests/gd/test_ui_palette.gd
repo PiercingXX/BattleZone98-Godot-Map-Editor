@@ -11,7 +11,9 @@ func run(t) -> void:
 	var saved_shape := ToolState.shape
 	var saved_mat := ToolState.paint_material
 	var saved_armed: Dictionary = ToolState.armed.duplicate(true)
+	var saved_sel: Array[String] = MapState.selected_ids.duplicate()
 	MapState.has_session = false
+	MapState.selected_ids.clear()
 	ToolState.clear_armed()
 	ToolState.set_tool("fly")
 
@@ -146,9 +148,12 @@ func run(t) -> void:
 	_select_option(cat, "All")
 	clone.button_pressed = false
 
+	await _visibility_matrix(t, pal)
+
 	pal.queue_free()
 	await t.tree.process_frame
 	MapState.has_session = saved_session
+	MapState.selected_ids = saved_sel
 	ToolState.set_tool(saved_tool if saved_tool != "" else "fly")
 	ToolState.set_radius(saved_r)
 	ToolState.set_strength(saved_s)
@@ -159,6 +164,140 @@ func run(t) -> void:
 		ToolState.clear_armed()
 	else:
 		ToolState.set_armed(saved_armed)
+
+
+func _visibility_matrix(t, pal: Node) -> void:
+	var want := {
+		"raise": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false},
+		"lower": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false},
+		"flatten": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false},
+		"smooth": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false},
+		"ramp": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false},
+		"noise": {"palette": false, "brush": true, "mats": false, "select": false, "fly": false},
+		"paint": {"palette": false, "brush": true, "mats": true, "select": false, "fly": false},
+		"place": {"palette": true, "brush": false, "mats": false, "select": false, "fly": false},
+		"select": {"palette": false, "brush": false, "mats": false, "select": true, "fly": false},
+		"fly": {"palette": false, "brush": false, "mats": false, "select": false, "fly": true},
+	}
+	var rail: Control = pal as Control
+	var rail_w: float = rail.custom_minimum_size.x
+	t.eq(rail_w, 252.0, "left rail min width is locked")
+	var first_w: float = -1.0
+	for tool in want.keys():
+		var name := str(tool)
+		_apply_tool(pal, name)
+		await t.tree.process_frame
+		var got: Dictionary = _section_vis(pal)
+		t.eq(got, want[name], "visibility for %s" % name)
+		t.eq(rail.custom_minimum_size.x, rail_w, "min width unchanged on %s" % name)
+		t.ok(rail.size.x >= rail_w, "laid-out width holds on %s" % name)
+		if first_w < 0.0:
+			first_w = rail.size.x
+		else:
+			t.eq(rail.size.x, first_w, "width does not jump on %s" % name)
+		_assert_no_empty_gap(t, pal, name, want[name])
+
+	# Widgets follow the section: hidden sections leave the tree.
+	_apply_tool(pal, "raise")
+	t.ok(not (pal.find_child("Search", true, false) as Control).is_visible_in_tree())
+	t.ok((pal.find_child("Radius", true, false) as Control).is_visible_in_tree())
+	t.ok(not (pal.find_child("Swatches", true, false) as Control).is_visible_in_tree())
+	t.ok(not (pal.find_child("ClassList", true, false) as Control).is_visible_in_tree())
+
+	_apply_tool(pal, "paint")
+	t.ok(not (pal.find_child("ClassList", true, false) as Control).is_visible_in_tree())
+	t.ok((pal.find_child("Radius", true, false) as Control).is_visible_in_tree())
+	t.ok((pal.find_child("Swatches", true, false) as Control).is_visible_in_tree())
+	var swatches: GridContainer = pal.find_child("Swatches", true, false)
+	t.eq(swatches.get_child_count(), 16)
+	var tip: String = (swatches.get_child(5) as Button).tooltip_text
+	t.ok(MaterialPalette.type_name(5) in tip, "swatch tooltip uses world type name")
+	t.ok("(5)" in tip)
+
+	_apply_tool(pal, "place")
+	t.ok((pal.find_child("Search", true, false) as Control).is_visible_in_tree())
+	t.ok((pal.find_child("CategoryFilter", true, false) as Control).is_visible_in_tree())
+	t.ok((pal.find_child("ClassList", true, false) as Control).is_visible_in_tree())
+	t.ok(not (pal.find_child("Radius", true, false) as Control).is_visible_in_tree())
+	t.ok(not (pal.find_child("Swatches", true, false) as Control).is_visible_in_tree())
+
+	_apply_tool(pal, "fly")
+	var fly: Label = pal.find_child("FlyHint", true, false)
+	t.ok(fly != null and fly.is_visible_in_tree())
+	t.ok("pick a tool to edit" in fly.text.to_lower())
+
+	# Select: palette collapsed, count + nudge/rotate hint.
+	MapState.selected_ids.clear()
+	_apply_tool(pal, "select")
+	t.ok(not (pal.find_child("ClassList", true, false) as Control).is_visible_in_tree())
+	t.ok(not (pal.find_child("Radius", true, false) as Control).is_visible_in_tree())
+	t.ok(not (pal.find_child("Swatches", true, false) as Control).is_visible_in_tree())
+	var summary: Label = pal.find_child("SelectSummary", true, false)
+	var hint: Label = pal.find_child("SelectHint", true, false)
+	t.ok(summary != null and summary.is_visible_in_tree())
+	t.eq(summary.text, "0 selected")
+	t.ok(hint != null and hint.is_visible_in_tree())
+	t.ok("nudge" in hint.text.to_lower())
+	t.ok("rotate" in hint.text.to_lower())
+	MapState.selected_ids = ["a"] as Array[String]
+	pal.refresh_context()
+	t.eq(summary.text, "1 selected")
+	MapState.selected_ids = ["a", "b"] as Array[String]
+	pal.refresh_context()
+	t.eq(summary.text, "2 selected")
+	MapState.selected_ids.clear()
+	pal.refresh_context()
+	t.eq(summary.text, "0 selected")
+
+	# Switching a tool twice is idempotent (raise → paint → raise, and raise ×2).
+	_apply_tool(pal, "raise")
+	var raise_a: Dictionary = _section_vis(pal)
+	_apply_tool(pal, "paint")
+	_apply_tool(pal, "raise")
+	t.eq(_section_vis(pal), raise_a, "raise after paint matches first raise")
+	_apply_tool(pal, "raise")
+	t.eq(_section_vis(pal), raise_a, "second raise is a no-op")
+	_apply_tool(pal, "paint")
+	var paint_a: Dictionary = _section_vis(pal)
+	_apply_tool(pal, "paint")
+	t.eq(_section_vis(pal), paint_a, "second paint is a no-op")
+
+	# Existing APIs still work while their section is hidden.
+	_apply_tool(pal, "raise")
+	t.eq(pal.sample_material(3), "sampled mat 3 (%s)" % MaterialPalette.type_name(3))
+	t.eq(ToolState.paint_material, 3)
+
+
+func _apply_tool(pal: Node, tool: String) -> void:
+	# set_tool no-ops when the name is unchanged; still force a layout pass.
+	if ToolState.tool != tool:
+		ToolState.set_tool(tool)
+	pal.refresh_context()
+
+
+func _section_vis(pal: Node) -> Dictionary:
+	return {
+		"palette": (pal.find_child("PaletteSection", true, false) as CanvasItem).visible,
+		"brush": (pal.find_child("BrushSection", true, false) as CanvasItem).visible,
+		"mats": (pal.find_child("MatsSection", true, false) as CanvasItem).visible,
+		"select": (pal.find_child("SelectSection", true, false) as CanvasItem).visible,
+		"fly": (pal.find_child("FlySection", true, false) as CanvasItem).visible,
+	}
+
+
+func _assert_no_empty_gap(t, pal: Node, tool: String, want: Dictionary) -> void:
+	var box: Node = pal.find_child("Box", true, false)
+	t.ok(box != null, "section box exists")
+	var visible_n := 0
+	for child in box.get_children():
+		if not (child is CanvasItem):
+			continue
+		if (child as CanvasItem).visible:
+			visible_n += 1
+			t.ok((child as Control).get_combined_minimum_size().y > 0.0, "%s visible section has height" % tool)
+	var expect := 2 if tool == "paint" else 1
+	t.eq(visible_n, expect, "no leftover sections on %s" % tool)
+	t.eq(int(want["palette"]) + int(want["brush"]) + int(want["mats"]) + int(want["select"]) + int(want["fly"]), expect)
 
 
 func _index_of(list: ItemList, prjid: String) -> int:

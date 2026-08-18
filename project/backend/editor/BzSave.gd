@@ -206,6 +206,17 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 			return cp_f
 		if not written.has(dest_feat.get_file()):
 			written.append(dest_feat.get_file())
+
+	# Mesh generation + managed carriers. No-op when water/plants are empty so
+	# open→save with no features stays byte-identical.
+	var feat_entries: Array = BzMeshGen.collect_entries(features)
+	if not feat_entries.is_empty():
+		var applied: Dictionary = _apply_features(
+			paths, source_dir, source_stem, out_dir, out_stem,
+			features, feat_entries, written, regenerated, identical, warnings
+		)
+		if BzErrors.is_err(applied):
+			return applied
 	return {
 		"ok": true,
 		"files": _sorted_unique(written),
@@ -475,3 +486,295 @@ static func _abs(path: String) -> String:
 	if cwd == null:
 		return ProjectSettings.globalize_path(path).simplify_path()
 	return cwd.get_current_dir().path_join(path).simplify_path()
+
+
+# -- feature meshes + managed carriers ---------------------------------------
+
+# Corpus water-carrier basis (desrten1 / thecaven): a -90 deg yaw whose
+# det-1 handedness pairs with meshgen's transposed verts. Written verbatim.
+const _CARRIER_RIGHT_X := "7.54979e-008"
+const _CARRIER_RIGHT_Z := "-1"
+const _CARRIER_FRONT_X := "1"
+const _CARRIER_FRONT_Z := "7.54979e-008"
+
+
+static func _apply_features(
+	paths: Dictionary,
+	source_dir: String,
+	source_stem: String,
+	out_dir: String,
+	out_stem: String,
+	features: Dictionary,
+	feat_entries: Array,
+	written: Array,
+	regenerated: Array,
+	identical: Array,
+	warnings: Array
+) -> Dictionary:
+	var chk: Dictionary = BzMeshGen.validate_feature_stems(feat_entries, out_stem)
+	if BzErrors.is_err(chk):
+		return chk
+	var heightmap: BzHg2.HeightMap = _load_feature_heightmap(paths, source_dir, source_stem)
+	if heightmap == null:
+		warnings.append("features present but no heightmap; skipped mesh generation")
+		return {"ok": true}
+	var gen: Dictionary = BzMeshGen.generate_features(
+		str(paths["root"]), out_dir, out_stem, heightmap, features
+	)
+	if BzErrors.is_err(gen):
+		return gen
+	for w in gen.get("warnings", []):
+		warnings.append(w)
+	for fname in gen.get("files", []):
+		if not written.has(fname):
+			written.append(fname)
+		if not regenerated.has(fname):
+			regenerated.append(fname)
+	var generated: Array = gen.get("generated", [])
+	var feature_stems := {}
+	for e in feat_entries:
+		var st: String = str((e as Dictionary).get("stem", "")).strip_edges().to_lower()
+		if not st.is_empty():
+			feature_stems[st] = true
+	if generated.is_empty() and feature_stems.is_empty():
+		return {"ok": true}
+	var dest_variants: Array = _dest_bzn_variants(out_dir, out_stem)
+	for variant in dest_variants:
+		var dest_bzn: String = out_dir.path_join(
+			"%s%s" % [out_stem, BzSession.variant_bzn_suffix(str(variant))]
+		)
+		if not FileAccess.file_exists(dest_bzn):
+			continue
+		var inj: Dictionary = _inject_feature_carriers(
+			dest_bzn, generated, feature_stems, str(variant), source_dir, warnings
+		)
+		if BzErrors.is_err(inj):
+			return inj
+		if not bool(inj.get("changed", false)):
+			continue
+		if not written.has(dest_bzn.get_file()):
+			written.append(dest_bzn.get_file())
+		if not regenerated.has(dest_bzn.get_file()):
+			regenerated.append(dest_bzn.get_file())
+		var ident_i: int = identical.find(dest_bzn.get_file())
+		if ident_i >= 0:
+			identical.remove_at(ident_i)
+	return {"ok": true}
+
+
+static func _load_feature_heightmap(
+	paths: Dictionary, source_dir: String, source_stem: String
+) -> BzHg2.HeightMap:
+	var header_path: String = str(paths.get("hg2_header", ""))
+	var terrain_path: String = str(paths.get("terrain", ""))
+	if FileAccess.file_exists(header_path) and FileAccess.file_exists(terrain_path):
+		var header_v: Variant = BzSession.read_json(header_path)
+		if not BzErrors.is_err(header_v) and typeof(header_v) == TYPE_DICTIONARY:
+			var hm_v: Variant = BzSession.reconstruct_heightmap(paths, header_v)
+			if not BzErrors.is_err(hm_v):
+				var hm: BzHg2.HeightMap = hm_v as BzHg2.HeightMap
+				if hm != null:
+					return hm
+	var src_hg2: String = BzSession.find_source_file(source_dir, source_stem, ".hg2")
+	if src_hg2.is_empty():
+		return null
+	var rd: Dictionary = BzHg2.read_hg2(src_hg2)
+	if not bool(rd.get("ok", false)):
+		return null
+	return rd.get("heightmap") as BzHg2.HeightMap
+
+
+static func _dest_bzn_variants(out_dir: String, out_stem: String) -> Array:
+	var found: Array = []
+	for suffix in ["", "_S", "_ST", "_SW", "_MS"]:
+		var path: String = out_dir.path_join("%s%s.bzn" % [out_stem, suffix])
+		if FileAccess.file_exists(path):
+			found.append(suffix)
+	return found
+
+
+static func _scope_includes(scope: String, variant: String) -> bool:
+	var s: String = scope.strip_edges()
+	if s.is_empty() or s.to_lower() == "all":
+		return true
+	if not s.begins_with("_") and s != "":
+		s = "_" + s
+	return s == variant
+
+
+static func _inject_feature_carriers(
+	dest_bzn: String,
+	generated: Array,
+	feature_stems: Dictionary,
+	variant: String,
+	source_dir: String,
+	warnings: Array
+) -> Dictionary:
+	var loaded: Dictionary = BzBzn.read_bzn(dest_bzn)
+	if not bool(loaded.get("ok", false)):
+		if BzErrors.is_err(loaded):
+			return loaded
+		return BzErrors.err("value_error", "failed to read BZN: %s" % dest_bzn, "", dest_bzn)
+	var bzn: BzBzn.BznFile = loaded.get("bznfile") as BzBzn.BznFile
+	if bzn == null:
+		return BzErrors.err("value_error", "BzBzn.read_bzn did not return a BznFile", "", dest_bzn)
+
+	var mission: Dictionary = _strip_mission_records(bzn)
+	var kept: Array = []
+	var stripped := 0
+	for obj_v in bzn.objects:
+		var obj: BzBzn.GameObject = obj_v
+		var prj: String = "" if obj.prjid == null else str(obj.prjid).to_lower()
+		if feature_stems.has(prj):
+			stripped += 1
+			continue
+		kept.append(obj)
+	bzn.objects = kept
+
+	var to_add: Array = []
+	for g_v in generated:
+		if typeof(g_v) != TYPE_DICTIONARY:
+			continue
+		var g: Dictionary = g_v
+		if _scope_includes(str(g.get("variant_scope", "all")), variant):
+			to_add.append(g)
+	if stripped == 0 and to_add.is_empty():
+		return {"ok": true, "changed": false}
+
+	var next_seq: int = 1
+	var max_seq: int = 0
+	for o_v in bzn.objects:
+		var sn: Variant = (o_v as BzBzn.GameObject).seqno
+		var seq_i: int = 0 if sn == null else int(sn)
+		if seq_i > max_seq:
+			max_seq = seq_i
+	next_seq = max_seq + 1
+	if bzn.objects.is_empty():
+		next_seq = 1
+
+	var template_text: String = BzObjects.template_text_for("eggeizr1", source_dir)
+	if template_text.is_empty():
+		template_text = BzTemplates.template("eggeizr1")
+	if template_text.is_empty():
+		return BzErrors.err(
+			"no_template",
+			"no verified building block to clone for feature carriers",
+			"need BzTemplates eggeizr1 or a same-class residue object"
+		)
+
+	for g2 in to_add:
+		var stem: String = str((g2 as Dictionary).get("stem", ""))
+		var kind: String = str((g2 as Dictionary).get("kind", "water"))
+		var carrier: BzBzn.GameObject = _make_feature_carrier(
+			template_text, stem, kind, next_seq, bzn.objects.size() + 1
+		)
+		if carrier == null:
+			warnings.append("%s: failed to clone carrier" % stem)
+			continue
+		bzn.add_object(carrier)
+		next_seq += 1
+
+	_reassign_obj_addrs(bzn)
+	bzn.set_header("size [1]", bzn.objects.size())
+	var seqs_max: int = 0
+	var have_seq := false
+	for o2 in bzn.objects:
+		var sn2: Variant = (o2 as BzBzn.GameObject).seqno
+		if sn2 == null:
+			continue
+		have_seq = true
+		if int(sn2) > seqs_max:
+			seqs_max = int(sn2)
+	if have_seq:
+		bzn.set_header("seq_count [1]", seqs_max + 1)
+	if bool(mission.get("present", false)):
+		_append_mission_record(bzn, str(mission.get("name", "MultSTMission")))
+	var wr: Dictionary = BzBzn.write_bzn(dest_bzn, bzn)
+	if typeof(wr) == TYPE_DICTIONARY and wr.get("ok") == false:
+		return wr
+	return {"ok": true, "changed": true}
+
+
+static func _make_feature_carrier(
+	template_text: String, stem: String, kind: String, seqno: int, addr: int
+) -> BzBzn.GameObject:
+	## Clone the 70-field building template (AGENTS rule 5) and mutate identity,
+	## origin, and the corpus carrier basis. Do not re-type a craft block.
+	var obj: BzBzn.GameObject = BzBzn.GameObject.from_template(template_text)
+	_set_next_value(obj, "PrjID [1]", stem)
+	var y: float = -1.0 if kind == "plants" else 0.0
+	obj.set_position(0.0, y, 0.0)
+	_set_next_value(obj, "right_x [1]", _CARRIER_RIGHT_X)
+	_set_next_value(obj, "right_y [1]", "0")
+	_set_next_value(obj, "right_z [1]", _CARRIER_RIGHT_Z)
+	_set_next_value(obj, "up_x [1]", "0")
+	_set_next_value(obj, "up_y [1]", "1")
+	_set_next_value(obj, "up_z [1]", "0")
+	_set_next_value(obj, "front_x [1]", _CARRIER_FRONT_X)
+	_set_next_value(obj, "front_y [1]", "0")
+	_set_next_value(obj, "front_z [1]", _CARRIER_FRONT_Z)
+	obj.set_team(0)
+	obj.set_is_user(false)
+	_set_next_value(obj, "isVisible [1]", "1")
+	_set_next_value(obj, "seen [1]", "1")
+	_set_next_value(obj, "curHealth [1]", "9999999")
+	_set_next_value(obj, "maxHealth [1]", "9999999")
+	obj.set_identity(seqno, addr, "%s%d" % [stem, seqno])
+	return obj
+
+
+static func _set_next_value(obj: BzBzn.GameObject, key: String, value: String) -> void:
+	var lines: PackedStringArray = obj.lines
+	var idx: int = BzBzn._value_line_index(lines, key)
+	if idx < 0:
+		return
+	var line: String = lines[idx]
+	if line.contains("="):
+		var eq: int = line.find("=")
+		lines[idx] = line.substr(0, eq + 1) + " " + value
+	else:
+		lines[idx] = value
+	obj.lines = lines
+
+
+static func _reassign_obj_addrs(bzn: BzBzn.BznFile) -> void:
+	for i in bzn.objects.size():
+		var obj: BzBzn.GameObject = bzn.objects[i]
+		var lines: PackedStringArray = obj.lines
+		var aidx: int = BzBzn._value_line_index(lines, "obj_addr")
+		if aidx >= 0:
+			lines[aidx] = "obj_addr = %08x" % (i + 1)
+			obj.lines = lines
+
+
+static func _strip_mission_records(bzn: BzBzn.BznFile) -> Dictionary:
+	var found := {"present": false, "name": "MultSTMission"}
+	for obj_v in bzn.objects:
+		var obj: BzBzn.GameObject = obj_v
+		var lines: PackedStringArray = obj.lines
+		while lines.size() > 0 and lines[lines.size() - 1].strip_edges().is_empty():
+			lines.resize(lines.size() - 1)
+		if lines.size() < 2:
+			obj.lines = lines
+			continue
+		var last: String = lines[lines.size() - 1].strip_edges()
+		var prev: String = lines[lines.size() - 2].strip_edges()
+		if last.begins_with("sObject =") and prev.begins_with("name ="):
+			found["present"] = true
+			var nm: String = prev.substr(prev.find("=") + 1).strip_edges()
+			if not nm.is_empty():
+				found["name"] = nm
+			lines.resize(lines.size() - 2)
+		obj.lines = lines
+	return found
+
+
+static func _append_mission_record(bzn: BzBzn.BznFile, mission_name: String) -> void:
+	if bzn.objects.is_empty():
+		return
+	var last: BzBzn.GameObject = bzn.objects[bzn.objects.size() - 1]
+	var lines: PackedStringArray = last.lines
+	lines.append("name = %s" % mission_name)
+	lines.append("sObject = %08X" % (bzn.objects.size() + 1))
+	last.lines = lines
+
