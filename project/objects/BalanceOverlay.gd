@@ -325,9 +325,9 @@ func _build_team_label(team: Dictionary, field: HeightField) -> void:
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	tag.no_depth_test = true
 	tag.fixed_size = true
-	tag.font_size = 16
-	tag.pixel_size = 0.22
-	tag.outline_size = 8
+	tag.font_size = 48
+	tag.pixel_size = 0.0016
+	tag.outline_size = 12
 	tag.outline_modulate = Color(0.02, 0.02, 0.04, 0.92)
 	tag.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	tag.render_priority = 16

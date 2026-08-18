@@ -207,9 +207,9 @@ func _build_label(rec: Dictionary, kind: String, pos: Vector3, col: Color) -> vo
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	tag.no_depth_test = true
 	tag.fixed_size = true
-	tag.font_size = 14
-	tag.pixel_size = 0.22
-	tag.outline_size = 8
+	tag.font_size = 44
+	tag.pixel_size = 0.0016
+	tag.outline_size = 12
 	tag.outline_modulate = Color(0.02, 0.02, 0.04, 0.92)
 	tag.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	tag.render_priority = 14

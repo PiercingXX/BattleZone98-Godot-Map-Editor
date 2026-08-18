@@ -83,10 +83,26 @@ func _on_toggled(on: bool, key: String) -> void:
 			if Settings.view_flag(key) == on:
 				return
 			Settings.set_view_group(key, on)
-			EditorFeedback.log("view %s %s" % [key, "on" if on else "off"])
+			# Say how many objects the toggle touches: a category that is
+			# empty on this map otherwise looks like a dead checkbox.
+			EditorFeedback.log("view %s %s (%d on this map)" % [
+				key, "on" if on else "off", _count_in_group(key),
+			])
 	Settings.save()
 	view_changed.emit()
 	refresh()
+
+
+func _count_in_group(key: String) -> int:
+	var n := 0
+	var recs: Variant = MapState.objects.get(MapState.active_variant, [])
+	if typeof(recs) != TYPE_ARRAY:
+		return 0
+	for rec in recs:
+		if typeof(rec) == TYPE_DICTIONARY \
+				and ObjectMarkers.classify_record(rec) == key:
+			n += 1
+	return n
 
 
 func refresh() -> void:
