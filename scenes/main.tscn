@@ -1,4 +1,4 @@
-[gd_scene load_steps=25 format=3 uid="uid://c8bzmapmain0001"]
+[gd_scene load_steps=26 format=3 uid="uid://c8bzmapmain0001"]
 
 [ext_resource type="Script" path="res://scenes/main.gd" id="1_main"]
 [ext_resource type="Script" path="res://project/camera/FlyCamera.gd" id="2_cam"]
@@ -21,6 +21,9 @@
 [ext_resource type="Script" path="res://project/ui/toasts/LogConsole.gd" id="17_log"]
 [ext_resource type="Script" path="res://project/ui/toasts/ToastLayer.gd" id="18_toast"]
 [ext_resource type="PackedScene" path="res://project/ui/prefs/PrefsDialog.tscn" id="19_prefs"]
+
+[sub_resource type="Theme" id="DockTheme"]
+default_font_size = 12
 
 [sub_resource type="ProceduralSkyMaterial" id="SkyMat_1"]
 sky_top_color = Color(0.22, 0.42, 0.72, 1)
@@ -172,44 +175,73 @@ mouse_filter = 2
 theme_override_constants/separation = 6
 script = ExtResource("18_toast")
 
-[node name="Right" type="VBoxContainer" parent="Root/Body/Mid"]
+[node name="Right" type="VSplitContainer" parent="Root/Body/Mid"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(276, 0)
 layout_mode = 2
-theme_override_constants/separation = 4
+split_offset = 180
+theme = SubResource("DockTheme")
 
-[node name="TabsTop" type="TabContainer" parent="Root/Body/Mid/Right"]
+[node name="Dock1" type="TabContainer" parent="Root/Body/Mid/Right"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 150)
+custom_minimum_size = Vector2(0, 96)
 layout_mode = 2
+drag_to_rearrange_enabled = true
+tabs_rearrange_group = 1
 
-[node name="HistoryPanel" parent="Root/Body/Mid/Right/TabsTop" instance=ExtResource("15_hist")]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="FindingsPanel" parent="Root/Body/Mid/Right/TabsTop" instance=ExtResource("8_find")]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="ViewPanel" parent="Root/Body/Mid/Right" instance=ExtResource("21_viewp")]
+[node name="HistoryPanel" parent="Root/Body/Mid/Right/Dock1" instance=ExtResource("15_hist")]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="TabsMid" type="TabContainer" parent="Root/Body/Mid/Right"]
+[node name="FindingsPanel" parent="Root/Body/Mid/Right/Dock1" instance=ExtResource("8_find")]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+
+[node name="SplitB" type="VSplitContainer" parent="Root/Body/Mid/Right"]
+unique_name_in_owner = true
+layout_mode = 2
+split_offset = 150
+
+[node name="Dock2" type="TabContainer" parent="Root/Body/Mid/Right/SplitB"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 96)
+layout_mode = 2
+drag_to_rearrange_enabled = true
+tabs_rearrange_group = 1
+
+[node name="ViewPanel" parent="Root/Body/Mid/Right/SplitB/Dock2" instance=ExtResource("21_viewp")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="SplitC" type="VSplitContainer" parent="Root/Body/Mid/Right/SplitB"]
+unique_name_in_owner = true
+layout_mode = 2
+split_offset = 260
+
+[node name="Dock3" type="TabContainer" parent="Root/Body/Mid/Right/SplitB/SplitC"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 120)
 layout_mode = 2
 size_flags_vertical = 3
+drag_to_rearrange_enabled = true
+tabs_rearrange_group = 1
 
-[node name="InspectorPanel" parent="Root/Body/Mid/Right/TabsMid" instance=ExtResource("7_insp")]
+[node name="InspectorPanel" parent="Root/Body/Mid/Right/SplitB/SplitC/Dock3" instance=ExtResource("7_insp")]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="PalettePanel" parent="Root/Body/Mid/Right/TabsMid" instance=ExtResource("6_pal")]
+[node name="PalettePanel" parent="Root/Body/Mid/Right/SplitB/SplitC/Dock3" instance=ExtResource("6_pal")]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="FeaturesPanel" parent="Root/Body/Mid/Right" instance=ExtResource("12_feat")]
+[node name="Dock4" type="TabContainer" parent="Root/Body/Mid/Right/SplitB/SplitC"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 120)
+layout_mode = 2
+drag_to_rearrange_enabled = true
+tabs_rearrange_group = 1
+
+[node name="FeaturesPanel" parent="Root/Body/Mid/Right/SplitB/SplitC/Dock4" instance=ExtResource("12_feat")]
 unique_name_in_owner = true
 layout_mode = 2
 

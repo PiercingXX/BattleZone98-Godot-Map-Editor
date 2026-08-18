@@ -36,7 +36,7 @@ func _copy_round_trip(t) -> void:
 	var result := EditActions.copy_selection_to_variant("_S", log)
 	t.ok(bool(result.get("ok", false)), "copy succeeds")
 	t.eq(int(result.get("count", 0)), 2)
-	t.eq(logs[logs.size() - 1], "copied 2 objects to _S")
+	t.eq(logs[logs.size() - 1], "copied 2 objects to Strat")
 	t.eq(EditActions.variant_object_count(""), 2, "source variant untouched")
 	t.eq(EditActions.variant_object_count("_S"), 2)
 	var ids: Array = result.get("ids", [])
@@ -131,7 +131,7 @@ func _copy_guards(t) -> void:
 
 	t.eq(EditActions.other_variants(), ["_S", "_ST", "_SW"] as Array[String])
 	t.eq(EditActions.variant_display_name(""), "DM")
-	t.eq(EditActions.variant_display_name("_SW"), "_SW")
+	t.eq(EditActions.variant_display_name("_SW"), "Wingman")
 
 
 func _ghost_pick_filter(t) -> void:
@@ -227,12 +227,12 @@ func _view_and_counts(t) -> void:
 	bar.fill_variants(["", "_S", "_ST", "_SW"], "")
 	var variant: OptionButton = bar.find_child("Variant", true, false)
 	t.eq(variant.get_item_text(0), "DM (2)")
-	t.eq(variant.get_item_text(1), "_S (1)")
-	t.eq(variant.get_item_text(2), "_ST (0)")
-	t.eq(variant.get_item_text(3), "_SW (3)")
+	t.eq(variant.get_item_text(1), "Strat (1)")
+	t.eq(variant.get_item_text(2), "Teams (0)")
+	t.eq(variant.get_item_text(3), "Wingman (3)")
 	MapState.objects["_S"].append(_rec("c2", "avapc", 1, 0, 0, 0))
 	MapState.objects_changed()
-	t.eq(variant.get_item_text(1), "_S (2)", "counts refresh on objects_mutated")
+	t.eq(variant.get_item_text(1), "Strat (2)", "counts refresh on objects_mutated")
 	panel.queue_free()
 	bar.queue_free()
 	await t.tree.process_frame

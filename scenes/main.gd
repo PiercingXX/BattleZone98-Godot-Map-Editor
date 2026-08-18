@@ -1673,7 +1673,12 @@ func _install_layout_persistence() -> void:
 	_layout_timer.wait_time = Settings.LAYOUT_SAVE_IDLE_S
 	_layout_timer.timeout.connect(_on_layout_idle)
 	add_child(_layout_timer)
-	for split in [_mid_split]:
+	for split in [
+		_mid_split,
+		_right_col,
+		find_child("SplitB", true, false),
+		find_child("SplitC", true, false),
+	]:
 		if split == null:
 			continue
 		if split.has_signal("dragged"):
@@ -1721,6 +1726,15 @@ func _flush_layout(persist: bool) -> void:
 	if not Settings.focus_mode:
 		if _mid_split:
 			Settings.layout_split_mid = _mid_split.split_offset
+		if _right_col is SplitContainer:
+			Settings.layout_split_right = (_right_col as SplitContainer).split_offset
+		var split_b := find_child("SplitB", true, false) as SplitContainer
+		if split_b:
+			Settings.layout_split_upper = split_b.split_offset
+		var split_c := find_child("SplitC", true, false) as SplitContainer
+		if split_c:
+			Settings.layout_split_lower = split_c.split_offset
+		Settings.layout_docks = DockLayout.snapshot(_docks())
 	if persist:
 		Settings.save()
 
@@ -1752,6 +1766,14 @@ func _apply_layout_settings() -> void:
 func _apply_split_offsets() -> void:
 	if _mid_split:
 		_mid_split.split_offset = Settings.layout_split_mid
+	if _right_col is SplitContainer:
+		(_right_col as SplitContainer).split_offset = Settings.layout_split_right
+	var split_b := find_child("SplitB", true, false) as SplitContainer
+	if split_b:
+		split_b.split_offset = Settings.layout_split_upper
+	var split_c := find_child("SplitC", true, false) as SplitContainer
+	if split_c:
+		split_c.split_offset = Settings.layout_split_lower
 
 
 func _on_more_selected(id: int) -> void:
@@ -1793,15 +1815,37 @@ func _install_size_link() -> void:
 	sync.call()
 
 
+func _docks() -> Dictionary:
+	var out := {}
+	for dock_name in ["Dock1", "Dock2", "Dock3", "Dock4"]:
+		out[dock_name] = find_child(dock_name, true, false) as TabContainer
+	return out
+
+
 func _name_right_tabs() -> void:
-	var top_tabs := find_child("TabsTop", true, false) as TabContainer
-	if top_tabs:
-		top_tabs.set_tab_title(0, "History")
-		top_tabs.set_tab_title(1, "Findings")
-	var mid_tabs := find_child("TabsMid", true, false) as TabContainer
-	if mid_tabs:
-		mid_tabs.set_tab_title(0, "Object")
-		mid_tabs.set_tab_title(1, "Palette")
+	var docks := _docks()
+	if not Settings.layout_docks.is_empty():
+		DockLayout.apply(docks, Settings.layout_docks)
+	DockLayout.retitle(docks)
+	for dock_name in docks:
+		var dock: TabContainer = docks[dock_name]
+		if dock == null:
+			continue
+		# Retitle and schedule a layout save whenever tabs move — within
+		# a dock or dragged across docks (GIMP-style rearranging).
+		dock.active_tab_rearranged.connect(func(_i: int) -> void: _on_docks_changed())
+		dock.child_entered_tree.connect(func(_n: Node) -> void:
+			call_deferred("_on_docks_changed")
+		)
+		dock.child_exiting_tree.connect(func(_n: Node) -> void:
+			call_deferred("_on_docks_changed")
+		)
+		dock.tab_changed.connect(func(_i: int) -> void: _on_split_dragged())
+
+
+func _on_docks_changed() -> void:
+	DockLayout.retitle(_docks())
+	_on_split_dragged()
 
 
 func _apply_autosave() -> void:

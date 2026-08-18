@@ -15,9 +15,9 @@ const AUTOSAVE_DEFAULT_S := 30
 const AUTOSAVE_CHOICES: Array[int] = [0, 15, 30, 60]
 const LAYOUT_SPLIT_BODY_DEFAULT := 252
 const LAYOUT_SPLIT_MID_DEFAULT := -280
-const LAYOUT_SPLIT_RIGHT_DEFAULT := 440
-const LAYOUT_SPLIT_UPPER_DEFAULT := 240
-const LAYOUT_SPLIT_LOWER_DEFAULT := 160
+const LAYOUT_SPLIT_RIGHT_DEFAULT := 180
+const LAYOUT_SPLIT_UPPER_DEFAULT := 150
+const LAYOUT_SPLIT_LOWER_DEFAULT := 260
 const LAYOUT_SAVE_IDLE_S := 1.0
 
 var game_root: String = ""
@@ -70,6 +70,8 @@ var layout_split_mid: int = LAYOUT_SPLIT_MID_DEFAULT
 var layout_split_right: int = LAYOUT_SPLIT_RIGHT_DEFAULT
 var layout_split_upper: int = LAYOUT_SPLIT_UPPER_DEFAULT
 var layout_split_lower: int = LAYOUT_SPLIT_LOWER_DEFAULT
+## dock name → {"tabs": [panel names], "current": int}; empty = defaults.
+var layout_docks: Dictionary = {}
 var console_visible: bool = false
 var focus_mode: bool = false
 var collapse_palette: bool = false
@@ -131,17 +133,19 @@ func _load() -> void:
 		LAYOUT_SPLIT_MID_DEFAULT,
 	)
 	layout_split_right = coerce_split(
-		_cfg.get_value("layout", "split_right", LAYOUT_SPLIT_RIGHT_DEFAULT),
+		_cfg.get_value("layout", "split_dock_top", LAYOUT_SPLIT_RIGHT_DEFAULT),
 		LAYOUT_SPLIT_RIGHT_DEFAULT,
 	)
 	layout_split_upper = coerce_split(
-		_cfg.get_value("layout", "split_upper", LAYOUT_SPLIT_UPPER_DEFAULT),
+		_cfg.get_value("layout", "split_dock_mid", LAYOUT_SPLIT_UPPER_DEFAULT),
 		LAYOUT_SPLIT_UPPER_DEFAULT,
 	)
 	layout_split_lower = coerce_split(
-		_cfg.get_value("layout", "split_lower", LAYOUT_SPLIT_LOWER_DEFAULT),
+		_cfg.get_value("layout", "split_dock_low", LAYOUT_SPLIT_LOWER_DEFAULT),
 		LAYOUT_SPLIT_LOWER_DEFAULT,
 	)
+	var docks_v: Variant = _cfg.get_value("layout", "docks", {})
+	layout_docks = docks_v if typeof(docks_v) == TYPE_DICTIONARY else {}
 	console_visible = bool(_cfg.get_value("layout", "console_visible", false))
 	focus_mode = bool(_cfg.get_value("layout", "focus_mode", false))
 	collapse_palette = bool(_cfg.get_value("layout", "collapse_palette", false))
@@ -216,9 +220,10 @@ func save() -> void:
 	layout_split_lower = coerce_split(layout_split_lower, LAYOUT_SPLIT_LOWER_DEFAULT)
 	_cfg.set_value("layout", "split_body", layout_split_body)
 	_cfg.set_value("layout", "split_mid", layout_split_mid)
-	_cfg.set_value("layout", "split_right", layout_split_right)
-	_cfg.set_value("layout", "split_upper", layout_split_upper)
-	_cfg.set_value("layout", "split_lower", layout_split_lower)
+	_cfg.set_value("layout", "split_dock_top", layout_split_right)
+	_cfg.set_value("layout", "split_dock_mid", layout_split_upper)
+	_cfg.set_value("layout", "split_dock_low", layout_split_lower)
+	_cfg.set_value("layout", "docks", layout_docks)
 	_cfg.set_value("layout", "console_visible", console_visible)
 	_cfg.set_value("layout", "focus_mode", focus_mode)
 	_cfg.set_value("layout", "collapse_palette", collapse_palette)

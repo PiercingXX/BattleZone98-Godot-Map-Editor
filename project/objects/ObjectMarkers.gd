@@ -306,7 +306,17 @@ static func is_id_pickable(id: String) -> bool:
 
 
 static func variant_display_name(variant: String) -> String:
-	return "DM" if variant == "" else variant
+	# Game-mode names instead of the raw BZN suffixes.
+	match str(variant):
+		"":
+			return "DM"
+		"_S":
+			return "Strat"
+		"_ST":
+			return "Teams"
+		"_SW":
+			return "Wingman"
+	return variant
 
 
 static func variant_tint(variant: String) -> Color:

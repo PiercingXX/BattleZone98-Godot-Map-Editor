@@ -79,16 +79,15 @@ func run(t) -> void:
 	t.ok(_btn(bar, "MapMode").button_pressed)
 	bar.set_map_mode(false)
 	t.eq(_btn(bar, "MapMode").text, "3D")
-	var more_early: PopupMenu = (bar.find_child("More", true, false) as MenuButton).get_popup()
-	t.ok(more_early.is_item_disabled(more_early.get_item_index(bar.MORE_EXPORT_HEIGHTMAP)), "Export heightmap needs a grid")
-	t.eq(more_early.get_item_tooltip(more_early.get_item_index(bar.MORE_EXPORT_HEIGHTMAP)), "Map has no heightmap")
+	t.ok(_btn(bar, "ExportPng").disabled, "Export heightmap needs a grid")
+	t.eq(_btn(bar, "ExportPng").tooltip_text, "Map has no heightmap")
 	var hfield := HeightField.new()
 	hfield.grid_x = 4
 	hfield.grid_z = 4
 	hfield.heights.resize(16)
 	hfield.heights.fill(200)
 	MapState.field = hfield
-	bar._refresh_more()
+	bar._refresh_actions()
 
 	_btn(bar, "Frame").pressed.emit()
 	t.eq(framed[0], 1, "Frame emits when a map is open")
@@ -98,7 +97,7 @@ func run(t) -> void:
 	var variant: OptionButton = bar.find_child("Variant", true, false)
 	t.ok(not variant.disabled)
 	t.eq(variant.get_item_text(0), "DM (0)")
-	t.eq(variant.get_item_text(1), "_S (0)")
+	t.eq(variant.get_item_text(1), "Strat (0)")
 	var saw_variant := [false]
 	bar.variant_changed.connect(func(): saw_variant[0] = true)
 	variant.select(2)
