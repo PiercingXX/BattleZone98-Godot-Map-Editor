@@ -16,6 +16,16 @@ if [ -z "${GODOT:-}" ]; then
 fi
 GODOT="${GODOT:-godot}"
 PER_TEST_TIMEOUT="${GODOT_TEST_TIMEOUT:-60}"
+
+# Isolate user:// for the whole suite. Tests read and WRITE Settings
+# (snap, view filters, game_root, recents); without isolation they poison
+# the developer's real editor settings and inherit stale state from
+# whatever ran before, making results order- and history-dependent.
+TEST_HOME="$(mktemp -d "${TMPDIR:-/tmp}/bz-editor-tests.XXXXXX")"
+trap 'rm -rf "$TEST_HOME"' EXIT
+export XDG_DATA_HOME="$TEST_HOME/data"
+export XDG_CONFIG_HOME="$TEST_HOME/config"
+export XDG_CACHE_HOME="$TEST_HOME/cache"
 if ! command -v "$GODOT" >/dev/null 2>&1 && [ ! -x "$GODOT" ]; then
   echo "godot not found (set GODOT=). Editor tests skipped." >&2
   echo "Install Godot 4.7.1 and re-run scripts/test-editor.sh" >&2

@@ -335,7 +335,7 @@ static func rotate_selected(delta_yaw: float, log: Callable) -> void:
 		return
 	_push_edits(edits)
 	var n := edits.size()
-	_log(log, "rotated %d object%s %+g°" % [n, "s" if n != 1 else "", delta_yaw])
+	_log(log, "rotated %d object%s %+.1f°" % [n, "s" if n != 1 else "", delta_yaw])
 
 
 static func set_selection_team(team: int, log: Callable = Callable()) -> void:
@@ -728,11 +728,11 @@ static func apply_selection_transform(
 	_push_edits(edits)
 	var n := edits.size()
 	if is_zero_approx(dx) and is_zero_approx(dz):
-		_log(log, "rotated %d object%s %+g°" % [n, "s" if n != 1 else "", delta_yaw])
+		_log(log, "rotated %d object%s %+.1f°" % [n, "s" if n != 1 else "", delta_yaw])
 	elif is_zero_approx(delta_yaw):
 		_log(log, "moved %d object%s by %.1f, %.1f m" % [n, "s" if n != 1 else "", dx, dz])
 	else:
-		_log(log, "moved %d object%s by %.1f, %.1f m  rotated %+g°" % [
+		_log(log, "moved %d object%s by %.1f, %.1f m  rotated %+.1f°" % [
 			n, "s" if n != 1 else "", dx, dz, delta_yaw,
 		])
 

@@ -16,7 +16,7 @@ const RAW_MAX := 4095
 ## raw << 4 → 16-bit sample; sample >> 4 → raw.
 const SAMPLE_SHIFT := 4
 
-const _PNG_SIG := PackedByteArray([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+const _PNG_SIG: PackedByteArray = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
 
 static var _crc_table: PackedInt32Array = PackedInt32Array()
 

@@ -46,7 +46,7 @@ func run(t) -> void:
 	t.ok(_btn(bar, "Raise").icon != null, "tool row has icons")
 	t.eq(_btn(bar, "Raise").text, "", "tool row is icon-only")
 	t.eq(_btn(bar, "Qsel").text, "", "extra tools are icon-only")
-	t.eq(_btn(bar, "Raise").theme_type_variation, "ToolButton")
+	t.eq(str(_btn(bar, "Raise").theme_type_variation), "ToolButton")
 	t.ok(_btn(bar, "Undo").icon != null and _btn(bar, "Undo").text == "")
 	t.ok(_btn(bar, "Test").icon != null)
 	t.eq(_btn(bar, "Test").text, "Test")
@@ -203,7 +203,11 @@ func run(t) -> void:
 	t.ok(not scheme_menu.is_item_checked(scheme_menu.get_item_index(bar.MORE_SCHEME_GODOT)))
 	t.eq(_btn(bar, "Raise").tooltip_text, "Raise  (W)", "tooltips follow the active scheme")
 	scheme_menu.id_pressed.emit(bar.MORE_SCHEME_GODOT)
-	t.eq(more_ids, [bar.MORE_PROBE, bar.MORE_SCHEME_GODOT], "scheme submenu emits more_selected")
+	t.eq(
+		more_ids,
+		[bar.MORE_PROBE, bar.MORE_PREFS, bar.MORE_SCHEME_GODOT],
+		"scheme submenu emits more_selected"
+	)
 	Settings.keymap_scheme = "godot"
 	bar.refresh_keymap()
 	t.eq(_btn(bar, "Raise").tooltip_text, "Raise  (2)")

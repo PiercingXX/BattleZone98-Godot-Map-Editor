@@ -4,7 +4,7 @@ extends PanelContainer
 const _CATEGORY_ORDER: PackedStringArray = [
 	"craft", "building", "prop", "scrap", "geyser", "spawn", "environment", "other",
 ]
-const _PANEL_MIN_X := 252.0
+const _PANEL_MIN_X := 294.0
 
 signal class_armed(rec: Dictionary)
 signal selection_query_applied
@@ -79,7 +79,7 @@ func _ready() -> void:
 	_install_collapse()
 	_rebuild_category_items()
 	_search.text_changed.connect(func(t): _filter = t.strip_edges(); _fill())
-	_category.item_selected.connect(func(_i): _fill())
+	_category.item_selected.connect(func(_i): _fill(); _ensure_filter_icon())
 	_clone_safe.toggled.connect(func(_on): _fill())
 	_list.item_selected.connect(_on_selected)
 	_radius.value_changed.connect(_on_radius)
@@ -338,6 +338,7 @@ func _rebuild_category_items() -> void:
 			pick = i
 			break
 	_category.select(pick)
+	_ensure_filter_icon()
 
 
 func _selected_category() -> String:
@@ -1222,11 +1223,17 @@ func _sync_shape_buttons() -> void:
 	_shape_square.button_pressed = ToolState.shape == "square"
 
 
+func _ensure_filter_icon() -> void:
+	# OptionButton.clear()/select() reset the button icon to the selected
+	# item's (none), so the filter glyph must be re-applied after both.
+	if _category and _category.icon == null:
+		_category.icon = EditorIcons.texture("filter")
+
+
 func _apply_chrome_icons() -> void:
 	if _search and _search.right_icon == null:
 		EditorIcons.apply_line_edit(_search, "search")
-	if _category and _category.icon == null:
-		_category.icon = EditorIcons.texture("filter")
+	_ensure_filter_icon()
 	if _select_summary:
 		EditorIcons.prepend_icon(_select_summary, "select")
 	var terrain_title := find_child("TerrainSelSection", true, false)

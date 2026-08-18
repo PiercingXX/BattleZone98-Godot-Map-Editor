@@ -203,7 +203,7 @@ func _visibility_matrix(t, pal: Node) -> void:
 	}
 	var rail: Control = pal as Control
 	var rail_w: float = rail.custom_minimum_size.x
-	t.eq(rail_w, 252.0, "left rail min width is locked")
+	t.eq(rail_w, 294.0, "left rail min width is locked")
 	var first_w: float = -1.0
 	for tool in want.keys():
 		var name := str(tool)
@@ -286,8 +286,20 @@ func _visibility_matrix(t, pal: Node) -> void:
 	t.ok((pal.find_child("SelectByMaterial", true, false) as Button) != null)
 	_apply_tool(pal, "wand")
 	t.ok((pal.find_child("WandTolerance", true, false) as Control).is_visible_in_tree())
+	# With a heightmap present but nothing selected, the truthful block
+	# reason for Feather is the empty selection.
+	var saved_field = MapState.field
+	var hf := HeightField.new()
+	hf.grid_x = 8
+	hf.grid_z = 8
+	hf.heights.resize(64)
+	hf.heights.fill(200)
+	MapState.field = hf
+	pal.refresh_context()
 	t.ok((pal.find_child("FeatherApply", true, false) as Button).disabled, "feather disabled with no selection")
 	t.ok("no selection" in (pal.find_child("FeatherApply", true, false) as Button).tooltip_text.to_lower())
+	MapState.field = saved_field
+	pal.refresh_context()
 	_apply_tool(pal, "clone")
 	t.ok((pal.find_child("CloneMaterials", true, false) as Control).is_visible_in_tree())
 
@@ -389,6 +401,9 @@ func _assert_no_empty_gap(t, pal: Node, tool: String, want: Dictionary) -> void:
 	var visible_n := 0
 	for child in box.get_children():
 		if not (child is CanvasItem):
+			continue
+		if child.name == "Collapse":
+			# The panel header toggle lives in Box and is always visible.
 			continue
 		if (child as CanvasItem).visible:
 			visible_n += 1
