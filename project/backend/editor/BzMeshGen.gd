@@ -15,19 +15,19 @@ const CELL_M: float = 5.0
 const _WATER_MATERIAL := """\
 import * from \"BZBase.material\"
 
-// The water pass shipped community maps use, and the look play-testing
-// settled on: a blue additive wash over a scrolling ripple texture.
-// depth_write OFF makes the pool genuinely see-through; fog_override keeps
-// distant water from tinting toward the fog colour. Deepen or lighten the
-// blue by scaling ambient/diffuse together.
+// The exact water pass of the two shipped maps whose water is known
+// good (Oasis desrten1.material / The Cave thecave_water): blue additive
+// wash over the scrolling ripple texture. depth_write OFF makes the pool
+// see-through; fog_override keeps distant water from going neon pink.
+// Colours match Oasis (0.25 0.60 1) verbatim.
 material {name}
 {
 \ttechnique
 \t{
 \t\tpass
 \t\t{
-\t\t\tambient 0.12 0.35 0.80
-\t\t\tdiffuse 0.12 0.35 0.80
+\t\t\tambient 0.25 0.60 1
+\t\t\tdiffuse 0.25 0.60 1
 \t\t\tscene_blend add
 \t\t\tcull_hardware none
 \t\t\tcull_software none

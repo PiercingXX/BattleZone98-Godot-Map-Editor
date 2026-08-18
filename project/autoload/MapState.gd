@@ -214,6 +214,8 @@ func set_water_level(v: float) -> void:
 				"variant_scope": "all",
 			}]
 		else:
+			if float(waters[0].get("level_m", -1.0)) != v:
+				adopt_legacy_feature(waters[0])
 			waters[0]["level_m"] = v
 		features["water"] = waters
 	_prune_orphaned_masks()
@@ -489,11 +491,24 @@ func apply_feature_edit(group: String, find_stem: String, new_rec: Dictionary, n
 	features_changed.emit()
 
 
+## Editing a legacy (map-shipped) feature adopts it: the flag clears so
+## the next save regenerates its mesh/material/odf and carrier with the
+## editor's known-good pattern, replacing the shipped files.
+func adopt_legacy_feature(rec: Dictionary) -> void:
+	if typeof(rec) == TYPE_DICTIONARY and rec.has("legacy"):
+		rec.erase("legacy")
+		EditorFeedback.log(
+			"%s: adopted — saving will regenerate this feature's mesh"
+			% str(rec.get("stem", "feature"))
+		)
+
+
 func set_feature_field(group: String, feat_stem: String, key: String, value: Variant) -> void:
 	var rec := find_feature(group, feat_stem)
 	if rec.is_empty():
 		return
 	rec[key] = value
+	adopt_legacy_feature(rec)
 	mark_features_dirty()
 	if group == "water" and key == "level_m" and _is_first_water(feat_stem):
 		water_changed.emit(float(value))
@@ -575,6 +590,9 @@ func paint_mask_rect(feat_stem: String, x0: int, z0: int, w: int, d: int, value:
 func write_mask_rect(feat_stem: String, x0: int, z0: int, w: int, d: int, values: PackedByteArray) -> void:
 	if feat_stem.is_empty() or not has_heightmap():
 		return
+	var owner_group := find_feature_group(feat_stem)
+	if not owner_group.is_empty():
+		adopt_legacy_feature(find_feature(owner_group, feat_stem))
 	var mask := ensure_mask(feat_stem)
 	var gx := field.grid_x
 	var gz := field.grid_z
