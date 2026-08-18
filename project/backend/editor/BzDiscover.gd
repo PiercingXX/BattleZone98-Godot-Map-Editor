@@ -171,6 +171,9 @@ static func discover(override: String = "") -> Dictionary:
 
 	if not _any_game(installs):
 		warnings.append("no game install found at any default path")
+		var sandbox_hint := _flatpak_snap_hint()
+		if not sandbox_hint.is_empty():
+			warnings.append(sandbox_hint)
 
 	var lib_strs: Array = []
 	for p in libraries:
@@ -260,6 +263,30 @@ static func _any_game(installs: Array) -> bool:
 		if typeof(item) == TYPE_DICTIONARY and item.get("kind") == "game":
 			return true
 	return false
+
+
+## Flatpak-sandboxed Godot may be unable to read a snap-packaged Steam
+## library even though it exists. When we found nothing, we run inside
+## Flatpak, and the system shows snap use, say how to open the sandbox.
+static func _flatpak_snap_hint() -> String:
+	if OS.get_name() != "Linux":
+		return ""
+	var in_flatpak := (
+		not OS.get_environment("FLATPAK_ID").is_empty()
+		or FileAccess.file_exists("/.flatpak-info")
+	)
+	if not in_flatpak:
+		return ""
+	if not DirAccess.dir_exists_absolute(_home_dir().path_join("snap")):
+		return ""
+	var app_id := OS.get_environment("FLATPAK_ID")
+	if app_id.is_empty():
+		app_id = "org.godotengine.Godot"
+	return (
+		"running inside Flatpak with snap packages present — if Steam is "
+		+ "the snap version, grant this app file access and re-probe:  "
+		+ "flatpak override --user --filesystem=home %s" % app_id
+	)
 
 
 static func _linux_steam_roots() -> PackedStringArray:

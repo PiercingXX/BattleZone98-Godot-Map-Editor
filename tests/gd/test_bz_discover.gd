@@ -30,6 +30,9 @@ func _test_linux_roots(t) -> void:
 	t.ok("/.local/share/Steam" in joined, "xdg steam root probed")
 	t.ok("com.valvesoftware.Steam" in joined, "flatpak steam root probed")
 	t.ok("/snap/steam/common/" in joined, "snap steam root probed")
+	if OS.get_environment("FLATPAK_ID").is_empty() \
+			and not FileAccess.file_exists("/.flatpak-info"):
+		t.eq(BzDiscover._flatpak_snap_hint(), "", "no sandbox hint outside flatpak")
 
 
 func _isolate() -> void:
