@@ -14,7 +14,6 @@ signal undo_requested
 signal redo_requested
 signal frame_requested
 signal map_mode_requested
-signal view_changed
 signal test_requested
 
 const MORE_IMPORT := 0
@@ -33,23 +32,10 @@ const MORE_SCREENSHOT := 12
 const MORE_PREFS := 13
 const OPEN_BROWSE_ID := 0
 const OPEN_GALLERY_ID := 1
-const VIEW_GEYSERS := 0
-const VIEW_SCRAP := 1
-const VIEW_SPAWNS := 2
-const VIEW_BUILDINGS := 3
-const VIEW_UNITS := 4
-const VIEW_PROPS := 5
-const VIEW_WATER := 6
-const VIEW_PLANTS := 7
-const VIEW_SKY := 8
-const VIEW_GHOST_VARIANTS := 9
-const VIEW_BALANCE := 10
-const VIEW_AIPATHS := 11
 
 var _busy: bool = false
 var _testing: bool = false
 var _open_menu: PopupMenu
-var _view_menu: PopupMenu
 var _btn_test: Button
 var _btn_map: Button
 var _map_mode: bool = false
@@ -67,12 +53,10 @@ var _scheme_opt: OptionButton
 @onready var _btn_redo: Button = %Redo
 @onready var _btn_frame: Button = %Frame
 @onready var _row2: HBoxContainer = %Row2
-@onready var _view: MenuButton = %View
 
 
 func _ready() -> void:
 	_install_open_menu()
-	_install_view_menu()
 	_install_test_button()
 	_install_map_button()
 	%New.pressed.connect(func(): new_requested.emit())
@@ -85,7 +69,6 @@ func _ready() -> void:
 	_install_action_row()
 	_apply_chrome_icons()
 	MapState.session_changed.connect(_refresh_actions)
-	MapState.features_changed.connect(_refresh_view_menu)
 	MapState.objects_mutated.connect(_refresh_variant_counts)
 	UndoStack.changed.connect(_refresh_actions)
 	Backend.call_started.connect(func(_v): set_busy(true))
@@ -175,167 +158,6 @@ func _on_test() -> void:
 func set_testing(value: bool) -> void:
 	_testing = value
 	_refresh_actions()
-
-
-func _install_view_menu() -> void:
-	if _view == null:
-		return
-	_view_menu = _view.get_popup()
-	_view_menu.hide_on_checkable_item_selection = false
-	_view_menu.clear()
-	_view_menu.add_check_item("Geysers", VIEW_GEYSERS)
-	_view_menu.add_check_item("Scrap", VIEW_SCRAP)
-	_view_menu.add_check_item("Spawns", VIEW_SPAWNS)
-	_view_menu.add_check_item("Buildings", VIEW_BUILDINGS)
-	_view_menu.add_check_item("Units", VIEW_UNITS)
-	_view_menu.add_check_item("Props", VIEW_PROPS)
-	_view_menu.add_separator()
-	_view_menu.add_check_item("Water", VIEW_WATER)
-	_view_menu.add_check_item("Plants", VIEW_PLANTS)
-	_view_menu.add_check_item("Sky", VIEW_SKY)
-	_view_menu.add_separator()
-	_view_menu.add_check_item("Ghost other variants", VIEW_GHOST_VARIANTS)
-	_view_menu.add_separator()
-	_view_menu.add_check_item("Balance", VIEW_BALANCE)
-	_view_menu.add_check_item("AI Paths", VIEW_AIPATHS)
-	_view_menu.id_pressed.connect(_on_view_id)
-	_view_menu.about_to_popup.connect(_refresh_view_menu)
-	_refresh_view_menu()
-
-
-func _on_view_id(id: int) -> void:
-	if _view_menu == null:
-		return
-	var idx := _view_menu.get_item_index(id)
-	if idx < 0:
-		return
-	if _view_menu.is_item_disabled(idx):
-		return
-	if id == VIEW_GHOST_VARIANTS:
-		ObjectMarkers.ghost_other_variants = not ObjectMarkers.ghost_other_variants
-		Settings.view_ghost_variants = ObjectMarkers.ghost_other_variants
-		Settings.save()
-		EditorFeedback.log("view ghost_other_variants %s" % (
-			"on" if ObjectMarkers.ghost_other_variants else "off"
-		))
-		view_changed.emit()
-		_refresh_view_menu()
-		return
-	if id == VIEW_BALANCE:
-		if not MapState.has_session:
-			return
-		BalanceOverlay.enabled = not BalanceOverlay.enabled
-		Settings.view_balance = BalanceOverlay.enabled
-		Settings.save()
-		EditorFeedback.log("view balance %s" % ("on" if BalanceOverlay.enabled else "off"))
-		view_changed.emit()
-		_refresh_view_menu()
-		return
-	if id == VIEW_AIPATHS:
-		if not MapState.has_session:
-			return
-		AiPathOverlay.enabled = not AiPathOverlay.enabled
-		Settings.view_aipaths = AiPathOverlay.enabled
-		Settings.save()
-		EditorFeedback.log("view aipaths %s" % ("on" if AiPathOverlay.enabled else "off"))
-		view_changed.emit()
-		_refresh_view_menu()
-		return
-	var key := _view_key(id)
-	if key.is_empty():
-		return
-	var on := not Settings.view_flag(key)
-	Settings.set_view_group(key, on)
-	Settings.save()
-	EditorFeedback.log("view %s %s" % [key, "on" if on else "off"])
-	view_changed.emit()
-	_refresh_view_menu()
-
-
-func _view_key(id: int) -> String:
-	match id:
-		VIEW_GEYSERS:
-			return "geysers"
-		VIEW_SCRAP:
-			return "scrap"
-		VIEW_SPAWNS:
-			return "spawns"
-		VIEW_BUILDINGS:
-			return "buildings"
-		VIEW_UNITS:
-			return "units"
-		VIEW_PROPS:
-			return "props"
-		VIEW_WATER:
-			return "water"
-		VIEW_PLANTS:
-			return "plants"
-		VIEW_SKY:
-			return "sky"
-	return ""
-
-
-func _refresh_view_menu() -> void:
-	if _view_menu == null or _view_menu.get_item_count() == 0:
-		return
-	_set_view_check(VIEW_GEYSERS, Settings.view_geysers, true, "")
-	_set_view_check(VIEW_SCRAP, Settings.view_scrap, true, "")
-	_set_view_check(VIEW_SPAWNS, Settings.view_spawns, true, "")
-	_set_view_check(VIEW_BUILDINGS, Settings.view_buildings, true, "")
-	_set_view_check(VIEW_UNITS, Settings.view_units, true, "")
-	_set_view_check(VIEW_PROPS, Settings.view_props, true, "")
-	_set_view_check(VIEW_WATER, Settings.view_water, true, "")
-	var plants_ok := _plants_overlay_ready()
-	_set_view_check(VIEW_PLANTS, Settings.view_plants, plants_ok, "no plant regions")
-	_set_view_check(VIEW_SKY, Settings.view_sky, true, "")
-	_set_view_check(
-		VIEW_GHOST_VARIANTS,
-		ObjectMarkers.ghost_other_variants,
-		true,
-		"Draw other BZN variants as unpickable ghosts",
-	)
-	_set_view_check(
-		VIEW_BALANCE,
-		BalanceOverlay.enabled,
-		MapState.has_session,
-		"Open a map first",
-	)
-	_set_view_check(
-		VIEW_AIPATHS,
-		AiPathOverlay.enabled,
-		MapState.has_session,
-		"Open a map first",
-	)
-
-
-func _set_view_check(id: int, on: bool, enabled: bool, disabled_tip: String) -> void:
-	var idx := _view_menu.get_item_index(id)
-	if idx < 0:
-		return
-	_view_menu.set_item_checked(idx, on)
-	_view_menu.set_item_disabled(idx, not enabled)
-	if enabled:
-		_view_menu.set_item_tooltip(idx, "")
-	else:
-		_view_menu.set_item_tooltip(idx, disabled_tip)
-
-
-func _plants_overlay_ready() -> bool:
-	var plants: Variant = MapState.features.get("plants", [])
-	var has_regions := typeof(plants) == TYPE_ARRAY and not (plants as Array).is_empty()
-	if not has_regions:
-		return false
-	var shell := _shell()
-	if shell == null:
-		return false
-	var terrain: Object = shell.get("_terrain")
-	if terrain == null:
-		return false
-	return (
-		terrain.has_method("set_plants_overlay")
-		or terrain.has_method("set_show_plants")
-		or terrain.has_method("set_plants_visible")
-	)
 
 
 func _shell() -> Node:
@@ -545,13 +367,10 @@ func _refresh_actions() -> void:
 		_btn_frame.disabled = not session
 		_btn_frame.tooltip_text = "Frame the map  (%s)" % Keymap.format_action(Keymap.ACTION_FRAME) if session else "Open a map first"
 	_refresh_map_button()
-	if _view:
-		_view.tooltip_text = "View filters"
 	if _variant:
 		_variant.disabled = not session or _variant.item_count == 0
 		_variant.tooltip_text = "Active variant (DM / _S / _ST / _SW)" if session else "Open a map first"
 	_refresh_action_row()
-	_refresh_view_menu()
 
 
 func _refresh_test_button(session: bool) -> void:
@@ -638,6 +457,3 @@ func _apply_chrome_icons() -> void:
 	EditorIcons.apply_button(_btn_undo, "undo", false)
 	EditorIcons.apply_button(_btn_redo, "redo", false)
 	EditorIcons.apply_button(_btn_frame, "frame", false)
-	if _view:
-		EditorIcons.apply_button(_view, "view", false)
-		_view.tooltip_text = "View filters"

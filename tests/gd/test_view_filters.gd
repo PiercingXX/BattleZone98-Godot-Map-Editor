@@ -155,30 +155,28 @@ func _view_menu(t) -> void:
 	Settings.view_scrap = true
 	Settings.view_plants = true
 	Settings.view_sky = false
-	var bar: Node = load("res://project/ui/top_bar/TopBar.tscn").instantiate()
-	t.tree.root.add_child(bar)
+	var panel: Node = load("res://project/ui/view/ViewPanel.tscn").instantiate()
+	t.tree.root.add_child(panel)
 	await t.tree.process_frame
-	var view: MenuButton = bar.find_child("View", true, false)
-	t.ok(view != null, "TopBar has a View menu")
-	var pop: PopupMenu = view.get_popup()
-	t.ok(pop.get_item_index(bar.VIEW_GEYSERS) >= 0)
-	t.ok(pop.get_item_index(bar.VIEW_SKY) >= 0)
-	t.ok(pop.is_item_checked(pop.get_item_index(bar.VIEW_SCRAP)), "scrap checked by default")
-	var plants_idx := pop.get_item_index(bar.VIEW_PLANTS)
-	t.ok(pop.is_item_disabled(plants_idx), "plants disabled without overlay/regions")
-	t.eq(pop.get_item_tooltip(plants_idx), "no plant regions")
+	var scrap: CheckBox = panel.find_child("ViewScrap", true, false)
+	var sky: CheckBox = panel.find_child("ViewSky", true, false)
+	var plants: CheckBox = panel.find_child("ViewPlants", true, false)
+	var geysers: CheckBox = panel.find_child("ViewGeysers", true, false)
+	t.ok(geysers != null and sky != null, "panel lists the filters")
+	t.ok(scrap.button_pressed, "scrap checked by default")
+	t.ok(plants.disabled, "plants disabled without overlay/regions")
+	t.eq(plants.tooltip_text, "no plant regions")
 	var was_plants := Settings.view_plants
-	pop.id_pressed.emit(bar.VIEW_PLANTS)
-	t.eq(Settings.view_plants, was_plants, "disabled plants toggle does not flip")
+	t.eq(Settings.view_plants, was_plants, "disabled plants stays put")
 	var saw := [0]
-	bar.view_changed.connect(func(): saw[0] += 1)
-	pop.id_pressed.emit(bar.VIEW_SCRAP)
-	t.eq(Settings.view_scrap, false, "View menu flips scrap")
+	panel.view_changed.connect(func(): saw[0] += 1)
+	scrap.button_pressed = false
+	t.eq(Settings.view_scrap, false, "View panel flips scrap")
 	t.eq(saw[0], 1, "view_changed emits")
-	t.ok(not pop.is_item_checked(pop.get_item_index(bar.VIEW_SCRAP)))
-	pop.id_pressed.emit(bar.VIEW_SKY)
-	t.ok(Settings.view_sky, "View menu flips sky")
-	bar.queue_free()
+	t.ok(not scrap.button_pressed)
+	sky.button_pressed = true
+	t.ok(Settings.view_sky, "View panel flips sky")
+	panel.queue_free()
 	await t.tree.process_frame
 
 

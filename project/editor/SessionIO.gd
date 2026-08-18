@@ -81,6 +81,12 @@ func import_assets() -> void:
 	if Settings.game_root.is_empty():
 		log.call("probe an install first")
 	else:
+		# Long job with no dialog: announce it so the button visibly did
+		# something. Completion refills the palette and logs the counts.
+		log.call(
+			"importing assets from %s — runs in the background, can take minutes"
+			% Settings.game_root, "info", true
+		)
 		Backend.assets(Settings.game_root, MapState.cache_dir(), true)
 
 

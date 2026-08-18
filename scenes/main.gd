@@ -27,10 +27,9 @@ var _aipaths: AiPathOverlay
 @onready var _center: Control = %Center
 @onready var _viewport: SubViewport = %SubViewport
 @onready var _mid_split: HSplitContainer = %Mid
-@onready var _right_split: VSplitContainer = %Right
-@onready var _upper_split: VSplitContainer = %Upper
-@onready var _lower_split: VSplitContainer = %Lower
+@onready var _right_col: Control = %Right
 @onready var _top = %TopBar
+@onready var _viewp = %ViewPanel
 @onready var _rail = %ToolRail
 @onready var _palette = %PalettePanel
 @onready var _inspector = %InspectorPanel
@@ -136,6 +135,7 @@ func _ready() -> void:
 	_install_layout_persistence()
 	_apply_layout_settings()
 	_refresh_start_screen()
+	_name_right_tabs()
 	_try_load_asset_index()
 	_pack_kind.add_item("BZP map", 0)
 	_pack_kind.add_item("Base-game map", 1)
@@ -196,7 +196,7 @@ func _wire() -> void:
 	_top.redo_requested.connect(func(): UndoStack.redo())
 	_top.frame_requested.connect(camera_frame)
 	_top.map_mode_requested.connect(_toggle_map_mode)
-	_top.view_changed.connect(_apply_view_settings)
+	_viewp.view_changed.connect(_apply_view_settings)
 	if _status.has_signal("goto_submitted"):
 		_status.goto_submitted.connect(_on_goto_submitted)
 	_palette.class_armed.connect(func(rec):
@@ -287,7 +287,6 @@ func _wire() -> void:
 	_apply_view_settings()
 	_refresh_aipath_bar()
 	_install_selection_gizmo()
-	_install_labels_view()
 
 
 func _process(_delta: float) -> void:
@@ -1068,39 +1067,6 @@ func _install_selection_gizmo() -> void:
 	world.add_child(_gizmo)
 
 
-func _install_labels_view() -> void:
-	if _top == null:
-		return
-	var view: MenuButton = _top.find_child("View", true, false)
-	if view == null:
-		return
-	var pop := view.get_popup()
-	Settings.attach_labels_view_item(pop)
-	if not pop.id_pressed.is_connected(_on_labels_view_id):
-		pop.id_pressed.connect(_on_labels_view_id)
-	if not pop.about_to_popup.is_connected(_on_labels_view_popup):
-		pop.about_to_popup.connect(_on_labels_view_popup)
-	Settings.sync_labels_view_item(pop)
-
-
-func _on_labels_view_id(id: int) -> void:
-	if id != Settings.VIEW_LABELS_ID:
-		return
-	var on := Settings.toggle_view_labels()
-	_log.call("view labels %s" % ("on" if on else "off"))
-	if _objects and _objects.has_method("refresh_labels"):
-		_objects.refresh_labels(_camera)
-	_on_labels_view_popup()
-
-
-func _on_labels_view_popup() -> void:
-	if _top == null:
-		return
-	var view: MenuButton = _top.find_child("View", true, false)
-	if view:
-		Settings.sync_labels_view_item(view.get_popup())
-
-
 func _selection_records() -> Array:
 	var recs: Array = []
 	for id in MapState.selected_ids:
@@ -1685,8 +1651,8 @@ func _apply_focus_mode() -> void:
 	var focus := Settings.focus_mode
 	if _palette:
 		_palette.visible = not focus
-	if _right_split:
-		_right_split.visible = not focus
+	if _right_col:
+		_right_col.visible = not focus
 	if focus:
 		if _console:
 			_console.visible = false
@@ -1707,7 +1673,7 @@ func _install_layout_persistence() -> void:
 	_layout_timer.wait_time = Settings.LAYOUT_SAVE_IDLE_S
 	_layout_timer.timeout.connect(_on_layout_idle)
 	add_child(_layout_timer)
-	for split in [_mid_split, _right_split, _upper_split, _lower_split]:
+	for split in [_mid_split]:
 		if split == null:
 			continue
 		if split.has_signal("dragged"):
@@ -1755,12 +1721,6 @@ func _flush_layout(persist: bool) -> void:
 	if not Settings.focus_mode:
 		if _mid_split:
 			Settings.layout_split_mid = _mid_split.split_offset
-		if _right_split:
-			Settings.layout_split_right = _right_split.split_offset
-		if _upper_split:
-			Settings.layout_split_upper = _upper_split.split_offset
-		if _lower_split:
-			Settings.layout_split_lower = _lower_split.split_offset
 	if persist:
 		Settings.save()
 
@@ -1792,12 +1752,6 @@ func _apply_layout_settings() -> void:
 func _apply_split_offsets() -> void:
 	if _mid_split:
 		_mid_split.split_offset = Settings.layout_split_mid
-	if _right_split:
-		_right_split.split_offset = Settings.layout_split_right
-	if _upper_split:
-		_upper_split.split_offset = Settings.layout_split_upper
-	if _lower_split:
-		_lower_split.split_offset = Settings.layout_split_lower
 
 
 func _on_more_selected(id: int) -> void:
@@ -1837,6 +1791,17 @@ func _install_size_link() -> void:
 	_size_option.item_selected.connect(func(_i: int) -> void: sync.call())
 	link.toggled.connect(func(_on: bool) -> void: sync.call())
 	sync.call()
+
+
+func _name_right_tabs() -> void:
+	var top_tabs := find_child("TabsTop", true, false) as TabContainer
+	if top_tabs:
+		top_tabs.set_tab_title(0, "History")
+		top_tabs.set_tab_title(1, "Findings")
+	var mid_tabs := find_child("TabsMid", true, false) as TabContainer
+	if mid_tabs:
+		mid_tabs.set_tab_title(0, "Object")
+		mid_tabs.set_tab_title(1, "Palette")
 
 
 func _apply_autosave() -> void:

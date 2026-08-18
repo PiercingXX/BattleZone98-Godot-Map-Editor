@@ -51,7 +51,7 @@ func run(t) -> void:
 	t.ok((top.find_child("Frame", true, false) as Button).disabled)
 	t.ok((top.find_child("Undo", true, false) as Button).disabled)
 	t.eq((top.find_child("MapLabel", true, false) as Label).text, "no map open")
-	t.ok(top.find_child("View", true, false) is MenuButton, "shell has a View menu")
+	t.ok(scene.find_child("ViewPanel", true, false) != null, "shell hosts the View panel")
 	t.ok(top.find_child("MapMode", true, false) is Button, "shell has a 2D/3D toggle")
 	t.ok((top.find_child("MapMode", true, false) as Button).disabled, "2D/3D off with no map")
 	t.ok(status.find_child("Goto", true, false) is LineEdit, "status has a go-to box")

@@ -233,32 +233,52 @@ static func help_text(scheme: String = "") -> String:
 	for action in TOOL_ACTIONS:
 		var short := action.get_slice(".", 1)
 		other_tools.append("%s %s" % [format_action(action, other), short])
-	return """[code]Scheme: %s
+	return """[b]Scheme: %s[/b]
 
-RMB drag look     Ctrl+RMB (or Alt+RMB) drag orbit     Shift+RMB drag pan
-MMB orbit     Shift+MMB pan     mouse wheel zoom (Ctrl+wheel too)
-Shift+wheel truck left/right     Alt+wheel orbit step
-Ctrl+move orbit view     Shift+move pan view     (2D: RMB/MMB drag pans)
+[b]Camera[/b][code]
+RMB drag look        Ctrl+RMB / Alt+RMB drag orbit
+Shift+RMB drag pan   MMB orbit     Shift+MMB pan
+wheel zoom (to cursor; Ctrl+wheel too)
+Shift+wheel truck left/right      Alt+wheel orbit step
+Ctrl+move orbit      Shift+move pan     (2D: RMB/MMB drag pans)
 WASD fly     Q/E up down     Shift fast     Ctrl slow
-%s frame map     %s top-down     %s 2D/3D     %s slope tint     %s walk-the-surface
-%s grid     Delete remove selected
-%s fly   %s raise   %s lower   %s flatten   %s smooth   %s ramp
-%s paint   %s place   %s select   %s noise
-%s qsel   %s rsel   %s wand   %s clone
-Select: arrows nudge 1 m (Shift 5 m)     R rotate +15° (Shift+R +90°) when object-select
-Terrain select: QSel paints (LMB add, Alt subtract). RSel drag (Shift add, Alt subtract, plain replace). Wand click (Shift add, Alt subtract; tolerance in the panel). Select-by-material uses the active swatch.
-%s select all     %s deselect     %s invert     Feather / Grow / Shrink in the panel
-Empty selection = everything editable. While a selection exists, sculpt and paint multiply by the mask.
-Clone: Ctrl+click sets the source; paint copies height deltas (optional materials).
+%s frame map   %s top-down   %s 2D/3D
+%s slope tint  %s walk-the-surface  %s grid[/code]
+
+[b]Tools[/b][code]
+%s fly     %s raise   %s lower   %s flatten
+%s smooth  %s ramp    %s paint   %s place
+%s select  %s noise   %s qsel    %s rsel
+%s wand    %s clone
 [ ] radius     Shift+[ ] strength     Esc cancel / fly
-%s undo     %s redo     %s save     ` log     %s focus     %s this
-Shift+0…7 set team on the selection
-Alt+1…5 recall camera bookmark     Ctrl+Alt+1…5 store
-Select + hold M and drag to measure
 LMB sculpt / place / select     Shift+click keep placing
 Alt+LMB eyedropper (paint)
-Autosave     every 30s by default while unsaved (Preferences… sets 15s / 30s / 60s / off; a crash does not lose the session; %s writes the map files)
-Other scheme (%s): %s[/code]""" % [
+Clone: Ctrl+click sets the source; paint copies height deltas.[/code]
+
+[b]Objects[/b][code]
+arrows nudge 1 m (Shift 5 m)    R rotate +15° (Shift+R +90°)
+Delete remove selected          Shift+0…7 set team on selection[/code]
+
+[b]Terrain selection[/b][code]
+QSel paints (LMB add, Alt subtract)
+RSel drag (Shift add, Alt subtract, plain replace)
+Wand click (Shift add, Alt subtract; tolerance in the panel)
+Select-by-material uses the active swatch
+%s select all   %s deselect   %s invert
+Feather / Grow / Shrink live in the panel
+Empty selection = everything editable; otherwise edits multiply
+by the mask.[/code]
+
+[b]Session[/b][code]
+%s undo   %s redo   %s save   ` log   %s focus   %s this help
+Alt+1…5 recall camera bookmark     Ctrl+Alt+1…5 store
+Select + hold M and drag to measure
+Autosave every 30s by default while unsaved (Preferences… sets
+15s / 30s / 60s / off; a crash does not lose the session;
+%s writes the map files)[/code]
+
+[b]Other scheme (%s)[/b][code]
+%s[/code]""" % [
 		scheme_label(id),
 		L.call(ACTION_FRAME), L.call(ACTION_TOP_DOWN), L.call(ACTION_MAP_MODE), L.call(ACTION_SLOPE), L.call(ACTION_WALK),
 		L.call(ACTION_GRID),

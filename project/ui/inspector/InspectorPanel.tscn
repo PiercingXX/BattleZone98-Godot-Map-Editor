@@ -6,7 +6,7 @@
 script = ExtResource("1_script")
 
 [node name="Scroll" type="ScrollContainer" parent="."]
-custom_minimum_size = Vector2(0, 260)
+custom_minimum_size = Vector2(0, 200)
 layout_mode = 2
 horizontal_scroll_mode = 0
 

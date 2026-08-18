@@ -184,13 +184,7 @@ func run(t) -> void:
 	Settings.keymap_scheme = "godot"
 	bar.refresh_keymap()
 
-	var view: MenuButton = bar.find_child("View", true, false)
-	t.ok(view != null, "View menu sits next to More")
-	var view_pop: PopupMenu = view.get_popup()
-	t.ok(view_pop.get_item_index(bar.VIEW_GEYSERS) >= 0)
-	t.ok(view_pop.get_item_index(bar.VIEW_UNITS) >= 0)
-	t.ok(view_pop.is_item_disabled(view_pop.get_item_index(bar.VIEW_PLANTS)))
-	t.eq(view_pop.get_item_tooltip(view_pop.get_item_index(bar.VIEW_PLANTS)), "no plant regions")
+	t.ok(bar.find_child("View", true, false) == null, "view filters moved to the ViewPanel")
 
 	var menu: PopupMenu = bar.find_child("OpenMenu", true, false)
 	t.ok(menu != null, "Open owns a recent-maps menu")

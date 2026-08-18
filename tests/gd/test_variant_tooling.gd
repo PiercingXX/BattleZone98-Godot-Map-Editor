@@ -208,21 +208,20 @@ func _view_and_counts(t) -> void:
 	}
 	var bar: Node = load("res://project/ui/top_bar/TopBar.tscn").instantiate()
 	t.tree.root.add_child(bar)
+	var panel: Node = load("res://project/ui/view/ViewPanel.tscn").instantiate()
+	t.tree.root.add_child(panel)
 	await t.tree.process_frame
-	var view: MenuButton = bar.find_child("View", true, false)
-	t.ok(view != null)
-	var pop: PopupMenu = view.get_popup()
-	var gidx := pop.get_item_index(bar.VIEW_GHOST_VARIANTS)
-	t.ok(gidx >= 0, "View menu lists Ghost other variants")
-	t.eq(pop.get_item_text(gidx), "Ghost other variants")
-	t.ok(not pop.is_item_checked(gidx))
+	var ghosts: CheckBox = panel.find_child("ViewGhosts", true, false)
+	t.ok(ghosts != null, "View panel lists Ghost variants")
+	t.eq(ghosts.text, "Ghost variants")
+	t.ok(not ghosts.button_pressed)
 	var saw := [0]
-	bar.view_changed.connect(func(): saw[0] += 1)
-	pop.id_pressed.emit(bar.VIEW_GHOST_VARIANTS)
+	panel.view_changed.connect(func(): saw[0] += 1)
+	ghosts.button_pressed = true
 	t.ok(ObjectMarkers.ghost_other_variants, "View toggle turns ghosts on")
 	t.eq(saw[0], 1)
-	t.ok(pop.is_item_checked(pop.get_item_index(bar.VIEW_GHOST_VARIANTS)))
-	pop.id_pressed.emit(bar.VIEW_GHOST_VARIANTS)
+	t.ok(ghosts.button_pressed)
+	ghosts.button_pressed = false
 	t.ok(not ObjectMarkers.ghost_other_variants)
 
 	bar.fill_variants(["", "_S", "_ST", "_SW"], "")
@@ -234,6 +233,7 @@ func _view_and_counts(t) -> void:
 	MapState.objects["_S"].append(_rec("c2", "avapc", 1, 0, 0, 0))
 	MapState.objects_changed()
 	t.eq(variant.get_item_text(1), "_S (2)", "counts refresh on objects_mutated")
+	panel.queue_free()
 	bar.queue_free()
 	await t.tree.process_frame
 	ObjectMarkers.ghost_other_variants = false
