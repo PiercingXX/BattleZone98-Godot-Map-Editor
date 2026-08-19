@@ -87,6 +87,23 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 			written.append(dest_hg2.get_file())
 		regenerated.append(dest_hg2.get_file())
 		warnings.append("terrain re-encoded from terrain.r16")
+		# F3 §3: after a terrain edit the reference editor deletes the .lgt so
+		# the game re-bakes lighting on next load. The .LGT layout is unresolved
+		# (BzLgt is copy-only), so a bake is impossible here — shipping the
+		# residue lightmap would light the OLD geometry. Untouched saves keep
+		# their .lgt byte-identical; only a dirty-terrain save drops it.
+		for src_lgt in residue_files:
+			var dest_name: String = _out_name(str(src_lgt), source_stem, out_stem)
+			if dest_name.get_extension().to_lower() != "lgt":
+				continue
+			var dest_lgt: String = out_dir.path_join(dest_name)
+			if FileAccess.file_exists(dest_lgt):
+				DirAccess.remove_absolute(dest_lgt)
+			written.erase(dest_name)
+			warnings.append(
+				"%s dropped after terrain edit; the game re-bakes lighting on next load"
+				% dest_name
+			)
 	else:
 		var dest_hg2_c: String = out_dir.path_join("%s.hg2" % out_stem)
 		var src_hg2: String = BzSession.find_source_file(source_dir, source_stem, ".hg2")

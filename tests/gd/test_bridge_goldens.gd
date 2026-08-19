@@ -466,6 +466,9 @@ func _group_terrain_dirty_reencodes() -> void:
 	var session := root.path_join("session")
 	DirAccess.make_dir_recursive_absolute(src)
 	_write_synthetic_map(src, "xxsculp", 1, 1)
+	# Stale-lightmap guard (F3 §3): a dirty-terrain save must NOT ship the
+	# residue .lgt — it lights the pre-edit geometry.
+	_write_text(src.path_join("xxsculp.lgt"), "synthetic lightmap bytes")
 	var opened: Variant = _invoke_any("BzOpen", ["open_map", "open"], [
 		src.path_join("xxsculp.hg2"), session,
 	])
@@ -504,6 +507,19 @@ func _group_terrain_dirty_reencodes() -> void:
 	_t.eq(word & _HEIGHT_MASK, 1500, "re-encoded height at cell 100")
 	# Flag bits must survive (docs/02 pass-through of per-cell flags).
 	_t.eq(word >> 13, 3, "flag bits preserved on re-encode")
+	# The stale lightmap must be dropped, not shipped (F3 §3).
+	_t.ok(
+		not FileAccess.file_exists(out.path_join("xxsculp.lgt")),
+		"stale .lgt dropped on dirty-terrain save"
+	)
+	var files := _as_str_array((saved as Dictionary).get("files", []))
+	_t.ok(not files.has("xxsculp.lgt"), "dropped .lgt not listed in files: %s" % str(files))
+	var warns := _as_str_array((saved as Dictionary).get("warnings", []))
+	var warned := false
+	for w in warns:
+		if w.contains(".lgt"):
+			warned = true
+	_t.ok(warned, "lgt drop warned: %s" % str(warns))
 
 
 func _group_package_modes() -> void:
