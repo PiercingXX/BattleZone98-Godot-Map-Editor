@@ -130,7 +130,7 @@ func _test_override_and_packaged(t, tmp: String) -> void:
 	var games := _of_kind(found, "game")
 	t.eq(games.size(), 1, "one game from override")
 	t.eq(str(games[0].get("kind")), "game")
-	t.eq(str(games[0].get("platform_hint")), "proton")
+	t.eq(str(games[0].get("platform_hint")), _native_hint())
 	t.ok(str(games[0].get("path", "")).contains("override_game"), "resolved path")
 	t.ok(games[0].has("version"), "game has version")
 
@@ -196,7 +196,7 @@ func _test_steam_injection(t, tmp: String) -> void:
 	var games := _of_kind(found, "game")
 	t.eq(games.size(), 1, "steam common install")
 	t.eq(str(games[0].get("version")), "1718871", "buildid from appmanifest")
-	t.eq(str(games[0].get("platform_hint")), "proton")
+	t.eq(str(games[0].get("platform_hint")), _native_hint())
 	var libs: Array = found.get("libraries", [])
 	t.ok(libs.size() >= 1, "libraries listed")
 	BzDiscover.test_steam_roots = PackedStringArray()
@@ -302,3 +302,9 @@ func _rmtree(path: String) -> void:
 	for dname in da.get_directories():
 		_rmtree(path.path_join(dname))
 	DirAccess.remove_absolute(path)
+
+
+func _native_hint() -> String:
+	## Discover reports the host platform: "windows" natively, "proton" via Steam
+	## Play on Linux (BzDiscover._is_windows). The suite runs on both.
+	return "windows" if OS.has_feature("windows") else "proton"

@@ -27,7 +27,9 @@ func _test_is_binary_bzn(t, tmp: String) -> void:
 	_write_bytes(empty, PackedByteArray())
 	t.eq(BzOpen.is_binary_bzn(empty), false, "empty file")
 
-	var nul: String = tmp.path_join("nul.bzn")
+	# Not "nul.bzn": NUL (any extension) is a reserved device name on Windows —
+	# the write silently goes to the NUL device and the file never exists.
+	var nul: String = tmp.path_join("nulbytes.bzn")
 	_write_bytes(nul, PackedByteArray([0x00, 0x01, 0x02]))
 	t.eq(BzOpen.is_binary_bzn(nul), true, "NUL in first 256")
 

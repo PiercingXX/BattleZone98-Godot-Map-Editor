@@ -4,6 +4,7 @@ extends Control
 const TerrainRaycastScript = preload("res://project/terrain/TerrainRaycast.gd")
 const DarkThemeScript = preload("res://project/ui/DarkTheme.gd")
 const SelectionGizmoScript = preload("res://project/objects/SelectionGizmo.gd")
+const HeightStrokeCommandScript = preload("res://project/commands/HeightStrokeCommand.gd")
 
 @onready var _console: Control = %Console
 @onready var _toasts: Control = %ToastLayer
@@ -63,6 +64,7 @@ var _save_as: bool = false
 var _quit_after_save: bool = false
 var _smoke_path: String = ""
 var _smoke_save: String = ""
+var _smoke_sculpt: bool = false
 var _select_pressing: bool = false
 var _select_marquee: bool = false
 var _select_from: Vector2 = Vector2.ZERO
@@ -948,6 +950,12 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 				if not _smoke_save.is_empty():
 					var out := _smoke_save
 					_smoke_save = ""
+					if _smoke_sculpt:
+						_smoke_sculpt = false
+						if _smoke_apply_sculpt():
+							_log.call("smoke: applied 11x11 plateau at raw 3333 from (250,250)")
+						else:
+							_log.call("smoke: sculpt skipped (no heightfield)", "warning")
 					MapState.persist()
 					Backend.save_map(MapState.session_dir, out, MapState.stem)
 				else:
@@ -1908,6 +1916,38 @@ func _queue_smoke_open() -> void:
 			_smoke_path = args[i + 1]
 		if args[i] == "--smoke-save" and i + 1 < args.size():
 			_smoke_save = args[i + 1]
+		if args[i] == "--smoke-sculpt":
+			_smoke_sculpt = true
+
+
+## Smoke-only deterministic edit: an 11x11 plateau at raw 3333 centered on
+## cell (255, 255), which straddles the 256-sample zone boundary on any map
+## bigger than one zone. Goes through HeightStrokeCommand + UndoStack like a
+## real brush stroke, so a smoke save exercises the same path a user's sculpt
+## does. Returns false when the session has no heightfield to edit.
+func _smoke_apply_sculpt() -> bool:
+	var field: HeightField = MapState.field
+	if field == null or field.grid_x < 266 or field.grid_z < 266:
+		return false
+	var x0 := 250
+	var z0 := 250
+	var w := 11
+	var d := 11
+	var before := PackedInt32Array()
+	var after := PackedInt32Array()
+	before.resize(w * d)
+	after.resize(w * d)
+	var i := 0
+	for z in range(z0, z0 + d):
+		for x in range(x0, x0 + w):
+			before[i] = field.heights[z * field.grid_x + x]
+			after[i] = 3333
+			i += 1
+	var cmd := HeightStrokeCommandScript.new()
+	cmd.setup(x0, z0, w, d, before, after)
+	cmd.tool = "smoke"
+	UndoStack.push(cmd)
+	return true
 
 
 func _install_heightmap_dialogs() -> void:

@@ -21,12 +21,9 @@ func _read_heightmap(t, path: String, label: String) -> Variant:
 
 
 func run(t) -> void:
-	var tmp := OS.get_environment("TMPDIR")
-	if tmp.is_empty():
-		tmp = "/tmp"
-	var root := tmp.path_join("bz-e2e-terrain")
+	var root := OS.get_temp_dir().path_join("bz-e2e-terrain")
 	if DirAccess.dir_exists_absolute(root):
-		OS.execute("rm", ["-rf", root])
+		_rm_rf(root)
 	DirAccess.make_dir_recursive_absolute(root)
 	var session := root.path_join("session")
 	var out_clean := root.path_join("out-clean")
@@ -127,4 +124,23 @@ func run(t) -> void:
 				if field2.height_raw(xx, zz) != 3333:
 					bad2 += 1
 		t.eq(bad2, 0, "plateau cells wrong after reopen")
-	OS.execute("rm", ["-rf", root])
+	_rm_rf(root)
+
+
+func _rm_rf(path: String) -> void:
+	var da := DirAccess.open(path)
+	if da == null:
+		return
+	da.include_hidden = true
+	da.include_navigational = false
+	da.list_dir_begin()
+	var fn: String = da.get_next()
+	while fn != "":
+		var child: String = path.path_join(fn)
+		if da.current_is_dir():
+			_rm_rf(child)
+		else:
+			DirAccess.remove_absolute(child)
+		fn = da.get_next()
+	da.list_dir_end()
+	DirAccess.remove_absolute(path)
