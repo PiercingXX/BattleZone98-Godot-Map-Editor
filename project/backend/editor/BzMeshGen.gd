@@ -36,7 +36,7 @@ material {name}
 \t\t\ttexture_unit
 \t\t\t{
 \t\t\t\ttexture thecavew.png
-\t\t\t\tscroll_anim 0.0 0.04
+\t\t\t\tscroll_anim {scroll_u} {scroll_v}
 \t\t\t}
 \t\t}
 \t}
@@ -200,7 +200,9 @@ static func generate_features(
 				warnings.append("%s: skipped (level_m < 0)" % stem)
 				continue
 			built = build_water_surface(
-				out_dir, stem, heightmap, level, "water", 10.0, 1.0, mask
+				out_dir, stem, heightmap, level, "water", 10.0, 1.0, mask,
+				float(entry.get("current_deg", 90.0)),
+				float(entry.get("current_speed", 0.04))
 			)
 		elif kind == "plants":
 			var density: int = int(round(float(entry.get("density", 260))))
@@ -239,7 +241,9 @@ static func build_water_surface(
 	material: String = "water",
 	tile_m: float = 10.0,
 	margin_below_m: float = 1.0,
-	region_mask: PackedByteArray = PackedByteArray()
+	region_mask: PackedByteArray = PackedByteArray(),
+	current_deg: float = 90.0,
+	current_speed: float = 0.04
 ) -> Dictionary:
 	## Horizontal quadgrid at ``water_level_m``, clipped to underwater (and mask) cells.
 	if heightmap == null:
@@ -284,8 +288,16 @@ static func build_water_surface(
 
 	if tris.is_empty():
 		return {"ok": true, "written": false, "stem": ""}
+	# Visible current: the scrolling ripple's direction. UVs are world-
+	# aligned (u tracks +x, v tracks +z), so a compass-style angle maps
+	# straight onto scroll_anim. 90 deg / 0.04 reproduces the Oasis pass.
+	var mat_template := _WATER_MATERIAL.replace(
+		"{scroll_u}", "%.4f" % (cos(deg_to_rad(current_deg)) * current_speed)
+	).replace(
+		"{scroll_v}", "%.4f" % (sin(deg_to_rad(current_deg)) * current_speed)
+	)
 	return _emit_mesh_set(
-		out_dir, stem, material, "%s water" % stem, _WATER_MATERIAL, verts, norms, uvs, tris
+		out_dir, stem, material, "%s water" % stem, mat_template, verts, norms, uvs, tris
 	)
 
 

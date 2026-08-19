@@ -205,9 +205,31 @@ func _make_water_row(rec: Dictionary) -> Control:
 	_select_scope(scope, str(rec.get("variant_scope", "all")))
 	scope.tooltip_text = "BZN variants that receive this water"
 	scope.item_selected.connect(func(i: int) -> void: _on_scope("water", stem, i))
+	var cur := SpinBox.new()
+	cur.name = "CurrentDeg"
+	cur.min_value = 0.0
+	cur.max_value = 360.0
+	cur.step = 15.0
+	cur.allow_greater = false
+	cur.value = float(rec.get("current_deg", 90.0))
+	cur.suffix = "°"
+	cur.custom_minimum_size.x = 64
+	cur.tooltip_text = "Current direction (compass: 0° = east, 90° = north)"
+	cur.value_changed.connect(func(v: float) -> void: _on_field("water", stem, "current_deg", v))
+	var flow := SpinBox.new()
+	flow.name = "CurrentSpeed"
+	flow.min_value = 0.0
+	flow.max_value = 0.5
+	flow.step = 0.01
+	flow.value = float(rec.get("current_speed", 0.04))
+	flow.custom_minimum_size.x = 60
+	flow.tooltip_text = "Current speed (ripple scroll; Oasis ships 0.04; 0 = still)"
+	flow.value_changed.connect(func(v: float) -> void: _on_field("water", stem, "current_speed", v))
 	var box: HBoxContainer = row.get_node("Box")
 	box.add_child(edit)
 	box.add_child(level)
+	box.add_child(cur)
+	box.add_child(flow)
 	box.add_child(scope)
 	return row
 
