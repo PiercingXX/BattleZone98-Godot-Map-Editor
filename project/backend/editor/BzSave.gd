@@ -79,7 +79,7 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 		var heightmap: BzHg2.HeightMap = heightmap_v as BzHg2.HeightMap
 		if heightmap == null:
 			return BzErrors.err("value_error", "reconstruct_heightmap did not return a HeightMap")
-		var dest_hg2: String = out_dir.path_join("%s.hg2" % out_stem)
+		var dest_hg2: String = _dest_path(out_dir, "%s.hg2" % out_stem)
 		var wr: Dictionary = heightmap.write(dest_hg2)
 		if typeof(wr) == TYPE_DICTIONARY and wr.get("ok") == false:
 			return wr
@@ -105,7 +105,7 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 				% dest_name
 			)
 	else:
-		var dest_hg2_c: String = out_dir.path_join("%s.hg2" % out_stem)
+		var dest_hg2_c: String = _dest_path(out_dir, "%s.hg2" % out_stem)
 		var src_hg2: String = BzSession.find_source_file(source_dir, source_stem, ".hg2")
 		if (
 			not src_hg2.is_empty()
@@ -124,7 +124,7 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 		var grid: BzMat.MaterialGrid = raw_v as BzMat.MaterialGrid
 		if grid == null:
 			return BzErrors.err("value_error", "materials.u16 did not yield a MaterialGrid")
-		var dest_mat: String = out_dir.path_join("%s.mat" % out_stem)
+		var dest_mat: String = _dest_path(out_dir, "%s.mat" % out_stem)
 		var wr_mat: Dictionary = grid.write(dest_mat)
 		if typeof(wr_mat) == TYPE_DICTIONARY and wr_mat.get("ok") == false:
 			return wr_mat
@@ -132,7 +132,7 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 			written.append(dest_mat.get_file())
 		regenerated.append(dest_mat.get_file())
 	else:
-		var dest_mat_c: String = out_dir.path_join("%s.mat" % out_stem)
+		var dest_mat_c: String = _dest_path(out_dir, "%s.mat" % out_stem)
 		var src_mat: String = BzSession.find_source_file(source_dir, source_stem, ".mat")
 		if (
 			not src_mat.is_empty()
@@ -157,8 +157,8 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 			var records_v: Variant = objects[variant]
 			var records: Array = records_v if typeof(records_v) == TYPE_ARRAY else []
 			var touched: Dictionary = _touched_set(dirty_objects, str(variant), objects_field, records)
-			var dest_bzn: String = out_dir.path_join(
-				"%s%s" % [out_stem, BzSession.variant_bzn_suffix(str(variant))]
+			var dest_bzn: String = _dest_path(
+				out_dir, "%s%s" % [out_stem, BzSession.variant_bzn_suffix(str(variant))]
 			)
 			var src_bzn: String = BzSession.find_source_file(
 				source_dir, source_stem, BzSession.variant_bzn_suffix(str(variant))
@@ -185,8 +185,8 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 		var variants_v: Variant = manifest.get("variants")
 		var variants: Array = variants_v if typeof(variants_v) == TYPE_ARRAY else [""]
 		for variant in variants:
-			var dest_c: String = out_dir.path_join(
-				"%s%s" % [out_stem, BzSession.variant_bzn_suffix(str(variant))]
+			var dest_c: String = _dest_path(
+				out_dir, "%s%s" % [out_stem, BzSession.variant_bzn_suffix(str(variant))]
 			)
 			var src_c: String = BzSession.find_source_file(
 				source_dir, source_stem, BzSession.variant_bzn_suffix(str(variant))
@@ -371,8 +371,8 @@ static func _apply_dirty_aipaths(
 	for variant in flagged.keys():
 		if not bool(flagged[variant]):
 			continue
-		var dest_bzn: String = out_dir.path_join(
-			"%s%s" % [out_stem, BzSession.variant_bzn_suffix(str(variant))]
+		var dest_bzn: String = _dest_path(
+			out_dir, "%s%s" % [out_stem, BzSession.variant_bzn_suffix(str(variant))]
 		)
 		if not FileAccess.file_exists(dest_bzn):
 			var src_bzn: String = BzSession.find_source_file(
@@ -485,7 +485,7 @@ static func _append_runtime_spawns(
 	## script hook is the documented runtime path.
 	if records.is_empty():
 		return
-	var path: String = out_dir.path_join("%sMAP.lua" % stem)
+	var path: String = _dest_path(out_dir, "%sMAP.lua" % stem)
 	var existing: String = ""
 	if FileAccess.file_exists(path):
 		existing = FileAccess.get_file_as_string(path)
@@ -544,6 +544,27 @@ static func _out_name(src_path: String, source_stem: String, out_stem: String) -
 	if lower.begins_with(src_l):
 		return out_stem + name.substr(source_stem.length())
 	return name
+
+
+static func _dest_path(out_dir: String, name: String) -> String:
+	## Destination for a regenerated file, reusing any out_dir entry that
+	## differs only in case.
+	##
+	## Pass 1 copies each residue file under its own name, and shipped file
+	## sets are mixed case (``xxPier02.HG2`` next to ``xxPier02.trn``).
+	## Building a regenerated name from a hardcoded lowercase suffix targets
+	## a DIFFERENT path than the copy on a case-sensitive filesystem: the
+	## stale original ships next to the edit as ``.HG2`` + ``.hg2`` and the
+	## game may load either. On Windows the two names are one file, so which
+	## bytes survive depends on write order and the engine's write-to-temp
+	## -then-rename. Either way the edit can vanish with no error.
+	var target: String = name.to_lower()
+	var da := DirAccess.open(out_dir)
+	if da != null:
+		for existing in da.get_files():
+			if str(existing).to_lower() == target:
+				return out_dir.path_join(str(existing))
+	return out_dir.path_join(name)
 
 
 static func _list_files(dir_path: String) -> Array:
@@ -665,8 +686,8 @@ static func _apply_features(
 		return {"ok": true}
 	var dest_variants: Array = _dest_bzn_variants(out_dir, out_stem)
 	for variant in dest_variants:
-		var dest_bzn: String = out_dir.path_join(
-			"%s%s" % [out_stem, BzSession.variant_bzn_suffix(str(variant))]
+		var dest_bzn: String = _dest_path(
+			out_dir, "%s%s" % [out_stem, BzSession.variant_bzn_suffix(str(variant))]
 		)
 		if not FileAccess.file_exists(dest_bzn):
 			continue
@@ -712,7 +733,7 @@ static func _load_feature_heightmap(
 static func _dest_bzn_variants(out_dir: String, out_stem: String) -> Array:
 	var found: Array = []
 	for suffix in ["", "_S", "_ST", "_SW", "_MS"]:
-		var path: String = out_dir.path_join("%s%s.bzn" % [out_stem, suffix])
+		var path: String = _dest_path(out_dir, "%s%s.bzn" % [out_stem, suffix])
 		if FileAccess.file_exists(path):
 			found.append(suffix)
 	return found
