@@ -270,58 +270,18 @@ static func _decode_previous(previous: Variant) -> Variant:
 	return previous
 
 
-static func _copy_residue_source(session_dir: String, out_dir: String, stem: String) -> Dictionary:
-	## Private fallback when BzSave.save_session cannot run. Copies residue/source.
-	var paths: Dictionary = BzSession.session_paths(session_dir)
-	var source_dir: String = str(paths["source"])
-	var made: Dictionary = _ensure_dir(out_dir)
-	if BzErrors.is_err(made):
-		return made
-	var written: Array = []
-	if DirAccess.dir_exists_absolute(source_dir):
-		var da := DirAccess.open(source_dir)
-		if da != null:
-			var names: Array = []
-			for name in da.get_files():
-				names.append(str(name))
-			names.sort()
-			for name2 in names:
-				var cp: Dictionary = _copy_file(
-					source_dir.path_join(name2), out_dir.path_join(name2)
-				)
-				if BzErrors.is_err(cp):
-					return cp
-				written.append(name2)
-	return {
-		"ok": true,
-		"files": written,
-		"byte_identical": written.duplicate(),
-		"regenerated": [],
-		"warnings": [],
-		"out": _abs(out_dir),
-		"stem": stem,
-	}
-
-
 static func _save_session(session_dir: String, out_dir: String, stem: String) -> Dictionary:
-	## Prefer BzSave.save_session (package_cmd.py). On a non-fatal save error,
-	## copy residue/source so pack/install can still stage a map directory.
-	var saved: Dictionary = BzSave.save_session(session_dir, out_dir, stem)
-	if saved.get("ok", false):
-		return saved
-	if BzErrors.is_err(saved):
-		var code: String = str(saved.get("error", {}).get("code", ""))
-		if code == "no_session" or code == "no_stem":
-			return saved
-		var fallback: Dictionary = _copy_residue_source(session_dir, out_dir, stem)
-		if fallback.get("ok", false):
-			var warns: Array = fallback.get("warnings", [])
-			warns.append(
-				"save_session: %s" % str(saved.get("error", {}).get("message", saved))
-			)
-			fallback["warnings"] = warns
-			return fallback
-	return saved
+	## BzSave.save_session is the only way a package may stage a map.
+	##
+	## package_cmd.py fell back to copying residue/source when the save
+	## errored, so pack/install still produced a map directory. That is a
+	## silent revert: the staged .hg2/.mat/.bzn are the pre-edit bytes while
+	## BzRender still draws the thumbnail from the live session buffers, so
+	## the .BMP shows the sculpt and the shipped terrain does not. On the
+	## addon route it writes that stale map straight into the game install.
+	## A package that cannot encode the session must fail loudly instead
+	## (AGENTS.md rule 2).
+	return BzSave.save_session(session_dir, out_dir, stem)
 
 
 static func package_session(

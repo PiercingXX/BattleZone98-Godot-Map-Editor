@@ -1004,6 +1004,11 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 			var shared: Array = result.get("shared_lua", [])
 			if not shared.is_empty():
 				_log.call("bundled shared lua: %s" % ", ".join(PackedStringArray(shared)))
+			# The save that staged this package can warn (runtime spawns,
+			# dropped .lgt, skipped variants). Dropping those made a
+			# half-encoded map look like a clean install.
+			for w3 in result.get("warnings", []):
+				_log.call("warning: %s" % w3, "warning")
 
 
 func _on_call_failed(verb: String, error: Dictionary) -> void:
