@@ -137,6 +137,16 @@ func _row2_sep() -> void:
 
 
 func _install_test_button() -> void:
+	## Withdrawn 2026-08-20. The button packaged and launched correctly, but
+	## `/startedit` does not set up a player for a multiplayer map: the map's
+	## script chain dies on an empty GetPlayerHandle() behind two modal Lua
+	## dialogs, and units get flung across the world. That is a launch-mode
+	## problem, not a packaging one — the package itself is byte-identical to
+	## the source — so the button is off until the play-test drives the game
+	## the way a real session does rather than through /startedit. Everything
+	## behind it (GameTest, test_requested, SessionIO.test_in_game) is intact;
+	## delete this return to bring it back.
+	return
 	if _btn_validate == null:
 		return
 	_btn_test = Button.new()
