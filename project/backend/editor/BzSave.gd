@@ -262,6 +262,9 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 	)
 	if BzErrors.is_err(aip_applied):
 		return aip_applied
+
+	# Saving under a new stem renames the files but not what is inside them.
+	_restem_identity(out_dir, written, source_stem, out_stem, regenerated, warnings)
 	return {
 		"ok": true,
 		"files": _sorted_unique(written),
@@ -585,6 +588,102 @@ static func _terrain_differs_from_residue(
 	if residue_hm == null:
 		return false
 	return (session_v as BzHg2.HeightMap).data != residue_hm.data
+
+
+## Point a renamed map's internal references at its own name.
+##
+## Pass 1 renames residue files onto ``out_stem`` but ships their bytes as-is,
+## so a map saved under a new stem still names the OLD one inside: the .bzn's
+## ``TerrainName`` and ``msn_filename``, and the .ini's ``missionName``. The
+## renamed .trn is then the one file the .bzn does not ask for, and the engine
+## refuses the mission with "Could not load terrain <oldstem>.trn". Saving a
+## template under your own name — the normal way to start a map — produced a
+## map that could never load.
+##
+## Only values that still equal ``source_stem`` are touched, so a display name
+## the user has already customised survives. Object labels are left alone: they
+## carry the old stem cosmetically but nothing resolves through them.
+static func _restem_identity(
+	out_dir: String,
+	written: Array,
+	source_stem: String,
+	out_stem: String,
+	regenerated: Array,
+	warnings: Array
+) -> void:
+	if source_stem.is_empty() or out_stem.is_empty():
+		return
+	if source_stem.to_lower() == out_stem.to_lower():
+		return
+	var touched: Array = []
+	for name_v in written:
+		var name: String = str(name_v)
+		var ext: String = name.get_extension().to_lower()
+		var path: String = out_dir.path_join(name)
+		if not FileAccess.file_exists(path):
+			continue
+		if ext == "bzn":
+			if _restem_bzn(path, source_stem, out_stem):
+				touched.append(name)
+		elif ext == "ini":
+			if _restem_ini(path, source_stem, out_stem):
+				touched.append(name)
+	if touched.is_empty():
+		return
+	touched.sort()
+	for name2 in touched:
+		if not regenerated.has(name2):
+			regenerated.append(name2)
+	warnings.append(
+		"renamed %s to %s inside %s" % [source_stem, out_stem, ", ".join(PackedStringArray(touched))]
+	)
+
+
+static func _restem_bzn(path: String, source_stem: String, out_stem: String) -> bool:
+	var loaded: Dictionary = BzBzn.read_bzn(path)
+	if not bool(loaded.get("ok", false)):
+		return false
+	var bzn: BzBzn.BznFile = loaded.get("bznfile") as BzBzn.BznFile
+	if bzn == null:
+		return false
+	var changed: bool = false
+	var terrain: String = str(bzn.header_value("TerrainName", ""))
+	if terrain.to_lower() == source_stem.to_lower():
+		bzn.set_header("TerrainName", out_stem)
+		changed = true
+	var msn: String = str(bzn.header_value("msn_filename", ""))
+	var msn_stem: String = msn.get_basename()
+	if msn_stem.to_lower().begins_with(source_stem.to_lower()):
+		bzn.set_header(
+			"msn_filename",
+			"%s%s.bzn" % [out_stem, msn_stem.substr(source_stem.length())]
+		)
+		changed = true
+	if not changed:
+		return false
+	var wr: Dictionary = BzBzn.write_bzn(path, bzn)
+	return bool(wr.get("ok", true))
+
+
+static func _restem_ini(path: String, source_stem: String, out_stem: String) -> bool:
+	var text: String = FileAccess.get_file_as_string(path)
+	if text.is_empty():
+		return false
+	var re := RegEx.new()
+	if re.compile('(missionName\\s*=\\s*")([^"]*)(")') != OK:
+		return false
+	var m: RegExMatch = re.search(text)
+	if m == null or m.get_string(2).to_lower() != source_stem.to_lower():
+		return false
+	var updated: String = (
+		text.substr(0, m.get_start(2)) + out_stem + text.substr(m.get_end(2))
+	)
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return false
+	file.store_string(updated)
+	file.close()
+	return true
 
 
 static func _out_name(src_path: String, source_stem: String, out_stem: String) -> String:
