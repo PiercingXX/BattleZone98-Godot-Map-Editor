@@ -2,7 +2,13 @@ extends Node
 class_name GameTest
 ## In-game play-test: persist, addon install, Steam launch, BZLogger poll.
 ##
-## The game only loads authored maps from <install>/addon/. Launch is
+## The game only loads authored maps from <install>/addon/. Verified again on
+## 2026-08-20 by trying the other route: packaging to <install>/mods/<test_id>/
+## with modEnabled.dat pointed at it installs cleanly and the game starts, but
+## the mod is never discovered (it does not appear among the `MOD FOUND` lines)
+## and the map never loads — 0/8 sim phases. `MOD FOUND` enumerates workshop
+## items only, so addon/ never showing up there says nothing about whether it
+## is used. Do not route the play-test through mods/ again. Launch is
 ## `steam steam://run/301650//<stem>.bzn /startedit /win` (the exe relaunches
 ## through Steam if invoked directly). BZLogger.txt is written next to the exe.
 ## Verdict = count of appended lines containing "Sim Startup": 8 = loaded,

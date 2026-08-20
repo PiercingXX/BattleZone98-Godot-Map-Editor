@@ -56,6 +56,7 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 	var written: Array = []
 	var identical: Array = []
 	var regenerated: Array = []
+	var dropped: Array = []
 	var warnings: Array = []
 
 	# Pass 1: copy or skip every residue file. We'll overwrite dirty domains.
@@ -67,7 +68,20 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 		written.append(dest.get_file())
 
 	# Terrain
-	if _truthy(dirty.get("terrain")):
+	#
+	# dirty.json is a hint, and here a hint that fails open ships the wrong map
+	# in silence. BzRender.render_session draws the .BMP from terrain.r16 while
+	# the else-branch below copies the residue .hg2 byte for byte, so an edit
+	# the flag missed leaves a correct-looking thumbnail sitting on top of
+	# pre-edit terrain — no error, no warning, every expected file present, and
+	# on a map created flat the shipped heightmap is flat everywhere. The buffer
+	# is the truth, so when the flag says clean, check it before believing it.
+	var terrain_dirty: bool = _truthy(dirty.get("terrain"))
+	var terrain_flag_missed: bool = false
+	if not terrain_dirty and _terrain_differs_from_residue(paths, source_dir, source_stem):
+		terrain_dirty = true
+		terrain_flag_missed = true
+	if terrain_dirty:
 		var header_v: Variant = BzSession.read_json(str(paths["hg2_header"]))
 		if BzErrors.is_err(header_v):
 			return header_v
@@ -87,6 +101,11 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 			written.append(dest_hg2.get_file())
 		regenerated.append(dest_hg2.get_file())
 		warnings.append("terrain re-encoded from terrain.r16")
+		if terrain_flag_missed:
+			warnings.append(
+				"terrain.r16 does not match the residue heightmap but dirty.json "
+				+ "did not flag terrain; re-encoded from the session buffer"
+			)
 		# F3 §3: after a terrain edit the reference editor deletes the .lgt so
 		# the game re-bakes lighting on next load. The .LGT layout is unresolved
 		# (BzLgt is copy-only), so a bake is impossible here — shipping the
@@ -100,6 +119,7 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 			if FileAccess.file_exists(dest_lgt):
 				DirAccess.remove_absolute(dest_lgt)
 			written.erase(dest_name)
+			dropped.append(dest_name)
 			warnings.append(
 				"%s dropped after terrain edit; the game re-bakes lighting on next load"
 				% dest_name
@@ -247,6 +267,7 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 		"files": _sorted_unique(written),
 		"byte_identical": _sorted_unique(identical),
 		"regenerated": _sorted_unique(regenerated),
+		"dropped": _sorted_unique(dropped),
 		"warnings": warnings,
 		"out": _abs(out_dir),
 		"stem": out_stem,
@@ -534,6 +555,36 @@ static func _copy_source(src: String, dest: String) -> Dictionary:
 			src
 		)
 	return {"ok": true}
+
+
+## True when the session heightfield no longer matches the .hg2 we opened.
+##
+## Only consulted when dirty.json claims terrain is clean, so the cost lands on
+## the save that would otherwise ship stale terrain, not on every save. A
+## session we cannot reconstruct or a residue we cannot read answers false:
+## this is a safety net over the flag, and the flag already says clean.
+static func _terrain_differs_from_residue(
+	paths: Dictionary, source_dir: String, source_stem: String
+) -> bool:
+	var header_path: String = str(paths.get("hg2_header", ""))
+	if not FileAccess.file_exists(header_path):
+		return false
+	var header_v: Variant = BzSession.read_json(header_path)
+	if BzErrors.is_err(header_v) or typeof(header_v) != TYPE_DICTIONARY:
+		return false
+	var session_v: Variant = BzSession.reconstruct_heightmap(paths, header_v)
+	if not (session_v is BzHg2.HeightMap):
+		return false
+	var residue_path: String = BzSession.find_source_file(source_dir, source_stem, ".hg2")
+	if residue_path.is_empty():
+		return false
+	var residue_v: Dictionary = BzHg2.read_hg2(residue_path)
+	if not bool(residue_v.get("ok", false)):
+		return false
+	var residue_hm: BzHg2.HeightMap = residue_v.get("heightmap") as BzHg2.HeightMap
+	if residue_hm == null:
+		return false
+	return (session_v as BzHg2.HeightMap).data != residue_hm.data
 
 
 static func _out_name(src_path: String, source_stem: String, out_stem: String) -> String:

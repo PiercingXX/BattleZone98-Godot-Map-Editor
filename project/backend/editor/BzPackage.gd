@@ -332,21 +332,39 @@ static func package_session(
 			return BzErrors.err("no_game", "package --mode install needs --game-root")
 		var tid: String = test_id if not test_id.is_empty() else "bzeditor-%s" % stem
 		var files: Array = []
+		var staged_names: Array = []
 		var da := DirAccess.open(staging)
 		if da != null:
 			for name in da.get_files():
+				if str(name) == "features.json":
+					continue
 				files.append(staging.path_join(str(name)))
+				staged_names.append(str(name))
 		var inst: Dictionary = install_map(game_root, tid, files)
 		if BzErrors.is_err(inst):
 			return inst
+		var mod_dir: String = str(inst.get("dest", ""))
+		var inst_evicted: Array = _evict_stale(
+			mod_dir, staged_names, saved.get("dropped", [])
+		)
+		# A test-mod dir is a self-contained load path, so it needs the same
+		# companions the addon route ships. A missing require or object .odf
+		# surfaces only as a modal dialog the game never leaves, so the test
+		# would hang on a black window instead of reporting anything.
+		var inst_shared: Array = _copy_shared_lua(staging, mod_dir)
+		var inst_custom: Array = _copy_custom_assets(session_dir, mod_dir)
 		var previous: Variant = set_mod_enabled(game_root, tid)
 		return {
 			"ok": true,
 			"mode": "install",
-			"dest": str(inst.get("dest", "")),
+			"dest": mod_dir,
 			"test_id": tid,
 			"previous_mod": _decode_previous(previous),
 			"files": saved.get("files", []),
+			"evicted": inst_evicted,
+			"shared_lua": inst_shared,
+			"custom_assets": inst_custom,
+			"warnings": saved.get("warnings", []),
 		}
 	if mode == "addon":
 		if game_root.is_empty():
@@ -367,6 +385,7 @@ static func package_session(
 				if BzErrors.is_err(cres):
 					return cres
 				copied.append(str(name2))
+		var evicted: Array = _evict_stale(addon, copied, saved.get("dropped", []))
 		var shared: Array = _copy_shared_lua(staging, addon)
 		var custom: Array = _copy_custom_assets(session_dir, addon)
 		return {
@@ -374,6 +393,7 @@ static func package_session(
 			"mode": "addon",
 			"dest": addon,
 			"files": copied,
+			"evicted": evicted,
 			"shared_lua": shared,
 			"custom_assets": custom,
 			"warnings": saved.get("warnings", []),
@@ -395,6 +415,59 @@ static func package_session(
 		"unknown package mode '%s'" % mode,
 		"use install, addon, or pack"
 	)
+
+
+## Remove destination files this package deliberately did not ship.
+##
+## Both live routes copy staged names over whatever is already in the
+## destination and never delete, so two classes of stale file survive a
+## package and win over the edit:
+##
+## - Names the save dropped on purpose. A dirty-terrain save deletes the
+##   ``.lgt`` from staging so the game re-bakes lighting, but the copy loop
+##   only writes staged names, so the previous package's lightmap stays in
+##   the install and keeps lighting the pre-edit geometry.
+## - Case variants of a name we did write. Shipped sets are mixed case, and
+##   an older build that guessed a lowercase suffix left ``foo.hg2`` beside
+##   ``foo.HG2``. On a case-insensitive layer either may be handed to the
+##   game, so the stale twin can silently replace the edit.
+##
+## Scoped to those two classes on purpose: the addon dir is shared with the
+## rest of the install, so anything not named by this save is left alone.
+## Returns the removed names.
+static func _evict_stale(dest_dir: String, shipped: Array, dropped: Array) -> Array:
+	if dest_dir.is_empty():
+		return []
+	var da := DirAccess.open(dest_dir)
+	if da == null:
+		return []
+	var shipped_ci := {}
+	for name in shipped:
+		shipped_ci[str(name).to_lower()] = str(name)
+	var dropped_ci := {}
+	for name in dropped:
+		dropped_ci[str(name).to_lower()] = true
+	var present := {}
+	for entry in da.get_files():
+		present[str(entry)] = true
+	var removed: Array = []
+	for entry in present:
+		var found: String = str(entry)
+		var lower: String = found.to_lower()
+		var stale: bool = false
+		if shipped_ci.has(lower):
+			# A case-insensitive filesystem folds the twin onto the file we
+			# just wrote and may report it under the old casing. Evict only
+			# when the name we wrote is listed separately, i.e. two files.
+			stale = shipped_ci[lower] != found and present.has(shipped_ci[lower])
+		else:
+			stale = dropped_ci.has(lower)
+		if not stale:
+			continue
+		if DirAccess.remove_absolute(dest_dir.path_join(found)) == OK:
+			removed.append(found)
+	removed.sort()
+	return removed
 
 
 ## Copy the pack's shared lua modules into ``dest_dir`` when a staged map
@@ -467,7 +540,16 @@ static func _copy_custom_assets(session_dir: String, dest_dir: String) -> Array:
 	var source_path := str((manifest_v as Dictionary).get("source_path", ""))
 	if source_path.is_empty():
 		return []
-	var src_dir := source_path.get_base_dir()
+	# manifest.source_path is the map's DIRECTORY (BzOpen writes the containing
+	# dir, BzNew the same). Taking get_base_dir() of it walked one level up —
+	# for a workshop map that is content/301650/, which holds numbered item
+	# folders and no .odf at all, so this returned empty for every map and the
+	# custom classes never shipped. The engine then quits the mission on the
+	# first GameObject whose .odf it cannot find ("failed to load game files",
+	# 3/8 sim phases). Tolerate a file path too, in case a caller passes one.
+	var src_dir := source_path
+	if not DirAccess.dir_exists_absolute(src_dir):
+		src_dir = source_path.get_base_dir()
 	var da := DirAccess.open(src_dir)
 	if da == null:
 		return []
