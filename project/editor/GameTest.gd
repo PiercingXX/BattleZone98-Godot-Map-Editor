@@ -75,6 +75,52 @@ static func bzn_name(stem: String, variant: String = "") -> String:
 	return "%s%s.bzn" % [stem, variant]
 
 
+## The map's own mission script, from the bytes we opened it from ("" if none).
+static func map_script_path(session_dir: String, stem: String) -> String:
+	if session_dir.is_empty() or stem.is_empty():
+		return ""
+	var src: String = session_dir.path_join("residue").path_join("source")
+	var da := DirAccess.open(src)
+	if da == null:
+		return ""
+	var want: String = "%s.lua" % stem.to_lower()
+	for name in da.get_files():
+		if str(name).to_lower() == want:
+			return src.path_join(str(name))
+	return ""
+
+
+## True when the map is a pack map -- its mission script pulls in a workshop
+## pack's module stack (BZP/SBP). Those maps carry a separate object layout per
+## variant, so the play-test has to be told which one to load. A plain map has
+## no such script and its active variant is answer enough.
+static func is_pack_map(session_dir: String, stem: String) -> bool:
+	var script_path: String = map_script_path(session_dir, stem)
+	if script_path.is_empty():
+		return false
+	var text: String = FileAccess.get_file_as_string(script_path)
+	return text.contains("RequireFix") or text.contains("SBP")
+
+
+## Variants this map actually ships a BZN for, in menu order.
+static func testable_variants(session_dir: String, stem: String, manifest: Dictionary) -> Array:
+	var listed: Variant = manifest.get("variants", [])
+	var order: Array = listed if typeof(listed) == TYPE_ARRAY and not (listed as Array).is_empty() \
+		else ["", "_S", "_ST", "_SW"]
+	var src: String = session_dir.path_join("residue").path_join("source")
+	var present := {}
+	var da := DirAccess.open(src)
+	if da != null:
+		for name in da.get_files():
+			present[str(name).to_lower()] = true
+	var out: Array = []
+	for v_v in order:
+		var v: String = str(v_v)
+		if present.is_empty() or present.has(("%s%s.bzn" % [stem, v]).to_lower()):
+			out.append(v)
+	return out
+
+
 static func steam_run_uri(stem: String, variant: String = "") -> String:
 	return steam_run_uri_for_bzn(bzn_name(stem, variant))
 
@@ -178,7 +224,9 @@ static func launch_steam(uri: String) -> int:
 	return OS.create_process(STEAM_EXE, PackedStringArray([uri]))
 
 
-func begin() -> bool:
+## ``variant`` is the BZN variant to load ("" DM, "_S" Strat, "_ST" Teams,
+## "_SW" Wingman); null keeps the one the editor is showing.
+func begin(variant: Variant = null) -> bool:
 	if _active:
 		cancel()
 		return false
@@ -194,7 +242,8 @@ func begin() -> bool:
 	if Backend.busy:
 		_emit_log("wait for the current backend job to finish")
 		return false
-	_bzn = bzn_name(MapState.stem, MapState.active_variant)
+	var pick: String = str(variant) if variant != null else MapState.active_variant
+	_bzn = bzn_name(MapState.stem, pick)
 	_game_root = Settings.game_root
 	_log_path = logger_path(_game_root)
 	_offset = 0
@@ -204,9 +253,11 @@ func begin() -> bool:
 	_waiting_package = true
 	_set_running(true)
 	MapState.persist()
-	_emit_log("testing %s in game (addon/ + Steam)" % _bzn)
-	_set_status("busy", "installing addon for test…")
-	Backend.package_addon(MapState.session_dir, Settings.game_root)
+	_emit_log("testing %s (%s) in game — terrain build, scripts stripped" % [
+		_bzn, ObjectMarkers.variant_display_name(pick),
+	])
+	_set_status("busy", "installing terrain-test build…")
+	Backend.package_test(MapState.session_dir, Settings.game_root)
 	return true
 
 

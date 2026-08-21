@@ -25,10 +25,9 @@ func run(t) -> void:
 
 	t.ok(_btn(bar, "Save").disabled, "Save disabled with no map")
 	t.ok(_btn(bar, "Validate").disabled, "Validate disabled with no map")
-	# In-game test is withdrawn (TopBar._install_test_button): /startedit gives
-	# a multiplayer map no player handle, so the play-test cannot report
-	# anything useful. Assert it is absent so it cannot come back by accident.
-	t.ok(_btn(bar, "Test") == null, "Test button is withdrawn")
+	t.ok(_btn(bar, "Test") != null, "Test button exists")
+	t.ok(_btn(bar, "Test").disabled, "Test disabled with no map")
+	t.ok("map" in _btn(bar, "Test").tooltip_text.to_lower(), "Test tooltip says open a map")
 	t.ok(_btn(bar, "Frame").disabled, "Frame disabled with no map")
 	t.ok(_btn(bar, "MapMode") != null, "2D/3D toggle exists")
 	t.ok(_btn(bar, "MapMode").disabled, "2D/3D disabled with no map")
@@ -134,7 +133,12 @@ func run(t) -> void:
 	bar._refresh_actions()
 	t.ok(not _btn(bar, "Assets").disabled, "Import enables with game_root")
 	t.ok(not _btn(bar, "Install").disabled, "Install enables with session+root")
-	t.ok(_btn(bar, "Test") == null, "Test button stays withdrawn with session+root")
+	t.ok(not _btn(bar, "Test").disabled, "Test enables with session+root")
+	t.ok("scripts stripped" in _btn(bar, "Test").tooltip_text.to_lower(), "tooltip says it is a terrain build")
+	var tested := [0]
+	bar.test_requested.connect(func(): tested[0] += 1)
+	_btn(bar, "Test").pressed.emit()
+	t.eq(tested[0], 1, "Test emits test_requested")
 
 	var more_ids: Array = []
 	var save_as := [0]

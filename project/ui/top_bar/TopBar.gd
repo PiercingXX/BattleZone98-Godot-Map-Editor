@@ -137,16 +137,9 @@ func _row2_sep() -> void:
 
 
 func _install_test_button() -> void:
-	## Withdrawn 2026-08-20. The button packaged and launched correctly, but
-	## `/startedit` does not set up a player for a multiplayer map: the map's
-	## script chain dies on an empty GetPlayerHandle() behind two modal Lua
-	## dialogs, and units get flung across the world. That is a launch-mode
-	## problem, not a packaging one — the package itself is byte-identical to
-	## the source — so the button is off until the play-test drives the game
-	## the way a real session does rather than through /startedit. Everything
-	## behind it (GameTest, test_requested, SessionIO.test_in_game) is intact;
-	## delete this return to bring it back.
-	return
+	## Terrain test, not a play-test: the build ships with every script
+	## stripped, so a pack map loads as a plain mission instead of dying in
+	## the pack's own game mode. See BzPackage._install_addon.
 	if _btn_validate == null:
 		return
 	_btn_test = Button.new()
@@ -405,7 +398,7 @@ func _refresh_test_button(session: bool) -> void:
 		return
 	_btn_test.disabled = false
 	_btn_test.tooltip_text = (
-		"Install into addon/ and launch via Steam. Polls BZLogger.txt for Sim Startup (8 = loaded). Press again to cancel the poll."
+		"Terrain test: installs into addon/ with scripts stripped and launches via Steam, so the map loads as a plain mission. Pack maps ask which variant's layout to load. Polls BZLogger.txt for Sim Startup (8 = loaded). Press again to cancel the poll."
 	)
 
 

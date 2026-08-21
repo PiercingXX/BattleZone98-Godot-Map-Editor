@@ -366,38 +366,12 @@ static func package_session(
 			"custom_assets": inst_custom,
 			"warnings": saved.get("warnings", []),
 		}
-	if mode == "addon":
+	# "addon" ships the map as authored. "test" ships the same terrain, tiles
+	# and object layout with every script stripped -- see _install_addon.
+	if mode == "addon" or mode == "test":
 		if game_root.is_empty():
-			return BzErrors.err("no_game", "package --mode addon needs --game-root")
-		var addon: String = _abs(game_root).path_join("addon")
-		var mk_addon: Dictionary = _ensure_dir(addon)
-		if BzErrors.is_err(mk_addon):
-			return mk_addon
-		var copied: Array = []
-		var da2 := DirAccess.open(staging)
-		if da2 != null:
-			for name2 in da2.get_files():
-				if str(name2) == "features.json":
-					continue
-				var cres: Dictionary = _copy_file(
-					staging.path_join(str(name2)), addon.path_join(str(name2))
-				)
-				if BzErrors.is_err(cres):
-					return cres
-				copied.append(str(name2))
-		var evicted: Array = _evict_stale(addon, copied, saved.get("dropped", []))
-		var shared: Array = _copy_shared_lua(staging, addon)
-		var custom: Array = _copy_custom_assets(session_dir, addon)
-		return {
-			"ok": true,
-			"mode": "addon",
-			"dest": addon,
-			"files": copied,
-			"evicted": evicted,
-			"shared_lua": shared,
-			"custom_assets": custom,
-			"warnings": saved.get("warnings", []),
-		}
+			return BzErrors.err("no_game", "package --mode %s needs --game-root" % mode)
+		return _install_addon(session_dir, staging, game_root, stem, saved, mode == "test")
 	if mode == "pack":
 		if out_dir.is_empty():
 			return BzErrors.err("no_out", "package --mode pack needs --out")
@@ -415,6 +389,94 @@ static func package_session(
 		"unknown package mode '%s'" % mode,
 		"use install, addon, or pack"
 	)
+
+
+## Copy a staged map into ``<game_root>/addon/``.
+##
+## ``plain`` strips the scripting layer: no ``<stem>*.lua`` from the map and no
+## shared modules pulled in behind them. A pack map's script chain assumes the
+## pack's own game mode is running -- on xxPier02 it dies in SBPAi on an empty
+## GetPlayerHandle() behind two modal Lua dialogs, because a play-test launch
+## does not set up a multiplayer session. Terrain, tiles, and the variant's
+## object layout do not need any of that, so a terrain test ships without it
+## and the map loads as a plain stock mission.
+##
+## Scripts a PREVIOUS full package left in the install are evicted too. They
+## are not staged now, so nothing overwrites them, and one of them lying around
+## re-breaks the very load this mode exists to make work.
+static func _install_addon(
+	session_dir: String,
+	staging: String,
+	game_root: String,
+	stem: String,
+	saved: Dictionary,
+	plain: bool
+) -> Dictionary:
+	var addon: String = _abs(game_root).path_join("addon")
+	var made: Dictionary = _ensure_dir(addon)
+	if BzErrors.is_err(made):
+		return made
+	var copied: Array = []
+	var skipped: Array = []
+	var da := DirAccess.open(staging)
+	if da != null:
+		for name_v in da.get_files():
+			var name: String = str(name_v)
+			if name == "features.json":
+				continue
+			if plain and name.get_extension().to_lower() == "lua":
+				skipped.append(name)
+				continue
+			var cres: Dictionary = _copy_file(
+				staging.path_join(name), addon.path_join(name)
+			)
+			if BzErrors.is_err(cres):
+				return cres
+			copied.append(name)
+	var dropped: Array = saved.get("dropped", [])
+	if plain:
+		dropped = dropped.duplicate()
+		for stale in _installed_scripts(addon, stem):
+			if not dropped.has(stale):
+				dropped.append(stale)
+	var evicted: Array = _evict_stale(addon, copied, dropped)
+	var shared: Array = [] if plain else _copy_shared_lua(staging, addon)
+	var custom: Array = _copy_custom_assets(session_dir, addon)
+	var warnings: Array = (saved.get("warnings", []) as Array).duplicate()
+	if plain and not (skipped.is_empty() and evicted.is_empty()):
+		warnings.append(
+			"terrain-test build: scripts stripped so the map loads as a plain mission"
+		)
+	return {
+		"ok": true,
+		"mode": "test" if plain else "addon",
+		"dest": addon,
+		"files": copied,
+		"skipped": skipped,
+		"evicted": evicted,
+		"shared_lua": shared,
+		"custom_assets": custom,
+		"warnings": warnings,
+	}
+
+
+## Script files already in ``dest_dir`` that belong to this map's stem.
+static func _installed_scripts(dest_dir: String, stem: String) -> Array:
+	if stem.is_empty():
+		return []
+	var da := DirAccess.open(dest_dir)
+	if da == null:
+		return []
+	var want: String = stem.to_lower()
+	var out: Array = []
+	for name_v in da.get_files():
+		var name: String = str(name_v)
+		if name.get_extension().to_lower() != "lua":
+			continue
+		if name.get_basename().to_lower().begins_with(want):
+			out.append(name)
+	out.sort()
+	return out
 
 
 ## Remove destination files this package deliberately did not ship.

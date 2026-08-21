@@ -268,6 +268,13 @@ func package_install(session_dir: String, game_root: String, test_id: String = "
 	run("package", args)
 
 
+## Terrain-test build: same map, every script stripped. See BzPackage._install_addon.
+func package_test(session_dir: String, game_root: String) -> void:
+	run("package", PackedStringArray([
+		"--session", session_dir, "--mode", "test", "--game-root", game_root,
+	]))
+
+
 func package_addon(session_dir: String, game_root: String) -> void:
 	run("package", PackedStringArray([
 		"--session", session_dir, "--mode", "addon", "--game-root", game_root,
