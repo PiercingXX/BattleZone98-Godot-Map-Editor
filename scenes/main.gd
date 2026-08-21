@@ -572,7 +572,7 @@ func _on_view_gui_input(event: InputEvent) -> void:
 				var sample := _pick()
 				if sample.get("hit", false):
 					var p: Vector3 = sample["position"]
-					_palette.sample_material(MapState.material_at(p.x, p.z))
+					_palette.sample_tile(MapState.material_word_at(p.x, p.z))
 				else:
 					_log.call("nothing to sample")
 			elif ToolState.tool == "select" and _try_begin_gizmo_drag():

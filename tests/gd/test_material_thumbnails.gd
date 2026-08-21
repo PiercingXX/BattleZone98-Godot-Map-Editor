@@ -16,6 +16,7 @@ func run(t) -> void:
 	_test_hex_index(t, png)
 	_test_elysium_type4(t, png)
 	_test_solid_tile_field(t, png)
+	_test_transition_catalog(t, png)
 	await _test_panel_fills_swatch(t, png)
 
 	_rm_rf(tmp)
@@ -153,6 +154,30 @@ func _test_panel_fills_swatch(t, png: String) -> void:
 	t.ok(sb2 != null and sb2.bg_color.a > 0.5, "unused slot keeps flat_color")
 	pal.queue_free()
 	await t.tree.process_frame
+
+
+func _test_transition_catalog(t, png: String) -> void:
+	_set_world(png, {
+		"MA00SA0.MAP": [0.0, 0.0, 0.125, 0.125],
+		"MA01CA0.MAP": [0.5, 0.0, 0.125, 0.125],
+		"MA01CB0.MAP": [0.625, 0.0, 0.125, 0.125],
+		"MA01DA0.MAP": [0.0, 0.125, 0.125, 0.125],
+		"MA04CA0.MAP": [0.75, 0.0, 0.125, 0.125],
+	})
+	t.ok(MaterialPalette.catalog_known())
+	t.ok(MaterialPalette.has_kind_for(0, "cap"), "mat 0 has caps")
+	t.ok(MaterialPalette.has_kind_for(0, "diag"), "mat 0 has a corner")
+	t.ok(not MaterialPalette.has_kind_for(1, "cap"), "mat 1 has no caps as base")
+	t.ok(MaterialPalette.has_transition(0, 1, "cap"))
+	t.ok(MaterialPalette.has_transition(0, 4, "cap"))
+	t.ok(not MaterialPalette.has_transition(0, 2, "cap"), "no 0→2 cap")
+	t.ok(not MaterialPalette.has_transition(0, 4, "diag"), "0→4 is cap only")
+	var caps: PackedInt32Array = MaterialPalette.transition_partners(0, "cap")
+	t.eq(caps.size(), 2)
+	t.ok(caps.has(1) and caps.has(4))
+	var vars: PackedInt32Array = MaterialPalette.variants_for(0, 1, "cap")
+	t.ok(vars.has(0) and vars.has(1), "0→1 cap has A and B")
+	t.eq(MaterialPalette.variants_for(0, 1, "diag"), PackedInt32Array([0]))
 
 
 func _set_world(png: String, tiles: Dictionary) -> void:

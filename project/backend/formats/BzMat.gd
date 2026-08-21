@@ -166,6 +166,26 @@ static func encode_entry(
 	return entry
 
 
+static func decode_entry(word: int) -> Dictionary:
+	return {
+		"mat_a": (word >> 12) & MATERIAL_MASK,
+		"mat_b": (word >> 8) & MATERIAL_MASK,
+		"cap": (word >> 7) & 1,
+		"flip": (word >> 6) & 1,
+		"rot": (word >> 4) & 0x3,
+		"variant": word & 0x3,
+	}
+
+
+static func kind_of_entry(word: int) -> String:
+	var d: Dictionary = decode_entry(word)
+	if int(d["mat_a"]) == int(d["mat_b"]):
+		return "solid"
+	if int(d["cap"]) != 0:
+		return "diag"
+	return "cap"
+
+
 static func _march_square(colors: PackedInt32Array) -> int:
 	var uniq: Array[int] = []
 	for c in colors:
@@ -311,13 +331,14 @@ static func autotile_neighbors(self_m: int, n: int, e: int, s: int, w: int) -> i
 			return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 0 if not ns else 2))
 		# Adjacent same-neighbours: this cell is an outer corner of `self_m`.
 		# The foreign vertex is opposite the two same sides (F2 §5.3).
+		# Atlas D tiles face left at identity; rotate onto NW/NE/SE/SW.
 		if es and ss:
-			return _autotile_owned(self_m, other, _autotile_diag(self_m, other, 0))
+			return encode_diag(self_m, other, 0)
 		if ss and ws:
-			return _autotile_owned(self_m, other, _autotile_diag(self_m, other, 1))
+			return encode_diag(self_m, other, 1)
 		if ws and ns:
-			return _autotile_owned(self_m, other, _autotile_diag(self_m, other, 2))
-		return _autotile_owned(self_m, other, _autotile_diag(self_m, other, 3))
+			return encode_diag(self_m, other, 2)
+		return encode_diag(self_m, other, 3)
 	if ns:
 		return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 2))
 	if es:
@@ -353,18 +374,12 @@ static func _autotile_cap(self_m: int, other: int, side: int) -> int:
 	return autotile_quad(c)
 
 
-static func _autotile_diag(self_m: int, other: int, corner: int) -> int:
-	var c := PackedInt32Array([self_m, self_m, self_m, self_m])
-	match corner:
-		0:
-			c[0] = other
-		1:
-			c[1] = other
-		2:
-			c[2] = other
-		_:
-			c[3] = other
-	return autotile_quad(c)
+## Atlas `*D*` tiles face left. `corner`: 0=NW (identity / left), 1=NE, 2=SE, 3=SW.
+## Packs F2 orientation 14, 13, 12, 15 (unmirrored quartet).
+static func encode_diag(self_m: int, other: int, corner: int, variant: int = 0) -> int:
+	var packed_rot: PackedInt32Array = PackedInt32Array([2, 1, 0, 3])
+	var rot: int = packed_rot[clampi(corner, 0, 3)]
+	return encode_entry(self_m, other, 1, 1, rot, variant)
 
 
 static func auto_paint(heightmap: Variant, rules: Array) -> Variant:

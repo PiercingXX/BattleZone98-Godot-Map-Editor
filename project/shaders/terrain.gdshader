@@ -82,6 +82,8 @@ void fragment() {
 				rect = mat_uvs[mi];  // no such tile shipped — solid fallback
 			} else {
 				// Orientation → rotation quarter-turns + mirror (F2 §2).
+				// Identity (orient 14 on diagonals) is the atlas D tile as
+				// shipped: the corner faces left. 13/12/15 are +90/180/−90.
 				int c = orient;
 				int rot;
 				bool mirror;

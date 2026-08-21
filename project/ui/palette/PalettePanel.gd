@@ -6,7 +6,7 @@ const _CATEGORY_ORDER: PackedStringArray = [
 	"prop", "environment", "weapon", "other",
 ]
 const _PANEL_MIN_X := 294.0
-const _SWATCH_PX := 28
+const _SWATCH_PX := 35
 const _SWATCH_BORDER := 2
 const _LIST_ALL_MAX := 80
 
@@ -71,6 +71,14 @@ var _clone_row: HBoxContainer
 var _clone_mats: CheckBox
 var _match_edges: CheckBox
 var _match_btn: Button
+var _kind_solid: Button
+var _kind_cap: Button
+var _kind_diag: Button
+var _trans_opt: OptionButton
+var _rot_btn: Button
+var _flip_box: CheckBox
+var _var_opt: OptionButton
+var _tile_hint: Label
 var _clone_hint: Label
 var _snap_grid: OptionButton
 var _snap_angle: OptionButton
@@ -220,9 +228,20 @@ func refresh_context() -> void:
 
 func sample_material(idx: int) -> String:
 	idx = clampi(idx, 0, 15)
+	ToolState.set_paint_kind("solid")
 	ToolState.set_paint_material(idx)
 	_highlight_swatch()
+	_sync_paint_tile_from_state()
 	var msg := "sampled mat %d (%s)" % [idx, MaterialPalette.type_name(idx)]
+	EditorFeedback.log(msg)
+	return msg
+
+
+func sample_tile(word: int) -> String:
+	ToolState.set_paint_from_word(word)
+	_highlight_swatch()
+	_sync_paint_tile_from_state()
+	var msg := "sampled %s" % ToolState.paint_describe()
 	EditorFeedback.log(msg)
 	return msg
 
@@ -246,6 +265,8 @@ func refresh_swatches() -> void:
 		var bg := Color(0, 0, 0, 0) if tex != null else colors[i]
 		_apply_swatch_style(b, bg)
 	_highlight_swatch()
+	_fill_transition_items()
+	_sync_paint_tile_from_state()
 
 
 func _build_swatches() -> void:
@@ -273,12 +294,99 @@ func _build_swatches() -> void:
 
 
 func _build_paint_match() -> void:
-	if _mats_section == null or _match_edges != null:
+	if _mats_section == null or _kind_solid != null:
 		return
+	var kinds := HBoxContainer.new()
+	kinds.name = "TileKindRow"
+	kinds.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var kg := ButtonGroup.new()
+	_kind_solid = _kind_btn("Solid", kg)
+	_kind_cap = _kind_btn("Cap", kg)
+	_kind_diag = _kind_btn("Corner", kg)
+	_kind_solid.pressed.connect(func() -> void:
+		if not _syncing:
+			ToolState.set_paint_kind("solid")
+	)
+	_kind_cap.pressed.connect(func() -> void:
+		if not _syncing:
+			ToolState.set_paint_kind("cap")
+	)
+	_kind_diag.pressed.connect(func() -> void:
+		if not _syncing:
+			ToolState.set_paint_kind("diag")
+	)
+	kinds.add_child(_kind_solid)
+	kinds.add_child(_kind_cap)
+	kinds.add_child(_kind_diag)
+	_mats_section.add_child(kinds)
+	var meet := HBoxContainer.new()
+	meet.name = "TileMeetRow"
+	meet.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var meet_l := Label.new()
+	meet_l.text = "Meets"
+	meet_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_trans_opt = OptionButton.new()
+	_trans_opt.name = "PaintTransition"
+	_trans_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_trans_opt.focus_mode = Control.FOCUS_NONE
+	_trans_opt.tooltip_text = "The other material on a cap or corner. The swatch is this cell's material."
+	_fill_transition_items()
+	_trans_opt.item_selected.connect(func(i: int) -> void:
+		if _syncing:
+			return
+		ToolState.set_paint_transition(_trans_opt.get_item_id(i))
+	)
+	meet.add_child(meet_l)
+	meet.add_child(_trans_opt)
+	_mats_section.add_child(meet)
+	var face := HBoxContainer.new()
+	face.name = "TileFaceRow"
+	_rot_btn = Button.new()
+	_rot_btn.name = "PaintRotate"
+	_rot_btn.focus_mode = Control.FOCUS_NONE
+	_rot_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_rot_btn.pressed.connect(func() -> void: ToolState.cycle_paint_rot())
+	_flip_box = CheckBox.new()
+	_flip_box.name = "PaintMirror"
+	_flip_box.text = "Mirror"
+	_flip_box.focus_mode = Control.FOCUS_NONE
+	_flip_box.toggled.connect(func(on: bool) -> void:
+		if _syncing:
+			return
+		ToolState.set_paint_flip(on)
+	)
+	face.add_child(_rot_btn)
+	face.add_child(_flip_box)
+	_mats_section.add_child(face)
+	var vari := HBoxContainer.new()
+	vari.name = "TileVariantRow"
+	var vari_l := Label.new()
+	vari_l.text = "Variant"
+	vari_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_var_opt = OptionButton.new()
+	_var_opt.name = "PaintVariant"
+	_var_opt.focus_mode = Control.FOCUS_NONE
+	_var_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for i in 4:
+		_var_opt.add_item(char(65 + i), i)
+	_var_opt.item_selected.connect(func(i: int) -> void:
+		if _syncing:
+			return
+		ToolState.set_paint_variant(_var_opt.get_item_id(i))
+	)
+	vari.add_child(vari_l)
+	vari.add_child(_var_opt)
+	_mats_section.add_child(vari)
+	_tile_hint = Label.new()
+	_tile_hint.name = "TileHint"
+	_tile_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_tile_hint.add_theme_color_override("font_color", Color(0.62, 0.62, 0.64, 1))
+	_tile_hint.text = "Cap and Corner only list pairs this world actually ships. Alt+LMB samples the tile under the cursor."
+	_mats_section.add_child(_tile_hint)
 	_match_edges = CheckBox.new()
 	_match_edges.name = "MatchEdges"
-	_match_edges.text = "Match corners"
-	_match_edges.tooltip_text = "After painting, recode the edge as caps and the corners as diagonals (the tiles the game actually draws)."
+	_match_edges.text = "Guess from neighbours"
+	_match_edges.tooltip_text = "Helper only. The game stores the tile word you assign. This recodes the halo after a solid stamp."
 	_match_edges.focus_mode = Control.FOCUS_NONE
 	_match_edges.button_pressed = ToolState.paint_match_edges
 	_match_edges.toggled.connect(func(on: bool) -> void:
@@ -287,13 +395,66 @@ func _build_paint_match() -> void:
 	_mats_section.add_child(_match_edges)
 	_match_btn = Button.new()
 	_match_btn.name = "MatchNow"
-	_match_btn.text = "Match now"
-	_match_btn.tooltip_text = "Recode caps and corners for the terrain selection, or the whole map if nothing is selected. Undoable."
+	_match_btn.text = "Guess now"
+	_match_btn.tooltip_text = "Recode caps and corners from neighbours for the terrain selection, or the whole map. Undoable."
 	_match_btn.focus_mode = Control.FOCUS_NONE
 	_match_btn.pressed.connect(func() -> void:
 		EditActions.rematch_material_edges(EditorFeedback.log)
 	)
 	_mats_section.add_child(_match_btn)
+	_sync_paint_tile_from_state()
+
+
+func _kind_btn(caption: String, group: ButtonGroup) -> Button:
+	var b := Button.new()
+	b.text = caption
+	b.toggle_mode = true
+	b.button_group = group
+	b.focus_mode = Control.FOCUS_NONE
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return b
+
+
+func _fill_transition_items() -> void:
+	if _trans_opt == null:
+		return
+	var partners: PackedInt32Array = MaterialPalette.transition_partners(
+		ToolState.paint_material, ToolState.paint_kind
+	)
+	_trans_opt.clear()
+	if partners.is_empty():
+		_trans_opt.add_item("(no tiles in this atlas)", 0)
+		_trans_opt.disabled = true
+		return
+	_trans_opt.disabled = false
+	var pick := 0
+	for i in partners.size():
+		var p: int = partners[i]
+		_trans_opt.add_item("%d  %s" % [p, MaterialPalette.type_name(p)], p)
+		if p == ToolState.paint_transition:
+			pick = i
+	_trans_opt.select(pick)
+
+
+func _fill_variant_items() -> void:
+	if _var_opt == null:
+		return
+	var vars: PackedInt32Array = MaterialPalette.variants_for(
+		ToolState.paint_material, ToolState.paint_transition, ToolState.paint_kind
+	)
+	_var_opt.clear()
+	if vars.is_empty():
+		_var_opt.add_item("A", 0)
+		_var_opt.disabled = true
+		return
+	_var_opt.disabled = vars.size() < 2
+	var pick := 0
+	for i in vars.size():
+		var v: int = clampi(vars[i], 0, 25)
+		_var_opt.add_item(char(65 + v), v)
+		if v == ToolState.paint_variant:
+			pick = i
+	_var_opt.select(pick)
 
 
 func _apply_swatch_style(b: Button, bg: Color) -> void:
@@ -1321,9 +1482,52 @@ func _sync_from_state() -> void:
 	_highlight_swatch()
 	_sync_symmetry_from_state()
 	_sync_snap_from_state()
+	_sync_paint_tile_from_state()
+	_syncing = false
+
+
+func _sync_paint_tile_from_state() -> void:
+	var was := _syncing
+	_syncing = true
+	if _kind_solid:
+		_kind_solid.button_pressed = ToolState.paint_kind == "solid"
+	if _kind_cap:
+		var can_cap := MaterialPalette.has_kind_for(ToolState.paint_material, "cap")
+		_kind_cap.disabled = not can_cap
+		_kind_cap.tooltip_text = (
+			"This material has no cap tiles in the world atlas."
+			if not can_cap else "Straight edge between two materials."
+		)
+		_kind_cap.button_pressed = ToolState.paint_kind == "cap"
+	if _kind_diag:
+		var can_d := MaterialPalette.has_kind_for(ToolState.paint_material, "diag")
+		_kind_diag.disabled = not can_d
+		_kind_diag.tooltip_text = (
+			"This material has no corner tiles in the world atlas."
+			if not can_d else "Diagonal corner between two materials."
+		)
+		_kind_diag.button_pressed = ToolState.paint_kind == "diag"
+	_fill_transition_items()
+	_fill_variant_items()
+	if _rot_btn:
+		if ToolState.paint_kind == "diag":
+			_rot_btn.text = "Facing  %s" % ToolState.paint_diag_facing()
+			_rot_btn.tooltip_text = "Stock corner tiles face left in the atlas. Rotate that tile onto the other corners."
+		else:
+			_rot_btn.text = "Rotate  %d°" % (ToolState.paint_rot * 90)
+			_rot_btn.tooltip_text = "Rotate the cap tile."
+	if _flip_box and _flip_box.button_pressed != (ToolState.paint_flip != 0):
+		_flip_box.button_pressed = ToolState.paint_flip != 0
+	var show_pair := ToolState.paint_kind != "solid"
+	if _trans_opt:
+		_trans_opt.get_parent().visible = show_pair
+	if _rot_btn:
+		_rot_btn.get_parent().visible = show_pair
+	if _var_opt:
+		_var_opt.get_parent().visible = show_pair
 	if _match_edges and _match_edges.button_pressed != ToolState.paint_match_edges:
 		_match_edges.button_pressed = ToolState.paint_match_edges
-	_syncing = false
+	_syncing = was
 
 
 func _sync_shape_buttons() -> void:

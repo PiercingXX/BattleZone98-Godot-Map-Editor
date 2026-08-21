@@ -339,8 +339,11 @@ func _stamp_paint(cx_m: float, cz_m: float) -> void:
 			var w := _weight(cx_m, cz_m, wx, wz) * MapState.selection_factor_world(wx, wz)
 			if w <= 0.0:
 				continue
-			MapState.set_material(x, z, paint_material)
-	if ToolState.paint_match_edges:
+			if ToolState.paint_kind == "solid":
+				MapState.set_material(x, z, paint_material)
+			else:
+				MapState.set_material_word(x, z, ToolState.paint_word())
+	if ToolState.paint_match_edges and ToolState.paint_kind == "solid":
 		var mx0 := maxi(0, x0 - 1)
 		var mz0 := maxi(0, z0 - 1)
 		var mx1 := mini(MapState.mat_grid_x - 1, x1 + 1)

@@ -12,6 +12,10 @@ func _sample(t) -> void:
 	var saved_session := MapState.has_session
 	var saved_tool := ToolState.tool
 	var saved_mat := ToolState.paint_material
+	var saved_kind := ToolState.paint_kind
+	var saved_trans := ToolState.paint_transition
+	var saved_flip := ToolState.paint_flip
+	var saved_rot := ToolState.paint_rot
 	var saved_world := MapState.world
 	var saved_worlds: Array = MapState.worlds.duplicate(true)
 	var saved_x: int = MapState.mat_grid_x
@@ -59,6 +63,15 @@ func _sample(t) -> void:
 	t.eq(ToolState.paint_material, 5)
 	t.ok(_swatch_border(swatches, 5).is_equal_approx(active))
 
+	var cap_word: int = BzMat.encode_entry(5, 1, 0, 1, 2, 0)
+	MapState.set_material_word(2, 3, cap_word)
+	var sampled: String = pal.sample_tile(MapState.material_word_at(40.0, 60.0))
+	t.ok(sampled.begins_with("sampled cap"), "eyedropper reports a cap")
+	t.eq(ToolState.paint_kind, "cap")
+	t.eq(ToolState.paint_material, 5)
+	t.eq(ToolState.paint_transition, 1)
+	t.eq(ToolState.paint_rot, 2)
+
 	pal.queue_free()
 	await t.tree.process_frame
 	MapState.has_session = saved_session
@@ -70,7 +83,11 @@ func _sample(t) -> void:
 	if saved_x > 0 and saved_z > 0:
 		MapState.upload_materials()
 	ToolState.set_tool(saved_tool if saved_tool != "" else "fly")
+	ToolState.set_paint_kind(saved_kind)
 	ToolState.set_paint_material(saved_mat)
+	ToolState.set_paint_transition(saved_trans)
+	ToolState.set_paint_flip(saved_flip != 0)
+	ToolState.set_paint_rot(saved_rot)
 
 
 func _dispatch(t) -> void:

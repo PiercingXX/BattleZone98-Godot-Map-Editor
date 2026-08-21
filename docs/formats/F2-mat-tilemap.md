@@ -88,12 +88,16 @@ transform applied to the tile's atlas rectangle:
 | 3 | 11 (`b`) | rotate 180° then mirror V *(equivalently mirror U)* |
 | 2 | 10 (`a`) | rotate −90°, then mirror V |
 
-**OBSERVED, and frame-relative.** These transforms were measured in a tool whose
-UV origin convention differs from the engine's, so the *set* of eight
-orientations and the pairing of codes into mirrored/unmirrored halves is solid,
-while the absolute sense of "+90°" is the thing to calibrate against a stock map
-in the viewport (§8, test 3). Do not spend time arguing the sign; render a stock
-map and compare.
+**Shipped diagonal art faces left.** Every stock `*D*` atlas tile is drawn
+with the corner on the left of the image (west, −X, when sampled with identity
+UVs). Orientation 14 is that identity; 13 / 12 / 15 are +90° / 180° / −90°.
+The editor must rotate that left-facing tile onto the four corners — it must
+not assume a unique D tile per facing in the atlas.
+
+**OBSERVED, and frame-relative.** The *set* of eight orientations and the
+pairing of codes into mirrored/unmirrored halves is solid. The absolute sense
+of "+90°" for **caps** is the thing to calibrate against a stock map in the
+viewport (§8, test 3). Diagonals are pinned by the left-facing atlas art.
 
 **Diagonal mirror remap.** When *writing* a diagonal, the reference exporter
 computes `orientation = rotation_index + 8` and then remaps four of the results:

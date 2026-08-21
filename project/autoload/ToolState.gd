@@ -30,8 +30,14 @@ var strength: float = 0.45
 var falloff: float = 0.65
 var shape: String = "circle"
 var paint_material: int = 0
-## Paint stamps recode the 1-tile halo as caps / diagonals (F2 §5). Default on.
-var paint_match_edges: bool = true
+## The mapmaker assigns the tile word. "solid" / "cap" / "diag".
+var paint_kind: String = "solid"
+var paint_transition: int = 0
+var paint_flip: int = 0
+var paint_rot: int = 0
+var paint_variant: int = 0
+## Optional helper: recode a painted halo from neighbours. Off = stamp the word as-is.
+var paint_match_edges: bool = false
 var armed: Dictionary = {}
 ## Active mask target: "water" / "plants" and its stem. Empty = none.
 var mask_kind: String = ""
@@ -112,7 +118,149 @@ func set_paint_material(id: int) -> void:
 	if paint_material == id:
 		return
 	paint_material = id
+	_clamp_paint_pair()
 	brush_changed.emit()
+
+
+func set_paint_kind(kind: String) -> void:
+	if kind != "solid" and kind != "cap" and kind != "diag":
+		kind = "solid"
+	if kind != "solid" and not MaterialPalette.has_kind_for(paint_material, kind):
+		kind = "solid"
+	if paint_kind == kind:
+		return
+	if kind == "diag":
+		# Identity D tile faces left (F2 orientation 14 → flip=1, rot=2).
+		paint_flip = 1
+		paint_rot = 2
+	paint_kind = kind
+	_clamp_paint_pair()
+	brush_changed.emit()
+
+
+func set_paint_transition(id: int) -> void:
+	id = clampi(id, 0, 15)
+	if paint_transition == id:
+		return
+	paint_transition = id
+	_clamp_paint_pair()
+	brush_changed.emit()
+
+
+func set_paint_flip(on: bool) -> void:
+	var v := 1 if on else 0
+	if paint_flip == v:
+		return
+	paint_flip = v
+	brush_changed.emit()
+
+
+func cycle_paint_rot() -> void:
+	if paint_kind == "diag":
+		# Left → Up → Right → Down, staying on the unmirrored identity quartet.
+		paint_flip = 1
+		match paint_rot:
+			2:
+				paint_rot = 1
+			1:
+				paint_rot = 0
+			0:
+				paint_rot = 3
+			_:
+				paint_rot = 2
+	else:
+		paint_rot = (paint_rot + 1) & 0x3
+	brush_changed.emit()
+
+
+func paint_diag_facing() -> String:
+	match paint_rot:
+		2:
+			return "Left"
+		1:
+			return "Up"
+		0:
+			return "Right"
+		_:
+			return "Down"
+
+
+func set_paint_rot(v: int) -> void:
+	v = v & 0x3
+	if paint_rot == v:
+		return
+	paint_rot = v
+	brush_changed.emit()
+
+
+func set_paint_variant(v: int) -> void:
+	v = clampi(v, 0, 3)
+	if paint_variant == v:
+		return
+	paint_variant = v
+	brush_changed.emit()
+
+
+func paint_word() -> int:
+	if paint_kind == "solid":
+		return BzMat.encode_entry(paint_material, paint_material)
+	var other := paint_transition
+	if other == paint_material or not MaterialPalette.has_transition(
+		paint_material, other, paint_kind
+	):
+		return BzMat.encode_entry(paint_material, paint_material)
+	var cap := 1 if paint_kind == "diag" else 0
+	return BzMat.encode_entry(
+		paint_material, other, cap, paint_flip, paint_rot, paint_variant
+	)
+
+
+func _clamp_paint_pair() -> void:
+	if paint_kind == "solid":
+		return
+	if not MaterialPalette.has_kind_for(paint_material, paint_kind):
+		paint_kind = "solid"
+		return
+	var partners: PackedInt32Array = MaterialPalette.transition_partners(
+		paint_material, paint_kind
+	)
+	if partners.is_empty():
+		paint_kind = "solid"
+		return
+	if not partners.has(paint_transition):
+		paint_transition = partners[0]
+	var vars: PackedInt32Array = MaterialPalette.variants_for(
+		paint_material, paint_transition, paint_kind
+	)
+	if not vars.is_empty() and not vars.has(paint_variant):
+		paint_variant = vars[0]
+
+
+func set_paint_from_word(word: int) -> void:
+	var d: Dictionary = BzMat.decode_entry(word)
+	paint_material = int(d["mat_a"])
+	paint_transition = int(d["mat_b"])
+	paint_flip = int(d["flip"])
+	paint_rot = int(d["rot"])
+	paint_variant = int(d["variant"])
+	paint_kind = BzMat.kind_of_entry(word)
+	brush_changed.emit()
+
+
+func paint_describe() -> String:
+	var a := "%s" % MaterialPalette.type_name(paint_material)
+	if paint_kind == "solid":
+		return "solid %d (%s)" % [paint_material, a]
+	var b := "%s" % MaterialPalette.type_name(paint_transition)
+	var kind := "corner" if paint_kind == "diag" else "cap"
+	if paint_kind == "diag":
+		return "%s %d→%d (%s / %s)  %s" % [
+			kind, paint_material, paint_transition, a, b, paint_diag_facing(),
+		]
+	return "%s %d→%d (%s / %s)  rot %d%s" % [
+		kind, paint_material, paint_transition, a, b, paint_rot * 90,
+		"  mirror" if paint_flip != 0 else "",
+	]
 
 
 func set_paint_match_edges(on: bool) -> void:

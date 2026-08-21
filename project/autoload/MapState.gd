@@ -958,6 +958,20 @@ func set_material(tx: int, tz: int, mat_id: int) -> void:
 	materials[tz * mat_grid_x + tx] = word
 
 
+func set_material_word(tx: int, tz: int, word: int) -> void:
+	if tx < 0 or tz < 0 or tx >= mat_grid_x or tz >= mat_grid_z:
+		return
+	materials[tz * mat_grid_x + tx] = word & 0xFFFF
+
+
+func material_word_at(x_m: float, z_m: float) -> int:
+	if mat_grid_x < 1:
+		return 0
+	var tx := clampi(int(floor(x_m / 20.0)), 0, mat_grid_x - 1)
+	var tz := clampi(int(floor(z_m / 20.0)), 0, mat_grid_z - 1)
+	return materials[tz * mat_grid_x + tx] & 0xFFFF
+
+
 ## F2 §5: recode a rect (plus a 1-tile halo) as solids / caps / diagonals
 ## from each cell's base nibble and its four orthogonal neighbours.
 func rematch_materials_rect(x0: int, z0: int, w: int, d: int) -> void:
@@ -983,7 +997,13 @@ func rematch_materials_rect(x0: int, z0: int, w: int, d: int) -> void:
 			var ee: int = fill[z * gx + x + 1] if x + 1 < gx else self_m
 			var ss: int = fill[(z + 1) * gx + x] if z + 1 < gz else self_m
 			var ww: int = fill[z * gx + x - 1] if x > 0 else self_m
-			materials[z * gx + x] = BzMat.autotile_neighbors(self_m, nn, ee, ss, ww)
+			var word: int = BzMat.autotile_neighbors(self_m, nn, ee, ss, ww)
+			var kind := BzMat.kind_of_entry(word)
+			if kind != "solid" and not MaterialPalette.has_transition(
+				(word >> 12) & 0xF, (word >> 8) & 0xF, kind
+			):
+				word = BzMat.encode_entry(self_m, self_m)
+			materials[z * gx + x] = word
 	upload_materials()
 
 

@@ -344,6 +344,7 @@ func _visibility_matrix(t, pal: Node) -> void:
 	_apply_tool(pal, "raise")
 	t.eq(pal.sample_material(3), "sampled mat 3 (%s)" % MaterialPalette.type_name(3))
 	t.eq(ToolState.paint_material, 3)
+	t.eq(ToolState.paint_kind, "solid")
 
 
 func _symmetry_selector(t, pal: Node) -> void:

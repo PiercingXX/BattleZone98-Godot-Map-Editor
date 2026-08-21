@@ -4,6 +4,10 @@ class_name MaterialPalette
 
 static var _atlas_path: String = ""
 static var _atlas_image: Image = null
+static var _catalog_world: String = ""
+static var _catalog_n: int = -1
+## "k:base:trans" → PackedInt32Array of variant indices that exist.
+static var _catalog: Dictionary = {}
 
 
 static func colors() -> PackedColorArray:
@@ -45,6 +49,90 @@ static func atlas_uvs() -> PackedVector4Array:
 		if r.size() >= 4:
 			out[i] = Vector4(float(r[0]), float(r[1]), float(r[2]), float(r[3]))
 	return out
+
+
+static func catalog_known() -> bool:
+	_ensure_catalog()
+	return _catalog_n > 0
+
+
+static func kind_code(kind: String) -> int:
+	match kind:
+		"cap":
+			return 1
+		"diag":
+			return 2
+		_:
+			return 0
+
+
+static func has_kind_for(base: int, kind: String) -> bool:
+	return not transition_partners(base, kind).is_empty()
+
+
+static func has_transition(base: int, trans: int, kind: String) -> bool:
+	if kind == "solid":
+		return true
+	if not catalog_known():
+		return true
+	var key := "%d:%d:%d" % [kind_code(kind), base & 0xF, trans & 0xF]
+	return _catalog.has(key)
+
+
+static func transition_partners(base: int, kind: String) -> PackedInt32Array:
+	_ensure_catalog()
+	var out := PackedInt32Array()
+	base &= 0xF
+	if kind == "solid":
+		return out
+	if not catalog_known():
+		for i in 16:
+			if i != base:
+				out.append(i)
+		return out
+	var k := kind_code(kind)
+	for trans in 16:
+		if _catalog.has("%d:%d:%d" % [k, base, trans]):
+			out.append(trans)
+	return out
+
+
+static func variants_for(base: int, trans: int, kind: String) -> PackedInt32Array:
+	_ensure_catalog()
+	if kind == "solid" or not catalog_known():
+		return PackedInt32Array([0, 1, 2, 3])
+	var key := "%d:%d:%d" % [kind_code(kind), base & 0xF, trans & 0xF]
+	var raw: Variant = _catalog.get(key, PackedInt32Array())
+	if typeof(raw) != TYPE_PACKED_INT32_ARRAY:
+		return PackedInt32Array([0])
+	var found: PackedInt32Array = raw
+	if found.is_empty():
+		return PackedInt32Array([0])
+	return found
+
+
+static func _ensure_catalog() -> void:
+	var world := _current_world()
+	var tiles: Dictionary = world.get("atlas_tiles", {}) if not world.is_empty() else {}
+	var id := str(world.get("id", "")).to_lower()
+	if id == _catalog_world and tiles.size() == _catalog_n:
+		return
+	_catalog_world = id
+	_catalog_n = tiles.size()
+	_catalog.clear()
+	for key in tiles.keys():
+		var parsed: Dictionary = _parse_tile_name(str(key))
+		if parsed.is_empty():
+			continue
+		var k: int = int(parsed.get("kind", -1))
+		if k < 1:
+			continue
+		var ck := "%d:%d:%d" % [k, int(parsed.get("base", 0)), int(parsed.get("trans", 0))]
+		var variant: int = int(parsed.get("variant", 0))
+		var list: PackedInt32Array = _catalog.get(ck, PackedInt32Array())
+		if not list.has(variant):
+			list.append(variant)
+		_catalog[ck] = list
 
 
 static func type_name(idx: int) -> String:
@@ -200,7 +288,7 @@ static func _crop_tile(atlas: Image, uv: Vector4, size: int) -> ImageTexture:
 	var y1 := clampi(int(ceil((uv.y + uv.w) * float(atlas_h))), y0 + 1, atlas_h)
 	var w := x1 - x0
 	var h := y1 - y0
-	# Skip the outer eighth so atlas seams do not dominate a 28 px swatch.
+	# Skip the outer eighth so atlas seams do not dominate a 35 px swatch.
 	var inset_x := 0 if w < 8 else mini(w / 8, (w - 4) / 2)
 	var inset_y := 0 if h < 8 else mini(h / 8, (h - 4) / 2)
 	var crop: Image = atlas.get_region(Rect2i(
