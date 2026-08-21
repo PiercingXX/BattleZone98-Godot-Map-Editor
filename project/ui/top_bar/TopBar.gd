@@ -15,6 +15,8 @@ signal redo_requested
 signal frame_requested
 signal map_mode_requested
 signal test_requested
+## A variant was chosen from the Test button's menu ("" DM, "_S", "_ST", "_SW").
+signal test_variant_picked(variant: String)
 
 const MORE_IMPORT := 0
 const MORE_RENDER := 1
@@ -37,6 +39,7 @@ var _busy: bool = false
 var _testing: bool = false
 var _open_menu: PopupMenu
 var _btn_test: Button
+var _test_menu: PopupMenu
 var _btn_map: Button
 var _map_mode: bool = false
 ## id → Button for the secondary action row (former "More" menu).
@@ -146,6 +149,10 @@ func _install_test_button() -> void:
 	_btn_test.name = "Test"
 	_btn_test.text = "Test"
 	_btn_test.pressed.connect(_on_test)
+	_test_menu = PopupMenu.new()
+	_test_menu.name = "TestVariantMenu"
+	_btn_test.add_child(_test_menu)
+	_test_menu.id_pressed.connect(_on_test_variant_picked)
 	EditorIcons.apply_button(_btn_test, "test", true)
 	var parent := _btn_validate.get_parent()
 	parent.add_child(_btn_test)
@@ -156,6 +163,43 @@ func _on_test() -> void:
 	if _btn_test != null and _btn_test.disabled:
 		return
 	test_requested.emit()
+
+
+## Drop the variant menu out of the Test button, the way Open does. Anchoring
+## it anywhere else puts it adrift in the middle of the window with nothing
+## tying it to what was clicked. ``variants`` is [[value, label], ...].
+func show_test_variant_menu(variants: Array) -> void:
+	if fill_test_variant_menu(variants) == 0:
+		return
+	_test_menu.popup(test_variant_menu_rect())
+
+
+## Fill the menu without showing it. Returns the item count.
+func fill_test_variant_menu(variants: Array) -> int:
+	if _btn_test == null or _test_menu == null:
+		return 0
+	_test_menu.clear()
+	for i in variants.size():
+		var entry: Array = variants[i]
+		_test_menu.add_item(str(entry[1]), i)
+		_test_menu.set_item_metadata(_test_menu.item_count - 1, str(entry[0]))
+	return _test_menu.get_item_count()
+
+
+## Where the menu drops: flush under the Test button, like the Open menu.
+func test_variant_menu_rect() -> Rect2i:
+	if _btn_test == null:
+		return Rect2i()
+	var r := _btn_test.get_global_rect()
+	return Rect2i(int(r.position.x), int(r.position.y + r.size.y), 0, 0)
+
+
+func _on_test_variant_picked(id: int) -> void:
+	var idx := _test_menu.get_item_index(id)
+	if idx < 0:
+		return
+	var meta: Variant = _test_menu.get_item_metadata(idx)
+	test_variant_picked.emit(str(meta) if meta != null else "")
 
 
 func set_testing(value: bool) -> void:

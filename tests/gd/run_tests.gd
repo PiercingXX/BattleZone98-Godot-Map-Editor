@@ -40,7 +40,20 @@ func _go() -> void:
 			print("FAIL %s (load)" % name)
 			failed_tests += 1
 			continue
+		# A script that fails to PARSE still loads as a GDScript. Calling new()
+		# on it raises "Nonexistent function 'new'", which aborts _go before it
+		# can quit() -- the process then spins forever and a one-line typo in a
+		# test reads as a hung suite with no verdict. can_instantiate() asks
+		# without calling.
+		if not script.can_instantiate():
+			print("FAIL %s (does not compile)" % name)
+			failed_tests += 1
+			continue
 		var inst: RefCounted = script.new()
+		if inst == null or not inst.has_method("run"):
+			print("FAIL %s (no run())" % name)
+			failed_tests += 1
+			continue
 		var t := _Assert.new()
 		t.name = name
 		t.tree = self

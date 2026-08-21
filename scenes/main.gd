@@ -190,6 +190,7 @@ func _wire() -> void:
 	_top.save_as_requested.connect(func(): _save_as = true; _io.save(true))
 	_top.validate_requested.connect(_io.validate)
 	_top.test_requested.connect(_io.test_in_game)
+	_top.test_variant_picked.connect(_io.on_test_variant_picked)
 	_top.more_selected.connect(_on_more_selected)
 	_rail.tool_selected.connect(_set_tool)
 	_top.variant_changed.connect(func():

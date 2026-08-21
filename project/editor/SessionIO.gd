@@ -18,8 +18,8 @@ var log: Callable
 var shell: Node
 ## Path the user asked to open; recorded only after the open verb succeeds.
 var _pending_open_path: String = ""
-## Live variant picker for the in-game test; freed and rebuilt per prompt.
-var _test_variant_menu: PopupMenu = null
+## Test run waiting on a variant pick from the Test button's menu.
+var _pending_test: GameTest = null
 var _new_after_save := false
 ## Stem to apply to the session once a template open completes.
 var template_stem := ""
@@ -113,36 +113,30 @@ func test_in_game() -> void:
 	if variants.size() < 2:
 		gt.begin()
 		return
-	_prompt_test_variant(gt, variants)
-
-
-## Ask which variant's layout to load, then start the test with it.
-func _prompt_test_variant(gt: GameTest, variants: Array) -> void:
-	if shell == null:
+	var items: Array = []
+	for v_v in variants:
+		var v: String = str(v_v)
+		items.append([
+			v,
+			"%s  (%d objects)" % [
+				ObjectMarkers.variant_display_name(v), _variant_object_count(v)
+			],
+		])
+	var top: Variant = shell.get("_top") if shell != null else null
+	if not (top is Object and (top as Object).has_method("show_test_variant_menu")):
 		gt.begin()
 		return
-	if _test_variant_menu != null and is_instance_valid(_test_variant_menu):
-		_test_variant_menu.queue_free()
-	_test_variant_menu = PopupMenu.new()
-	_test_variant_menu.name = "TestVariantMenu"
-	for i in variants.size():
-		var v: String = str(variants[i])
-		var count: int = _variant_object_count(v)
-		_test_variant_menu.add_item(
-			"%s  (%d objects)" % [ObjectMarkers.variant_display_name(v), count], i
-		)
-		_test_variant_menu.set_item_metadata(_test_variant_menu.item_count - 1, v)
-	_test_variant_menu.id_pressed.connect(
-		func(id: int) -> void:
-			var chosen: Variant = _test_variant_menu.get_item_metadata(id)
-			gt.begin(str(chosen) if chosen != null else "")
-	)
-	shell.add_child(_test_variant_menu)
-	var win := shell.get_window()
-	var at := Vector2i(240, 120)
-	if win != null:
-		at = Vector2i(win.position) + Vector2i(win.size) / 4
-	_test_variant_menu.popup_on_parent(Rect2i(at, Vector2i(220, 0)))
+	_pending_test = gt
+	(top as Object).call("show_test_variant_menu", items)
+
+
+## The Test button's menu reports the pick here.
+func on_test_variant_picked(variant: String) -> void:
+	var gt := _pending_test
+	_pending_test = null
+	if gt == null or gt.is_active():
+		return
+	gt.begin(variant)
 
 
 func _variant_object_count(variant: String) -> int:
