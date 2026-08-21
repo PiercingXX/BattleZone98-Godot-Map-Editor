@@ -152,6 +152,12 @@ tile, variant B.
 characters following the planet prefix in the atlas table. Fall back to variant
 `A`, then to the table's first entry.
 
+The `.trn`'s `[TextureTypeN] SolidA0` is the fill tile for material N. That
+name is usually `{i}{i}SA0`, but not always — stock Elysium's type 4 (base
+grid-iron) is `EL04SA0`, not `EL44SA0`. Resolve palette icons and solid UVs
+from `SolidA0` first; do not reconstruct `{i}{i}SA0` and treat a miss as
+"this material has no texture".
+
 ### Per-world atlas tables
 
 Normalized `(u, v, w, h)` per tile, as shipped. These are **OBSERVED** — a

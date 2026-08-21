@@ -71,15 +71,20 @@ static func _describe_world(path: String, world_id: String) -> Dictionary:
 				continue
 			var flat_v: Variant = section.value("FlatColor")
 			var flat: String = "" if flat_v == null else str(flat_v)
+			var solid_v: Variant = section.value("SolidA0")
+			if solid_v == null:
+				solid_v = section.value("SolidB0")
 			texture_types.append({
 				"index": i,
 				"flat_color": _parse_flat_color(flat),
 				"label": str(labels.get(i, "")),
+				"solid_tile": "" if solid_v == null else str(solid_v).strip_edges(),
 			})
 	var atlas_name: String = atlas.strip_edges()
 	# Edit/trn/mars.trn → game root is parents[2]
 	var game_root: String = path.get_base_dir().get_base_dir().get_base_dir()
 	var looked: Dictionary = _atlas_lookup(game_root, atlas_name, world_id)
+	_apply_trn_solids(looked, texture_types, world_id)
 	return {
 		"id": world_id,
 		"label": world_id.capitalize(),
@@ -163,6 +168,45 @@ static func _atlas_lookup(game_root: String, atlas_name: String, world_id: Strin
 		# viewport can draw the exact tile each .mat word names (F2 §4).
 		return {"atlas_image": image, "tile_uvs": uvs, "atlas_tiles": found}
 	return {"atlas_image": image, "tile_uvs": uvs, "atlas_tiles": {}}
+
+
+static func _apply_trn_solids(looked: Dictionary, texture_types: Array, world_id: String) -> void:
+	## SolidA0 is the fill tile for that type. Usually `{i}{i}SA0`, but
+	## Elysium type 4 is EL04SA0 — without this, tile_uvs[4] stays the dummy
+	## origin square and the palette/renderer miss the grid-iron tile.
+	var tiles: Dictionary = looked.get("atlas_tiles", {})
+	if tiles.is_empty():
+		return
+	var uvs: Array = looked.get("tile_uvs", [])
+	var prefix := world_id.substr(0, mini(2, world_id.length())).to_upper()
+	for t in texture_types:
+		if typeof(t) != TYPE_DICTIONARY:
+			continue
+		var idx := int(t.get("index", -1))
+		if idx < 0 or idx >= uvs.size():
+			continue
+		var rect: Array = _atlas_rect(tiles, str(t.get("solid_tile", "")))
+		if rect.size() < 4:
+			continue
+		uvs[idx] = rect
+		var d := _hex_upper(idx)
+		var alias := "%s%s%sSA0.MAP" % [prefix, d, d]
+		if not tiles.has(alias):
+			tiles[alias] = rect
+	looked["tile_uvs"] = uvs
+	looked["atlas_tiles"] = tiles
+
+
+static func _atlas_rect(tiles: Dictionary, raw: String) -> Array:
+	var name := raw.get_file().strip_edges().to_upper()
+	if name.is_empty():
+		return []
+	for key in [name, name + ".MAP", name.trim_suffix(".MAP")]:
+		if tiles.has(key):
+			var r: Array = tiles[key]
+			if r.size() >= 4:
+				return r
+	return []
 
 
 static func _texture_labels(cfg) -> Dictionary:

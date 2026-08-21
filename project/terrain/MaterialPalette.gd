@@ -69,8 +69,8 @@ static func _current_world() -> Dictionary:
 
 static func material_thumbnails(size: int = 28) -> Array:
 	## 16 slots: solid-tile crop from the world atlas, or null to use flat_color.
-	## Only tiles present in atlas_tiles are cropped — missing CSV rows keep
-	## the origin UV and would impersonate material 0 for unused slots.
+	## Prefer the TRN SolidA0 name (Elysium type 4 is EL04SA0, not EL44SA0).
+	## Dummy origin UVs are never used — those impersonate material 0.
 	var out: Array = []
 	out.resize(16)
 	var world := _current_world()
@@ -107,20 +107,85 @@ static func _load_atlas_png(path: String) -> Image:
 
 
 static func _solid_tile_uv(world: Dictionary, idx: int) -> Vector4:
-	## Solid fill tile `{world}{i}{i}SA0` from the CSV table, or (0,0,0,0).
+	## Fill tile for material idx, or (0,0,0,0) if the atlas has none.
 	var tiles: Dictionary = world.get("atlas_tiles", {})
 	if tiles.is_empty() or idx < 0 or idx > 15:
 		return Vector4()
-	var wid := str(world.get("id", ""))
-	var prefix := wid.substr(0, mini(2, wid.length())).to_upper()
-	var d := ("%x" % idx).to_upper()
-	for name in [
-		"%s%s%sSA0.MAP" % [prefix, d, d],
-		"%s%s%sSA0" % [prefix, d, d],
-	]:
-		if not tiles.has(name):
+	for t in world.get("texture_types", []):
+		if typeof(t) != TYPE_DICTIONARY:
 			continue
-		var r: Array = tiles[name]
+		if int(t.get("index", -1)) != idx:
+			continue
+		var named := _rect_of(tiles, str(t.get("solid_tile", "")))
+		if named.z > 0.0:
+			return named
+		break
+	return _scan_solid_uv(tiles, idx)
+
+
+static func _scan_solid_uv(tiles: Dictionary, idx: int) -> Vector4:
+	## Prefer `{i}{i}S*` (true solid). Elysium type 4 only has EL04SA0, which
+	## encodes as base 0 / trans 4 / solid — catch that as trans==idx next.
+	var exact := Vector4()
+	var to_idx := Vector4()
+	var from_idx := Vector4()
+	var exact_var := 99
+	var to_var := 99
+	var from_var := 99
+	for key in tiles.keys():
+		var parsed := _parse_tile_name(str(key))
+		if parsed.is_empty() or int(parsed.get("kind", -1)) != 0:
+			continue
+		var variant := int(parsed.get("variant", 99))
+		var uv := _rect_of(tiles, str(key))
+		if uv.z <= 0.0:
+			continue
+		var base := int(parsed.get("base", -1))
+		var trans := int(parsed.get("trans", -1))
+		if base == idx and trans == idx and variant < exact_var:
+			exact = uv
+			exact_var = variant
+		elif trans == idx and variant < to_var:
+			to_idx = uv
+			to_var = variant
+		elif base == idx and variant < from_var:
+			from_idx = uv
+			from_var = variant
+	if exact.z > 0.0:
+		return exact
+	if to_idx.z > 0.0:
+		return to_idx
+	if from_idx.z > 0.0:
+		return from_idx
+	return Vector4()
+
+
+static func _parse_tile_name(key: String) -> Dictionary:
+	## "EL04SA0.MAP" → {base:0, trans:4, kind:0, variant:0}. kind 0/1/2 = S/C/D.
+	var stem := key.get_file().get_basename().to_upper()
+	if stem.length() < 6 or not stem.ends_with("0"):
+		return {}
+	var core := stem.substr(stem.length() - 5, 4)
+	var kind := ["S", "C", "D"].find(core.substr(2, 1))
+	if kind < 0:
+		return {}
+	var variant := core.unicode_at(3) - "A".unicode_at(0)
+	return {
+		"base": core.substr(0, 1).hex_to_int(),
+		"trans": core.substr(1, 1).hex_to_int(),
+		"kind": kind,
+		"variant": variant,
+	}
+
+
+static func _rect_of(tiles: Dictionary, raw: String) -> Vector4:
+	var name := raw.get_file().strip_edges().to_upper()
+	if name.is_empty():
+		return Vector4()
+	for key in [name, name + ".MAP", name.trim_suffix(".MAP")]:
+		if not tiles.has(key):
+			continue
+		var r: Array = tiles[key]
 		if r.size() >= 4:
 			return Vector4(float(r[0]), float(r[1]), float(r[2]), float(r[3]))
 	return Vector4()

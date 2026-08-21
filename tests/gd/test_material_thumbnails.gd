@@ -14,6 +14,8 @@ func run(t) -> void:
 	_test_skips_default_uv(t, png)
 	_test_skips_dds(t, tmp)
 	_test_hex_index(t, png)
+	_test_elysium_type4(t, png)
+	_test_solid_tile_field(t, png)
 	await _test_panel_fills_swatch(t, png)
 
 	_rm_rf(tmp)
@@ -77,6 +79,41 @@ func _test_skips_dds(t, tmp: String) -> void:
 	t.eq(thumbs[0], null, "DDS atlas is refused")
 
 
+func _test_elysium_type4(t, png: String) -> void:
+	# Stock Elysium names type 4's fill EL04SA0, not EL44SA0. That's why only
+	# four of five chips were getting atlas crops.
+	_set_world(png, {
+		"EL00SA0.MAP": [0.0, 0.0, 0.125, 0.125],
+		"EL11SA0.MAP": [0.125, 0.0, 0.125, 0.125],
+		"EL22SA0.MAP": [0.25, 0.25, 0.125, 0.125],
+		"EL33SA0.MAP": [0.25, 0.25, 0.125, 0.125],
+		"EL04SA0.MAP": [0.375, 0.0, 0.125, 0.125],
+	})
+	MapState.world = "elysium"
+	MapState.worlds[0]["id"] = "elysium"
+	var thumbs: Array = MaterialPalette.material_thumbnails(16)
+	t.ok(thumbs[0] is ImageTexture, "type 0 EL00SA0")
+	t.ok(thumbs[1] is ImageTexture, "type 1 EL11SA0")
+	t.ok(thumbs[4] is ImageTexture, "type 4 EL04SA0 (not EL44SA0)")
+	_assert_near(t, _center(thumbs[4]), Color(1, 1, 0), "type 4 is the yellow tile")
+	t.eq(thumbs[5], null, "no sixth solid")
+
+
+func _test_solid_tile_field(t, png: String) -> void:
+	MapState.world = "elysium"
+	MapState.worlds = [{
+		"id": "elysium",
+		"atlas_image": png,
+		"atlas_tiles": {"EL04SA0.MAP": [0.375, 0.0, 0.125, 0.125]},
+		"texture_types": [
+			{"index": 4, "solid_tile": "el04sa0.map", "flat_color": [201, 201, 201]},
+		],
+	}]
+	var thumbs: Array = MaterialPalette.material_thumbnails(16)
+	t.ok(thumbs[4] is ImageTexture, "SolidA0 name resolves without {i}{i} alias")
+	_assert_near(t, _center(thumbs[4]), Color(1, 1, 0), "SolidA0 crop is the yellow tile")
+
+
 func _test_hex_index(t, png: String) -> void:
 	_set_world(png, {
 		"MAAASA0.MAP": [0.25, 0.25, 0.125, 0.125],
@@ -134,6 +171,7 @@ func _write_atlas(tmp: String) -> String:
 	img.fill_rect(Rect2i(0, 0, 8, 8), Color(1, 0, 0))
 	img.fill_rect(Rect2i(8, 0, 8, 8), Color(0, 1, 0))
 	img.fill_rect(Rect2i(16, 16, 8, 8), Color(0, 0, 1))
+	img.fill_rect(Rect2i(24, 0, 8, 8), Color(1, 1, 0))
 	var path: String = tmp.path_join("mars_atlas.png")
 	img.save_png(path)
 	return path

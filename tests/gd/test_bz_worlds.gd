@@ -7,6 +7,7 @@ func run(t) -> void:
 	DirAccess.make_dir_recursive_absolute(tmp)
 	_test_errors(t, tmp)
 	_test_success(t, tmp)
+	_test_solid_a0(t, tmp)
 	_test_flat_color(t)
 	_rm_rf(tmp)
 
@@ -92,6 +93,39 @@ func _test_success(t, tmp: String) -> void:
 	t.eq(BzWorlds.STOCK_WORLDS.size(), 9)
 	t.eq(BzWorlds.STOCK_WORLDS[0], "achilles")
 	t.eq(BzWorlds.STOCK_WORLDS[8], "venus")
+
+
+func _test_solid_a0(t, tmp: String) -> void:
+	var game: String = tmp.path_join("elysium_solids")
+	var trn_dir: String = game.path_join("Edit").path_join("trn")
+	DirAccess.make_dir_recursive_absolute(trn_dir)
+	_write_text(
+		trn_dir.path_join("elysium.trn"),
+		"[Atlases]\r\nMaterialName = el_detail_atlas\r\n"
+		+ "[TextureType0] // Packed Dirt\r\nFlatColor = 201\r\nSolidA0 = el00sa0.map\r\n"
+		+ "[TextureType4] // Base Grid-iron\r\nFlatColor = 201\r\nSolidA0 = el04sa0.map\r\n"
+	)
+	var pm: String = game.path_join("Edit").path_join("PlanetMaterials")
+	DirAccess.make_dir_recursive_absolute(pm)
+	_write_text(
+		pm.path_join("el_detail_atlas.csv"),
+		"EL00SA0.MAP,0.125,0.0,0.125,0.125\nEL04SA0.MAP,0.375,0.25,0.125,0.125\n"
+	)
+	var result: Dictionary = BzWorlds.worlds_from_game(game)
+	t.eq(result.get("ok"), true)
+	var worlds: Array = result.get("worlds", [])
+	t.eq(worlds.size(), 1)
+	var ely: Dictionary = worlds[0]
+	var types: Array = ely.get("texture_types", [])
+	t.eq(types.size(), 2)
+	t.eq(types[0].get("solid_tile"), "el00sa0.map")
+	t.eq(types[1].get("index"), 4)
+	t.eq(types[1].get("solid_tile"), "el04sa0.map")
+	var uvs: Array = ely.get("tile_uvs", [])
+	t.eq(uvs[0], [0.125, 0.0, 0.125, 0.125], "type 0 uses SolidA0 UV")
+	t.eq(uvs[4], [0.375, 0.25, 0.125, 0.125], "type 4 uses EL04SA0, not a dummy origin")
+	var tiles: Dictionary = ely.get("atlas_tiles", {})
+	t.eq(tiles.get("EL44SA0.MAP"), [0.375, 0.25, 0.125, 0.125], "alias {i}{i}SA0 for the LUT")
 
 
 func _test_flat_color(t) -> void:
