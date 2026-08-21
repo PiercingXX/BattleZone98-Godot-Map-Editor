@@ -333,7 +333,7 @@ func _after_validate(result: Dictionary) -> void:
 	else:
 		_emit_log("workshop publish: %d validate findings (not blocking) — see the Findings panel" % findings.size())
 	_phase = PHASE_PACKAGE
-	Backend.package_pack(_session, _dest)
+	Backend.package_pack(_session, _dest, MapState.stem)
 
 
 func _after_package(result: Dictionary) -> void:

@@ -289,7 +289,8 @@ static func package_session(
 	mode: String,
 	game_root: String = "",
 	test_id: String = "",
-	out_dir: String = ""
+	out_dir: String = "",
+	out_stem: String = ""
 ) -> Dictionary:
 	## mode is install or pack. Payload: docs/02 §3 package.
 	var paths: Dictionary = BzSession.session_paths(session_dir)
@@ -306,7 +307,16 @@ static func package_session(
 	if typeof(manifest_v) != TYPE_DICTIONARY:
 		return BzErrors.err("no_session", "manifest.json is not an object", "", str(paths["manifest"]))
 	var manifest: Dictionary = manifest_v
-	var stem: String = str(manifest.get("stem", ""))
+	# manifest.stem is the stem the session was OPENED from, and has to stay
+	# that way -- BzSave finds residue files by it. The name the map ships
+	# under is the caller's, because renaming a map (starting from a template
+	# is the common case) only changes MapState.stem, never the manifest. Read
+	# it from the manifest and a renamed map installs under the name it came
+	# from, while the launch asks for the name the user gave it:
+	#   Could not load "test1233.bzn"     (xtvalley.bzn is what shipped)
+	var stem: String = out_stem
+	if stem.is_empty():
+		stem = str(manifest.get("stem", ""))
 	if stem.is_empty():
 		stem = "map"
 	var staging: String = OS.get_temp_dir().path_join(

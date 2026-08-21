@@ -121,6 +121,7 @@ func _worker(verb: String, extra_args: PackedStringArray) -> Dictionary:
 				str(flags.get("game-root", "")),
 				str(flags.get("test-id", "")),
 				str(flags.get("out", "")),
+				str(flags.get("stem", "")),
 			)
 		_:
 			payload = BzErrors.err("no_verb", "unknown editor verb: %s" % verb)
@@ -259,29 +260,39 @@ func render_map(session_dir: String, out_dir: String) -> void:
 	run("render", PackedStringArray(["--session", session_dir, "--out", out_dir]))
 
 
-func package_install(session_dir: String, game_root: String, test_id: String = "") -> void:
+## ``stem`` is the name the map ships under. Pass MapState.stem: a renamed map
+## (every template-derived map) still carries the source stem in its manifest.
+func package_install(session_dir: String, game_root: String, test_id: String = "", stem: String = "") -> void:
 	var args := PackedStringArray([
 		"--session", session_dir, "--mode", "install", "--game-root", game_root,
 	])
 	if not test_id.is_empty():
 		args.append_array(PackedStringArray(["--test-id", test_id]))
-	run("package", args)
+	run("package", _with_stem(args, stem))
 
 
 ## Terrain-test build: same map, every script stripped. See BzPackage._install_addon.
-func package_test(session_dir: String, game_root: String) -> void:
-	run("package", PackedStringArray([
+func package_test(session_dir: String, game_root: String, stem: String = "") -> void:
+	run("package", _with_stem(PackedStringArray([
 		"--session", session_dir, "--mode", "test", "--game-root", game_root,
-	]))
+	]), stem))
 
 
-func package_addon(session_dir: String, game_root: String) -> void:
-	run("package", PackedStringArray([
+func package_addon(session_dir: String, game_root: String, stem: String = "") -> void:
+	run("package", _with_stem(PackedStringArray([
 		"--session", session_dir, "--mode", "addon", "--game-root", game_root,
-	]))
+	]), stem))
 
 
-func package_pack(session_dir: String, out_dir: String) -> void:
-	run("package", PackedStringArray([
+func package_pack(session_dir: String, out_dir: String, stem: String = "") -> void:
+	run("package", _with_stem(PackedStringArray([
 		"--session", session_dir, "--mode", "pack", "--out", out_dir,
-	]))
+	]), stem))
+
+
+static func _with_stem(args: PackedStringArray, stem: String) -> PackedStringArray:
+	if stem.is_empty():
+		return args
+	var out := args.duplicate()
+	out.append_array(PackedStringArray(["--stem", stem]))
+	return out

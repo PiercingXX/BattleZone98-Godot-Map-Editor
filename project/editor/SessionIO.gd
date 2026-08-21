@@ -192,7 +192,7 @@ func install_mod() -> void:
 	# The addon route is the one the live harness verified the engine
 	# actually loads from; the mods/<id> + modEnabled.dat route is ignored
 	# by the game (generator repo docs/17).
-	Backend.package_addon(MapState.session_dir, Settings.game_root)
+	Backend.package_addon(MapState.session_dir, Settings.game_root, MapState.stem)
 
 
 func choose_install(path: String) -> void:
@@ -394,7 +394,7 @@ func save(force_prompt: bool = false) -> void:
 func dir_selected(dir: String) -> void:
 	if shell._pending_package == "pack":
 		MapState.persist()
-		Backend.package_pack(MapState.session_dir, dir)
+		Backend.package_pack(MapState.session_dir, dir, MapState.stem)
 	elif shell._pending_package == "workshop":
 		Settings.last_save_dir = dir
 		Settings.save()

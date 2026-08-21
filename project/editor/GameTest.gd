@@ -257,7 +257,7 @@ func begin(variant: Variant = null) -> bool:
 		_bzn, ObjectMarkers.variant_display_name(pick),
 	])
 	_set_status("busy", "installing terrain-test build…")
-	Backend.package_test(MapState.session_dir, Settings.game_root)
+	Backend.package_test(MapState.session_dir, Settings.game_root, MapState.stem)
 	return true
 
 
