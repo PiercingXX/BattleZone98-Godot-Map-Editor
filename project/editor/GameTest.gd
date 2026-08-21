@@ -52,6 +52,8 @@ var _log_path: String = ""
 var _bzn: String = ""
 var _started_ms: int = 0
 var _game_root: String = ""
+## What the terrain-test build put into addon/, so it can be taken back out.
+var _install_record: Variant = null
 
 
 func _ready() -> void:
@@ -278,6 +280,7 @@ func cancel() -> void:
 	_stop_poll()
 	_waiting_package = false
 	_active = false
+	_uninstall()
 	last_verdict = {
 		"kind": KIND_CANCELLED,
 		"count": count_sim_startup(_tail),
@@ -288,11 +291,14 @@ func cancel() -> void:
 	_set_running(false)
 
 
-func _on_call_finished(verb: String, _result: Dictionary) -> void:
+func _on_call_finished(verb: String, result: Dictionary) -> void:
 	if not _waiting_package or verb != "package":
 		return
 	_waiting_package = false
+	if result.has("install_record"):
+		_install_record = result["install_record"]
 	if not _active:
+		_uninstall()
 		return
 	_launch_and_poll()
 
@@ -321,6 +327,7 @@ func _launch_and_poll() -> void:
 	var pid := launch_steam(uri)
 	if pid < 0:
 		_active = false
+		_uninstall()
 		last_verdict = {
 			"kind": KIND_FAIL,
 			"count": 0,
@@ -361,6 +368,7 @@ func _finish(verdict: Dictionary) -> void:
 	_stop_poll()
 	_waiting_package = false
 	_active = false
+	_uninstall()
 	last_verdict = verdict
 	var kind := str(verdict.get("kind", ""))
 	var message := str(verdict.get("message", ""))
@@ -374,6 +382,30 @@ func _finish(verdict: Dictionary) -> void:
 		status_kind = "info"
 	_set_status(status_kind, message)
 	_set_running(false)
+
+
+## Take the terrain-test build back out of addon/. The build is temporary and
+## not additive -- its BZNs hold one object -- so leaving it in place silently
+## replaces a full addon build of the same map. Runs on every way a test ends.
+##
+## The game has already read these files by the time a verdict lands, so this
+## cannot disturb a run in flight; it only stops the install outliving it.
+func _uninstall() -> void:
+	var record: Variant = _install_record
+	_install_record = null
+	if record == null:
+		return
+	var undone: Dictionary = BzPackage.uninstall_test(record)
+	var removed: int = (undone.get("removed", []) as Array).size()
+	var restored: int = (undone.get("restored", []) as Array).size()
+	if removed == 0 and restored == 0:
+		return
+	var parts: Array = []
+	if removed > 0:
+		parts.append("removed %d file%s" % [removed, "" if removed == 1 else "s"])
+	if restored > 0:
+		parts.append("restored %d" % restored)
+	_emit_log("cleaned up the test build from addon/ (%s)" % ", ".join(PackedStringArray(parts)))
 
 
 func _stop_poll() -> void:

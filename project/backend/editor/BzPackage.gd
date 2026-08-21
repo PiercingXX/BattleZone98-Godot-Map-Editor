@@ -429,6 +429,18 @@ static func _install_addon(
 	var stripped: Array = []
 	if plain:
 		stripped = _strip_to_player(staging)
+	# A terrain test is temporary, so record enough to undo it: which names we
+	# created, and the original bytes of anything we overwrite or evict. The
+	# build is not additive -- its BZNs hold one object -- so leaving it in
+	# place silently replaces a full addon build of the same map.
+	var backup: String = ""
+	if plain:
+		backup = OS.get_temp_dir().path_join("bzmap-addon-backup-%d" % Time.get_ticks_usec())
+		var mk: Dictionary = _ensure_dir(backup)
+		if BzErrors.is_err(mk):
+			backup = ""
+	var created: Array = []
+	var replaced: Array = []
 	var copied: Array = []
 	var skipped: Array = []
 	var da := DirAccess.open(staging)
@@ -440,6 +452,11 @@ static func _install_addon(
 			if plain and name.get_extension().to_lower() == "lua":
 				skipped.append(name)
 				continue
+			if plain:
+				if _preserve(addon, backup, name):
+					replaced.append(name)
+				else:
+					created.append(name)
 			var cres: Dictionary = _copy_file(
 				staging.path_join(name), addon.path_join(name)
 			)
@@ -452,15 +469,25 @@ static func _install_addon(
 		for stale in _installed_scripts(addon, stem):
 			if not dropped.has(stale):
 				dropped.append(stale)
+			if _preserve(addon, backup, str(stale)) and not replaced.has(stale):
+				replaced.append(stale)
 	var evicted: Array = _evict_stale(addon, copied, dropped)
 	var shared: Array = [] if plain else _copy_shared_lua(staging, addon)
 	var custom: Array = _copy_custom_assets(session_dir, addon)
+	if plain:
+		# _copy_custom_assets only writes names that were absent, so every one
+		# of them is ours to take back out.
+		for c in custom:
+			if not created.has(c):
+				created.append(c)
 	var warnings: Array = (saved.get("warnings", []) as Array).duplicate()
 	if plain:
 		warnings.append(
 			"terrain-test build: scripts stripped and objects reduced to the player spawn"
 		)
-	return {
+	created.sort()
+	replaced.sort()
+	var out := {
 		"ok": true,
 		"mode": "test" if plain else "addon",
 		"dest": addon,
@@ -472,8 +499,66 @@ static func _install_addon(
 		"custom_assets": custom,
 		"warnings": warnings,
 	}
+	if plain:
+		out["install_record"] = {
+			"dest": addon,
+			"created": created,
+			"replaced": replaced,
+			"backup": backup,
+		}
+	return out
 
 
+## Stash ``name``'s current bytes in ``backup_dir``. True if there was a file
+## there to stash, i.e. we are about to replace something rather than add it.
+static func _preserve(dest_dir: String, backup_dir: String, name: String) -> bool:
+	var live: String = dest_dir.path_join(name)
+	if backup_dir.is_empty() or not FileAccess.file_exists(live):
+		return false
+	if FileAccess.file_exists(backup_dir.path_join(name)):
+		return true
+	return DirAccess.copy_absolute(live, backup_dir.path_join(name)) == OK
+
+
+## Undo a terrain-test install: delete what it created, put back what it
+## replaced. Safe to call twice, and on a record from a previous run whose
+## backup is gone -- a missing original is left alone rather than guessed at.
+static func uninstall_test(record: Variant) -> Dictionary:
+	if typeof(record) != TYPE_DICTIONARY:
+		return {"ok": true, "removed": [], "restored": []}
+	var rec: Dictionary = record
+	var dest: String = str(rec.get("dest", ""))
+	if dest.is_empty() or not DirAccess.dir_exists_absolute(dest):
+		return {"ok": true, "removed": [], "restored": []}
+	var backup: String = str(rec.get("backup", ""))
+	var removed: Array = []
+	var restored: Array = []
+	for name_v in rec.get("created", []):
+		var name: String = str(name_v)
+		var path: String = dest.path_join(name)
+		if FileAccess.file_exists(path) and DirAccess.remove_absolute(path) == OK:
+			removed.append(name)
+	for name2_v in rec.get("replaced", []):
+		var name2: String = str(name2_v)
+		if backup.is_empty():
+			continue
+		var src: String = backup.path_join(name2)
+		if not FileAccess.file_exists(src):
+			continue
+		if DirAccess.copy_absolute(src, dest.path_join(name2)) == OK:
+			restored.append(name2)
+	if not backup.is_empty() and DirAccess.dir_exists_absolute(backup):
+		var bda := DirAccess.open(backup)
+		if bda != null:
+			for leftover in bda.get_files():
+				DirAccess.remove_absolute(backup.path_join(str(leftover)))
+		DirAccess.remove_absolute(backup)
+	removed.sort()
+	restored.sort()
+	return {"ok": true, "removed": removed, "restored": restored}
+
+
+## Reduce every staged BZN to its player spawn.
 ## Reduce every staged BZN to its player spawn.
 ##
 ## A terrain test only has to put you on the terrain. A pack map's furniture
