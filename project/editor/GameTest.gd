@@ -75,7 +75,15 @@ static func bzn_name(stem: String, variant: String = "") -> String:
 	return "%s%s.bzn" % [stem, variant]
 
 
+## The stem the residue is named after — the stem the session was OPENED from.
+## Renaming a map changes MapState.stem only, so anything that looks inside
+## residue/source must use this, never the name the map will ship under.
+static func source_stem(manifest: Dictionary) -> String:
+	return str(manifest.get("stem", ""))
+
+
 ## The map's own mission script, from the bytes we opened it from ("" if none).
+## ``stem`` is the SOURCE stem — see source_stem().
 static func map_script_path(session_dir: String, stem: String) -> String:
 	if session_dir.is_empty() or stem.is_empty():
 		return ""
@@ -90,10 +98,11 @@ static func map_script_path(session_dir: String, stem: String) -> String:
 	return ""
 
 
-## True when the map is a pack map -- its mission script pulls in a workshop
-## pack's module stack (BZP/SBP). Those maps carry a separate object layout per
-## variant, so the play-test has to be told which one to load. A plain map has
-## no such script and its active variant is answer enough.
+## True when the map's mission script pulls in a workshop pack's module stack
+## (BZP/SBP). Reported so the log can say why the scripts were stripped; it is
+## NOT what decides whether to ask for a variant -- a map can ship a layout per
+## variant with no script at all (every template-derived map does), and those
+## need asking about just the same. ``stem`` is the SOURCE stem.
 static func is_pack_map(session_dir: String, stem: String) -> bool:
 	var script_path: String = map_script_path(session_dir, stem)
 	if script_path.is_empty():
@@ -102,7 +111,9 @@ static func is_pack_map(session_dir: String, stem: String) -> bool:
 	return text.contains("RequireFix") or text.contains("SBP")
 
 
-## Variants this map actually ships a BZN for, in menu order.
+## Variants this map actually ships a BZN for, in menu order. More than one
+## means the map has a layout per game mode and the user has to pick.
+## ``stem`` is the SOURCE stem — residue files are named after it.
 static func testable_variants(session_dir: String, stem: String, manifest: Dictionary) -> Array:
 	var listed: Variant = manifest.get("variants", [])
 	var order: Array = listed if typeof(listed) == TYPE_ARRAY and not (listed as Array).is_empty() \

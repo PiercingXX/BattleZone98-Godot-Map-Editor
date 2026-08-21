@@ -46,12 +46,38 @@ local SBPAi = require("SBPAi")
 	if opened.get("ok") != true:
 		return
 
+	var manifest: Dictionary = BzSession.read_json(session.path_join("manifest.json"))
+	t.eq(GameTest.source_stem(manifest), "xtvalley", "source stem is the residue's stem")
 	t.ok(GameTest.is_pack_map(session, "xtvalley"), "detected as a pack map")
-	var variants: Array = GameTest.testable_variants(
-		session, "xtvalley", BzSession.read_json(session.path_join("manifest.json"))
-	)
+
+	# The variant menu is driven by the layouts the map ships, NOT by whether a
+	# mission script exists: a template-derived map has all four and no script.
+	var variants: Array = GameTest.testable_variants(session, "xtvalley", manifest)
 	t.ok(variants.size() >= 2, "several variants offered, got %s" % str(variants))
 	t.ok(variants.has(""), "DM offered")
+
+	# Renaming must not hide them. Residue is named after the SOURCE stem, so
+	# looking it up by the new name finds nothing and the menu never appears.
+	t.eq(
+		GameTest.testable_variants(session, "test1233", manifest).size(),
+		0,
+		"precondition: the renamed stem matches no residue BZN"
+	)
+	var no_script := session.path_join("noscript")
+	DirAccess.make_dir_recursive_absolute(no_script.path_join("residue").path_join("source"))
+	for v in ["", "_S", "_ST", "_SW"]:
+		_write_text(
+			no_script.path_join("residue").path_join("source").path_join("plainmap%s.bzn" % v), "x"
+		)
+	t.ok(
+		not GameTest.is_pack_map(no_script, "plainmap"),
+		"a map with no mission script is not a pack map"
+	)
+	t.eq(
+		GameTest.testable_variants(no_script, "plainmap", {}).size(),
+		4,
+		"...but its four layouts are still offered"
+	)
 	t.eq(ObjectMarkers.variant_display_name(""), "DM")
 	t.eq(ObjectMarkers.variant_display_name("_S"), "Strat")
 	t.eq(ObjectMarkers.variant_display_name("_ST"), "Teams")

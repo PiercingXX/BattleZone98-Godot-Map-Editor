@@ -100,13 +100,17 @@ func test_in_game() -> void:
 	if gt.is_active():
 		gt.cancel()
 		return
-	# A pack map carries a different object layout per variant and the build
-	# runs without the pack's game mode, so which layout to load is the user's
-	# call. A plain map has one, and the editor is already showing it.
+	# A map with a layout per game mode gets asked about, because the build runs
+	# without whatever mode logic would normally choose. That is every BZP map,
+	# and every template-derived map too -- they ship DM/Strat/Teams/Wingman
+	# BZNs with no mission script at all, so gating on the script missed them.
+	# Residue is named after the SOURCE stem: renaming a map changes only
+	# MapState.stem, so looking these up by that name finds nothing.
+	var src_stem: String = GameTest.source_stem(MapState.manifest)
 	var variants: Array = GameTest.testable_variants(
-		MapState.session_dir, MapState.stem, MapState.manifest
+		MapState.session_dir, src_stem, MapState.manifest
 	)
-	if not GameTest.is_pack_map(MapState.session_dir, MapState.stem) or variants.size() < 2:
+	if variants.size() < 2:
 		gt.begin()
 		return
 	_prompt_test_variant(gt, variants)
