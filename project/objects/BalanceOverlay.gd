@@ -51,10 +51,6 @@ func schedule_recompute() -> void:
 	_timer.start(DEBOUNCE_S)
 
 
-func last_snapshot() -> Dictionary:
-	return _snapshot
-
-
 static func compute_objects(objects: Dictionary, variant: String) -> Dictionary:
 	var recs: Variant = objects.get(variant, [])
 	if typeof(recs) != TYPE_ARRAY:

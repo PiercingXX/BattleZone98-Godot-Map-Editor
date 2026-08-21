@@ -1,6 +1,6 @@
 extends SceneTree
-## Headless authoring smoke: create a tiny map session and save a file set,
-## entirely through the in-process backend (docs/03).
+## Headless authoring smoke: create a tiny map session and save a file set
+## through the in-process backend.
 ##
 ## Usage:
 ##   godot --headless --path . -s res://scripts/playtest_map.gd -- <out_dir> [game_root]

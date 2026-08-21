@@ -1,3 +1,2 @@
 Synthetic BZN template blocks. Hand-authored; not extracted from a corpus .bzn.
 object/header-tail files use LF (as the Python reference templates may) — TemplateLoader.splitlines + CRLF join matches templates.py.
-stock.bzn.txt is a tiny ASCII BZN used as bzn_path (named .txt; *.bzn is gitignored).

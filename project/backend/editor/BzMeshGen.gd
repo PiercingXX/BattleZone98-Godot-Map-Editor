@@ -2,7 +2,7 @@ extends RefCounted
 class_name BzMeshGen
 ## Per-map static meshes: water surfaces and plant fields.
 ##
-## Port of ``bzmap.generate.meshgen`` (see git history / meshgen.py.ref).
+## Port of ``bzmap.generate.meshgen`` (see git history).
 ## Emits an OGRE ``.mesh`` via ``BzMeshData.write_mesh``, a paired
 ## ``.material``, and an ``.odf`` with ``classLabel = i76building2``.
 ## Vertices are world metres, transposed (x<->z) so a corpus -90-degree

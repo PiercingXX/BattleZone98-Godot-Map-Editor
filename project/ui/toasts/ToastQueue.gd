@@ -53,7 +53,3 @@ func alpha_at(item: Dictionary, now_s: float) -> float:
 	if remain <= 0.0:
 		return 0.0
 	return clampf(remain / FADE_S, 0.0, 1.0)
-
-
-func clear() -> void:
-	items.clear()

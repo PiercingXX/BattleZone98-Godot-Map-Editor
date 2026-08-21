@@ -1,22 +1,17 @@
 extends Node
-## In-process backend driver (docs/02 verbs, docs/03 port).
+## In-process backend driver (docs/02 verbs).
 ##
 ## The verbs run on a worker thread against the GDScript backend in
-## project/backend/ — no subprocess, no Python. Payload shapes are
-## unchanged from the bridge contract (docs/02 §3), so the UI is
-## agnostic to the port. A FIFO queue serializes overlapping run() calls.
+## project/backend/. Payload shapes are the bridge contract (docs/02 §3).
+## A FIFO queue serializes overlapping run() calls.
 
 signal call_started(verb: String)
-signal stderr_line(text: String)
 signal call_finished(verb: String, result: Dictionary)
 signal call_failed(verb: String, error: Dictionary)
 signal discovered(ok: bool, detail: String)
 
 const CONTRACT_VERSION := 1
 
-var available: bool = true
-var last_error: String = ""
-var last_probe: Dictionary = {}
 var busy: bool = false
 
 ## Tests may assign a Callable(verb, extra_args) -> Dictionary payload
@@ -144,7 +139,7 @@ static func _parse_args(args: PackedStringArray) -> Dictionary:
 	var positional: Array = []
 	const VALUE_FLAGS := [
 		"game-root", "session", "out", "stem", "world", "width", "depth",
-		"base-height", "pack-kind", "tier", "cache", "pack", "mode", "test-id",
+		"base-height", "pack-kind", "tier", "cache", "mode", "test-id",
 	]
 	var i := 0
 	while i < args.size():
@@ -187,14 +182,12 @@ func _finish_call(payload: Dictionary) -> void:
 	var verb := _pending_verb
 	if payload.get("ok", false):
 		if verb == "probe":
-			last_probe = payload
 			_remember_game_root(payload)
 		call_finished.emit(verb, payload)
 	else:
 		var err: Dictionary = payload.get("error", {})
 		if err.is_empty():
 			err = {"code": "failed", "message": str(payload)}
-		last_error = str(err.get("message", ""))
 		call_failed.emit(verb, err)
 
 
@@ -260,18 +253,9 @@ func render_map(session_dir: String, out_dir: String) -> void:
 	run("render", PackedStringArray(["--session", session_dir, "--out", out_dir]))
 
 
+## Terrain-test build: same map, every script stripped. See BzPackage._install_addon.
 ## ``stem`` is the name the map ships under. Pass MapState.stem: a renamed map
 ## (every template-derived map) still carries the source stem in its manifest.
-func package_install(session_dir: String, game_root: String, test_id: String = "", stem: String = "") -> void:
-	var args := PackedStringArray([
-		"--session", session_dir, "--mode", "install", "--game-root", game_root,
-	])
-	if not test_id.is_empty():
-		args.append_array(PackedStringArray(["--test-id", test_id]))
-	run("package", _with_stem(args, stem))
-
-
-## Terrain-test build: same map, every script stripped. See BzPackage._install_addon.
 func package_test(session_dir: String, game_root: String, stem: String = "") -> void:
 	run("package", _with_stem(PackedStringArray([
 		"--session", session_dir, "--mode", "test", "--game-root", game_root,

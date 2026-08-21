@@ -1,5 +1,5 @@
 extends Node
-## Persisted user prefs: backend path, game root, recent files.
+## Persisted user prefs: game root, recent files, view filters, layout.
 
 signal prefs_changed
 
@@ -61,7 +61,6 @@ var view_labels: bool = false
 ## Object snap. 0 = off. Allowed grids 1/5/10/20 m; angles 15/45/90°.
 var snap_grid_m: float = 0.0
 var snap_angle: float = 0.0
-const VIEW_LABELS_ID := 20
 ## Root window content_scale_factor. Clamped 0.75–2.0. Default 1.0.
 var ui_scale: float = UI_SCALE_DEFAULT
 ## Split offsets, console, focus mode, panel collapse. Restored at boot.
@@ -336,32 +335,6 @@ func coerce_snap_grid(raw: Variant) -> float:
 
 func coerce_snap_angle(raw: Variant) -> float:
 	return SelectionGizmo.coerce_snap_angle(raw)
-
-
-func attach_labels_view_item(menu: PopupMenu) -> void:
-	if menu == null:
-		return
-	if menu.get_item_index(VIEW_LABELS_ID) >= 0:
-		return
-	menu.add_separator()
-	menu.add_check_item("Labels", VIEW_LABELS_ID)
-	sync_labels_view_item(menu)
-
-
-func sync_labels_view_item(menu: PopupMenu) -> void:
-	if menu == null:
-		return
-	var idx := menu.get_item_index(VIEW_LABELS_ID)
-	if idx < 0:
-		return
-	menu.set_item_checked(idx, view_labels)
-	menu.set_item_tooltip(idx, "Class (and label) above objects within 400 m")
-
-
-func toggle_view_labels() -> bool:
-	view_labels = not view_labels
-	save()
-	return view_labels
 
 
 func coerce_camera_speed(raw: Variant) -> float:

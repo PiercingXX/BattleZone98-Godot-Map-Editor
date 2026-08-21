@@ -1,4 +1,4 @@
-# Operating instructions for Skippy
+# Operating instructions
 
 You are building the **BattleZone 98 Godot Map Editor** — a standalone Godot
 4.7 application, pure GDScript, no runtime dependencies.

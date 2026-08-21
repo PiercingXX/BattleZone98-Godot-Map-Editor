@@ -101,37 +101,14 @@ static func map_script_path(session_dir: String, stem: String) -> String:
 
 
 ## True when the map's mission script pulls in a workshop pack's module stack
-## (BZP/SBP). Reported so the log can say why the scripts were stripped; it is
-## NOT what decides whether to ask for a variant -- a map can ship a layout per
-## variant with no script at all (every template-derived map does), and those
-## need asking about just the same. ``stem`` is the SOURCE stem.
+## (BZP/SBP). Reported so the log can say why the scripts were stripped.
+## ``stem`` is the SOURCE stem.
 static func is_pack_map(session_dir: String, stem: String) -> bool:
 	var script_path: String = map_script_path(session_dir, stem)
 	if script_path.is_empty():
 		return false
 	var text: String = FileAccess.get_file_as_string(script_path)
 	return text.contains("RequireFix") or text.contains("SBP")
-
-
-## Variants this map actually ships a BZN for, in menu order. More than one
-## means the map has a layout per game mode and the user has to pick.
-## ``stem`` is the SOURCE stem — residue files are named after it.
-static func testable_variants(session_dir: String, stem: String, manifest: Dictionary) -> Array:
-	var listed: Variant = manifest.get("variants", [])
-	var order: Array = listed if typeof(listed) == TYPE_ARRAY and not (listed as Array).is_empty() \
-		else ["", "_S", "_ST", "_SW"]
-	var src: String = session_dir.path_join("residue").path_join("source")
-	var present := {}
-	var da := DirAccess.open(src)
-	if da != null:
-		for name in da.get_files():
-			present[str(name).to_lower()] = true
-	var out: Array = []
-	for v_v in order:
-		var v: String = str(v_v)
-		if present.is_empty() or present.has(("%s%s.bzn" % [stem, v]).to_lower()):
-			out.append(v)
-	return out
 
 
 static func steam_run_uri(stem: String, variant: String = "") -> String:

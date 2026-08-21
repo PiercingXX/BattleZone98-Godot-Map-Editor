@@ -14,8 +14,10 @@ cache/
 sessions/
 *.log
 
-# Agent working state — local session data, not project content
+# Local coding-agent working directories — session data, not project content
 .skippy/
+.claude/
+.cursor/
 
 # OS
 .DS_Store

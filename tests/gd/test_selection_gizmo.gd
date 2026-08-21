@@ -311,17 +311,6 @@ func _ui_and_help(t) -> void:
 	help.queue_free()
 	await t.tree.process_frame
 
-	var pop := PopupMenu.new()
-	t.tree.root.add_child(pop)
-	Settings.attach_labels_view_item(pop)
-	t.ok(pop.get_item_index(Settings.VIEW_LABELS_ID) >= 0, "View menu has Labels")
-	t.eq(pop.get_item_text(pop.get_item_index(Settings.VIEW_LABELS_ID)), "Labels")
-	Settings.view_labels = false
-	Settings.sync_labels_view_item(pop)
-	t.ok(not pop.is_item_checked(pop.get_item_index(Settings.VIEW_LABELS_ID)))
-	pop.queue_free()
-	await t.tree.process_frame
-
 	ToolState.snap_grid_m = saved_grid
 	ToolState.snap_angle = saved_ang
 	ToolState.set_tool(saved_tool if saved_tool != "" else "fly")

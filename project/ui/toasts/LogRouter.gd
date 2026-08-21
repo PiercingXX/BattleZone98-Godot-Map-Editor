@@ -61,16 +61,6 @@ static func route(text: String, level: String = "", toast: bool = false) -> Dict
 	}
 
 
-static func color_hex(level: String) -> String:
-	match infer_level("", level):
-		LEVEL_ERROR:
-			return COLOR_ERROR
-		LEVEL_WARNING:
-			return COLOR_WARNING
-		_:
-			return COLOR_INFO
-
-
 static func bbcode_line(text: String, level: String = "") -> String:
 	var lv := infer_level(text, level)
 	var hex := COLOR_INFO

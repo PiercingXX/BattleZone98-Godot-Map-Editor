@@ -242,10 +242,6 @@ func mark_features_dirty() -> void:
 	mask_changed.emit()
 
 
-func paths_for_variant(variant: String) -> Array:
-	return BzOpen.paths_of(aipaths, variant)
-
-
 func active_paths() -> Array:
 	return BzOpen.paths_of(aipaths, active_variant)
 
@@ -284,10 +280,6 @@ func select_aipath(path_i: int, point_i: int = -1) -> void:
 	selected_path_index = path_i
 	selected_point_index = point_i
 	aipaths_changed.emit()
-
-
-func has_aipath_selection() -> bool:
-	return selected_path_index >= 0
 
 
 func path_record(path_i: int, variant: String = "") -> Dictionary:

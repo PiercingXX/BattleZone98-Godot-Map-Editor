@@ -7,7 +7,7 @@ const DIR := "res://project/ui/icons/"
 const NAMES: PackedStringArray = [
 	"fly", "raise", "lower", "flatten", "smooth", "ramp", "paint", "place",
 	"select", "noise", "qsel", "rsel", "wand", "clone",
-	"open", "new", "save", "validate", "test", "undo", "redo", "frame", "more",
+	"open", "new", "save", "validate", "test", "undo", "redo", "frame",
 	"search", "filter", "eyedropper", "water", "plants", "view", "team",
 	"walk", "grid", "slope", "log",
 ]

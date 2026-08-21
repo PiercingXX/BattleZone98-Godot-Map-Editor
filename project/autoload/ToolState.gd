@@ -218,10 +218,6 @@ func is_terrain_select_tool() -> bool:
 	return tool == "qsel" or tool == "rsel" or tool == "wand"
 
 
-func is_sculpt_tool() -> bool:
-	return tool in ["raise", "lower", "flatten", "smooth", "ramp", "noise", "paint", "clone"]
-
-
 func set_symmetry(mode: String) -> void:
 	mode = normalize_symmetry(mode)
 	if symmetry == mode:

@@ -41,10 +41,6 @@ func hover_handle() -> String:
 	return _hover
 
 
-func active_handle() -> String:
-	return _active
-
-
 func set_hover_handle(handle: String) -> void:
 	if _hover == handle:
 		return

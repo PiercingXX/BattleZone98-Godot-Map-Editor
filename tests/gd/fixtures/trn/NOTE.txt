@@ -2,4 +2,3 @@ Synthetic .trn fixtures (CRLF). Generated with:
   PYTHONPATH=backend python3  (write_bytes of hand-authored INI text)
 Not derived from a game install, BZP pack, workshop item, or corpus map.
 sample.txt is the parse / byte-identical round-trip source.
-template.txt is the write_complete_trn clone source.

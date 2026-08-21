@@ -6,9 +6,7 @@ class_name BzAssets
 ## The editor ships no game content. This walks the user's install, enumerates
 ## every placeable ODF, and writes Godot-loadable PNG icons plus an index.
 ## Meshes stay on the proxy rung unless a converted `.glb` is already in cache
-## or the format layer can produce one (BzOgre / BzGeo / BzBwd2 / BzMaptex /
-## BzGlb). Conversion lives here because `convert.py` is a sibling module;
-## this is the private copy of `convert_class` the assignment allows.
+## or BzConvert can produce one (BzOgre / BzGeo / BzBwd2 / BzMaptex / BzGlb).
 
 const _ODF_SUFFIXES := {".odf": true}
 
@@ -464,265 +462,8 @@ static func _class_record(
 	}
 
 
-# --- convert_class (private copy of editor/convert.py) ----------------------
-
 static func _convert_class(stem: String, search_roots: Array, dest: String) -> Dictionary:
-	## Best-effort convert. Returns `{path, fidelity, reason}`.
-	## Python imports convert.convert_class; prefer BzConvert.convert_class.
-	var via := _try_bz_convert(stem, search_roots, dest)
-	if not via.is_empty():
-		return via
-	var parent := dest.get_base_dir()
-	if not parent.is_empty():
-		DirAccess.make_dir_recursive_absolute(parent)
-	var index := _casefold_index(search_roots)
-	var hd := _convert_hd(stem, index, dest)
-	if not str(hd.get("path", "")).is_empty():
-		return {"path": hd["path"], "fidelity": "hd", "reason": ""}
-	var hd_reason := str(hd.get("why", "no .mesh"))
-	var geo := _convert_bwd2(stem, index, dest)
-	if not str(geo.get("path", "")).is_empty():
-		return {
-			"path": geo["path"],
-			"fidelity": str(geo.get("fidelity", "geo_flat")),
-			"reason": "",
-		}
-	var geo_reason := str(geo.get("why", "no sdf/vdf/geo"))
-	return {"path": "", "fidelity": "proxy", "reason": "%s; %s" % [hd_reason, geo_reason]}
-
-
-static func _casefold_index(roots: Array) -> Dictionary:
-	## Map lowercased name → path for files under `roots`.
-	var index := {}
-	for root in roots:
-		var r := str(root)
-		if not DirAccess.dir_exists_absolute(r):
-			continue
-		for path in _walk_files(r):
-			var key := path.get_file().to_lower()
-			if not index.has(key):
-				index[key] = path
-	return index
-
-
-static func _resolve_asset(index: Dictionary, name: String, suffixes: PackedStringArray) -> String:
-	var stem := name.get_file().get_basename().to_lower()
-	var raw := name.to_lower()
-	for suf in suffixes:
-		var key := raw if raw.ends_with(suf) else stem + suf
-		if index.has(key):
-			return str(index[key])
-	return ""
-
-
-static func _parse_material_diffuse(path: String) -> String:
-	var text := _read_latin1(path)
-	if text.is_empty() and not FileAccess.file_exists(path):
-		return ""
-	for line in _splitlines(text):
-		var s := String(line).strip_edges()
-		var low := s.to_lower()
-		if low.contains("set_texture_alias") and low.contains("diffusemap"):
-			var parts := s.split(" ", false)
-			if not parts.is_empty():
-				return parts[parts.size() - 1].strip_edges().trim_prefix("\"").trim_suffix("\"")
-		if low.begins_with("texture "):
-			var rest := s.substr("texture ".length()).strip_edges().trim_prefix("\"").trim_suffix("\"")
-			return rest
-	return ""
-
-
-static func _open_image(index: Dictionary, name: String) -> Image:
-	if name.is_empty():
-		return null
-	var path := _resolve_asset(index, name, PackedStringArray([".png", ".dds", ".jpg", ".tga", ".map"]))
-	if path.is_empty():
-		return null
-	var suf := _suffix_lower(path)
-	if suf == ".map":
-		var act = null
-		var parent := path.get_base_dir()
-		var da := DirAccess.open(parent)
-		if da != null:
-			da.include_hidden = false
-			da.include_navigational = false
-			for fname in da.get_files():
-				if _suffix_lower(String(fname)) == ".act":
-					var act_res := BzMaptex.read_act(parent.path_join(String(fname)))
-					if act_res.get("ok", false):
-						act = act_res.get("palette")
-						break
-		var map_res := BzMaptex.read_map(path, act)
-		if map_res.get("ok", false) and map_res.get("image") is Image:
-			return map_res.get("image")
-		return null
-	var img := Image.new()
-	if img.load(path) != OK:
-		return null
-	if img.get_format() != Image.FORMAT_RGBA8:
-		img.convert(Image.FORMAT_RGBA8)
-	return img
-
-
-static func _convert_hd(stem: String, index: Dictionary, dest: String) -> Dictionary:
-	var mesh_path := _resolve_asset(index, stem, PackedStringArray([".mesh"]))
-	if mesh_path.is_empty():
-		return {"path": "", "why": "no .mesh"}
-	var ogre = _try_read_ogre(mesh_path)
-	if ogre == null:
-		return {"path": "", "why": "no .mesh"}
-	var images: Array = []
-	var prims: Array = []
-	for sm in ogre.submeshes:
-		if sm.positions.is_empty() or sm.indices.is_empty():
-			continue
-		var img_i = null
-		var mat_name := str(sm.material) if not str(sm.material).is_empty() else stem
-		var mat_path := _resolve_asset(index, mat_name, PackedStringArray([".material"]))
-		var tex_name := ""
-		if not mat_path.is_empty():
-			tex_name = _parse_material_diffuse(mat_path)
-		if tex_name.is_empty() and not str(sm.material).is_empty():
-			tex_name = str(sm.material)
-		var img: Image = null
-		if not tex_name.is_empty():
-			img = _open_image(index, tex_name)
-		if img == null:
-			img = _open_image(index, stem + "_d")
-		if img == null:
-			img = _open_image(index, stem + "_D")
-		if img != null:
-			img_i = images.size()
-			images.append(img)
-		var rec := {
-			"positions": sm.positions,
-			"normals": sm.normals if not sm.normals.is_empty() else _fill_normals(sm.positions.size()),
-			"uvs": sm.uvs if not sm.uvs.is_empty() else _fill_uvs(sm.positions.size()),
-			"indices": sm.indices,
-			"colour": [200, 200, 200],
-		}
-		if img_i != null:
-			rec["image"] = img_i
-		prims.append(rec)
-	if prims.is_empty():
-		return {"path": "", "why": "empty ogre mesh"}
-	var written := BzGlb.write_glb(dest, prims, images)
-	if not written.get("ok", false):
-		return {"path": "", "why": "empty ogre mesh"}
-	return {"path": dest, "why": "hd"}
-
-
-static func _convert_geo_file(
-	geo_path: String,
-	index: Dictionary,
-	dest: String,
-	xform: Variant = null
-) -> Dictionary:
-	var mesh := BzGeo.read_geo(geo_path)
-	if mesh == null:
-		return {"path": "", "why": "empty geo"}
-	var groups := BzGeo.geo_to_primitives(mesh)
-	var images: Array = []
-	var prims: Array = []
-	for g in groups:
-		var verts: Array = g.get("verts", [])
-		var norms: Array = g.get("norms", [])
-		if xform != null:
-			var xv: Array = []
-			var xn: Array = []
-			for v in verts:
-				xv.append(BzBwd2.xform_point(xform, v))
-			for n in norms:
-				xn.append(BzBwd2.xform_dir(xform, n))
-			verts = xv
-			norms = xn
-		var img_i = null
-		var tex := str(g.get("texture", ""))
-		if not tex.is_empty():
-			var img := _open_image(index, tex)
-			if img != null:
-				img_i = images.size()
-				images.append(img)
-		var rec := {
-			"positions": verts,
-			"normals": norms,
-			"uvs": g.get("uvs", []),
-			"indices": g.get("indices", []),
-			"colour": g.get("colour", [180, 180, 180]),
-		}
-		if img_i != null:
-			rec["image"] = img_i
-		prims.append(rec)
-	if prims.is_empty():
-		return {"path": "", "why": "empty geo"}
-	var written := BzGlb.write_glb(dest, prims, images)
-	if not written.get("ok", false):
-		return {"path": "", "why": "empty geo"}
-	var fidelity := "geo_flat" if images.is_empty() else "geo_textured"
-	return {"path": dest, "fidelity": fidelity, "why": fidelity}
-
-
-static func _convert_bwd2(stem: String, index: Dictionary, dest: String) -> Dictionary:
-	var container := _resolve_asset(index, stem, PackedStringArray([".sdf", ".vdf"]))
-	if container.is_empty():
-		var geo := _resolve_asset(index, stem, PackedStringArray([".geo"]))
-		if geo.is_empty():
-			return {"path": "", "why": "no sdf/vdf/geo"}
-		return _convert_geo_file(geo, index, dest)
-	var model := BzBwd2.read_bwd2(container)
-	if model == null:
-		return {"path": "", "why": "no visible nodes"}
-	var nodes := BzBwd2.visible_primary(model.nodes)
-	if nodes.is_empty():
-		var geo := _resolve_asset(index, stem, PackedStringArray([".geo"]))
-		if geo.is_empty():
-			return {"path": "", "why": "no visible nodes"}
-		return _convert_geo_file(geo, index, dest)
-	var images: Array = []
-	var prims: Array = []
-	for node in nodes:
-		var geo_path := _resolve_asset(index, node.name, PackedStringArray([".geo"]))
-		if geo_path.is_empty():
-			continue
-		var mesh := BzGeo.read_geo(geo_path)
-		if mesh == null:
-			continue
-		for g in BzGeo.geo_to_primitives(mesh):
-			var verts: Array = []
-			var norms: Array = []
-			for v in g.get("verts", []):
-				verts.append(BzBwd2.xform_point(node.transform, v))
-			for n in g.get("norms", []):
-				norms.append(BzBwd2.xform_dir(node.transform, n))
-			var img_i = null
-			var tex := str(g.get("texture", ""))
-			if not tex.is_empty():
-				var img := _open_image(index, tex)
-				if img != null:
-					img_i = images.size()
-					images.append(img)
-			var rec := {
-				"positions": verts,
-				"normals": norms,
-				"uvs": g.get("uvs", []),
-				"indices": g.get("indices", []),
-				"colour": g.get("colour", [180, 180, 180]),
-			}
-			if img_i != null:
-				rec["image"] = img_i
-			prims.append(rec)
-	if prims.is_empty():
-		return {"path": "", "why": "bwd2 produced no geometry"}
-	var fidelity := "geo_textured" if not images.is_empty() else "geo_flat"
-	var written := BzGlb.write_glb(dest, prims, images)
-	if not written.get("ok", false):
-		return {"path": "", "why": "bwd2 produced no geometry"}
-	return {"path": dest, "fidelity": fidelity, "why": fidelity}
-
-
-# --- helpers ----------------------------------------------------------------
-
-static func _try_bz_convert(stem: String, search_roots: Array, dest: String) -> Dictionary:
+	## Delegates to BzConvert.convert_class. Returns `{path, fidelity, reason}`.
 	var res: Variant = BzConvert.convert_class(stem, search_roots, dest)
 	if typeof(res) == TYPE_ARRAY and (res as Array).size() >= 3:
 		var path_v: Variant = res[0]
@@ -736,6 +477,8 @@ static func _try_bz_convert(stem: String, search_roots: Array, dest: String) -> 
 		return res
 	return {}
 
+
+# --- helpers ----------------------------------------------------------------
 
 static func _try_bzn_prjids(path: String) -> Variant:
 	var res: Variant = BzBzn.read_bzn(path)
@@ -752,30 +495,6 @@ static func _try_bzn_prjids(path: String) -> Variant:
 		var prjid := str(obj.prjid) if obj.prjid != null else ""
 		if not prjid.is_empty():
 			out.append(prjid)
-	return out
-
-
-static func _try_read_ogre(path: String) -> Variant:
-	var res: Variant = BzOgre.read_ogre_mesh(path)
-	if typeof(res) != TYPE_DICTIONARY:
-		return res
-	var payload: Dictionary = res
-	if payload.get("ok", false) == false:
-		return null
-	return payload.get("mesh", null)
-
-
-static func _fill_normals(n: int) -> Array:
-	var out: Array = []
-	for _i in n:
-		out.append(Vector3(0.0, 1.0, 0.0))
-	return out
-
-
-static func _fill_uvs(n: int) -> Array:
-	var out: Array = []
-	for _i in n:
-		out.append(Vector2(0.0, 0.0))
 	return out
 
 

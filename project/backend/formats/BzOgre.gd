@@ -19,15 +19,6 @@ const VES_NORMAL := 4
 const VES_COLOUR := 5
 const VES_TEXCOORD := 7
 
-# VertexElementType byte sizes. Present in the Python module as _TYPE_SIZE
-# but unused by the reader; kept so the table is available to callers.
-const TYPE_SIZE := {
-	0: 4, 1: 8, 2: 12, 3: 16, 4: 4, 5: 2, 6: 4, 7: 6, 8: 8, 9: 4,
-	10: 4, 11: 4, 12: 8, 13: 16, 14: 24, 15: 32, 16: 2, 17: 4, 18: 6,
-	19: 8, 20: 4, 21: 8, 22: 12, 23: 16, 24: 4, 25: 8, 26: 12, 27: 16,
-	28: 4, 29: 4, 30: 4, 31: 4, 32: 8, 33: 4, 34: 8,
-}
-
 
 class OgreSubmesh extends RefCounted:
 	var material: String = ""
@@ -83,24 +74,6 @@ class _Buf extends RefCounted:
 		else:
 			v = (int(data[pos]) << 24) | (int(data[pos + 1]) << 16) \
 					| (int(data[pos + 2]) << 8) | int(data[pos + 3])
-		pos += 4
-		return v
-
-	func f32() -> float:
-		if remaining() < 4:
-			pos += 4
-			return 0.0
-		var v: float
-		if le:
-			v = data.decode_float(pos)
-		else:
-			var tmp := PackedByteArray()
-			tmp.resize(4)
-			tmp[0] = data[pos + 3]
-			tmp[1] = data[pos + 2]
-			tmp[2] = data[pos + 1]
-			tmp[3] = data[pos]
-			v = tmp.decode_float(0)
 		pos += 4
 		return v
 

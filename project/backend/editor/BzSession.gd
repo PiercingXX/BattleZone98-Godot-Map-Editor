@@ -10,13 +10,6 @@ const HEIGHT_MASK: int = 0x1FFF
 const FLAG_SHIFT: int = 13
 const VARIANT_SUFFIXES: Array[String] = ["", "_S", "_ST", "_SW"]
 
-## Files that belong to a basename group, besides variant BZNs. Unused in
-## the Python module (collect_map_files is suffix-agnostic); kept for parity.
-const _MAP_SUFFIXES: Array[String] = [
-	".trn", ".hg2", ".mat", ".lgt", ".ini", ".des", ".odf", ".vxt",
-	".lua", ".png", ".bmp",
-]
-
 const _VARIANT_STEM_SUFFIXES: Array[String] = ["_SW", "_ST", "_MS", "_S"]
 
 

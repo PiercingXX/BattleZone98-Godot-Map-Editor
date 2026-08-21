@@ -5,14 +5,12 @@ class_name BzOpen
 ## Port of ``backend/bzmap/editor/open.py``. Python raises EditorError;
 ## this returns BzErrors.err(...) / the verb payload.
 ##
-## docs/02 §3 "open" says binary BZNs are converted via WorldBuilder's
-## BinaryBZNParser with ``converted_from_binary: true``. Python open.py
-## refuses them (``binary_bzn_unsupported``). Python wins (docs/03); there
-## is deliberately no binary reader.
+## docs/02 §3 "open" mentions converting binary BZNs via WorldBuilder's
+## BinaryBZNParser. The ported Python open.py refuses them
+## (``binary_bzn_unsupported``); that wins. There is deliberately no binary
+## reader — re-save from the game with ``asciisave``.
 ##
 ## Session helpers below are private copies of BzSession / session.py.
-## BzSession.gd does not compile on Godot 4.7 (`String.is_absolute`); do
-## not call it from this file.
 
 const CONTRACT_VERSION: int = 1
 const HEIGHT_MASK: int = 0x1FFF

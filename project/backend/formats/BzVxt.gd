@@ -1,6 +1,6 @@
 extends RefCounted
 class_name BzVxt
-## `.vxt` observer vehicle list writer (docs/01 §8). Port of `bzmap.formats.vxt`.
+## `.vxt` observer vehicle list writer. Port of `bzmap.formats.vxt`.
 ##
 ## Tab-separated text, one entry per line, blank-line separated. Written
 ## byte-for-byte as given so a stock block round-trips.

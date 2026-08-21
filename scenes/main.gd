@@ -249,7 +249,6 @@ func _wire() -> void:
 	)
 	Backend.discovered.connect(_on_discovered)
 	Backend.call_started.connect(_on_call_started)
-	Backend.stderr_line.connect(_on_stderr)
 	Backend.call_finished.connect(_on_call_finished)
 	Backend.call_failed.connect(_on_call_failed)
 	MapState.session_changed.connect(_on_session_changed)
@@ -896,10 +895,6 @@ func _on_call_started(verb: String) -> void:
 	_top.set_busy(true)
 
 
-func _on_stderr(line: String) -> void:
-	_log.call(line)
-
-
 func _on_call_finished(verb: String, result: Dictionary) -> void:
 	_top.set_busy(false)
 	_status.set_status("ok", "ok: %s" % verb)
@@ -1477,16 +1472,10 @@ func _apply_aipaths_view() -> void:
 func _apply_plants_view() -> void:
 	if _terrain == null:
 		return
-	if _terrain.has_method("set_plants_overlay"):
-		_terrain.call("set_plants_overlay", Settings.view_plants)
-	elif _terrain.has_method("set_show_plants"):
-		_terrain.call("set_show_plants", Settings.view_plants)
-	elif _terrain.has_method("set_plants_visible"):
-		_terrain.call("set_plants_visible", Settings.view_plants)
-	elif ToolState.mask_kind == "plants":
+	if ToolState.mask_kind == "plants":
 		if Settings.view_plants:
 			_refresh_mask_overlay()
-		elif _terrain.has_method("set_feature_mask"):
+		else:
 			_terrain.set_feature_mask(false)
 
 

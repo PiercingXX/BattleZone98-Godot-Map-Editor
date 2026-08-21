@@ -1,6 +1,6 @@
 extends RefCounted
 class_name BzRender
-## Port of preview.py + thumbnail.py + debug_map.py + render_cmd.py.
+## Port of preview.py + thumbnail.py + render_cmd.py.
 ##
 ## North-up is load-bearing (docs/02 §1): world +z is the TOP of every image,
 ## +x is right. The generator repo once shipped a vertical mirror; do not.
@@ -10,8 +10,7 @@ class_name BzRender
 ## workshop container thumbnail.py emits.
 ##
 ## debug_map.py features that only served the generator (CLI main, TrueType
-## legend glyphs) are not ported. Public functions the render verb and the
-## debug overlay use are here.
+## legend glyphs, annotated debug overlay) are not ported.
 
 const THUMBNAIL_SIZE: Vector2i = Vector2i(512, 512)
 
@@ -20,19 +19,6 @@ const _RAMP_R: Array[float] = [20.0, 40.0, 70.0, 150.0, 200.0, 235.0]
 const _RAMP_G: Array[float] = [40.0, 90.0, 130.0, 170.0, 190.0, 235.0]
 const _RAMP_B: Array[float] = [90.0, 140.0, 90.0, 90.0, 160.0, 235.0]
 const _RAMP_X: Array[float] = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
-
-## debug_map.py _CLASSES: prefix → [legend label, r, g, b]
-const _CLASS_PREFIX: Array[String] = [
-	"player", "avtank", "pspwn", "eggeizr", "npscr", "sscr", "blc-pell",
-	"abhang", "absupp",
-]
-const _CLASS_LABEL: Array[String] = [
-	"player / user", "player (avtank)", "spawn point", "geyser", "scrap",
-	"scrap", "scrap", "hangar", "supply",
-]
-const _CLASS_R: Array[int] = [255, 255, 0, 255, 255, 255, 255, 255, 200]
-const _CLASS_G: Array[int] = [255, 255, 220, 230, 140, 140, 140, 0, 0]
-const _CLASS_B: Array[int] = [255, 255, 255, 0, 0, 0, 0, 200, 255]
 
 static var _CM: PackedByteArray = PackedByteArray()
 
@@ -370,13 +356,6 @@ static func _image_to_bmp(img: Image) -> PackedByteArray:
 	return out
 
 
-static func write_png(img: Image, path: String, size: Variant = null) -> Dictionary:
-	## Resize to size (default THUMBNAIL_SIZE) and write PNG.
-	var sz: Vector2i = _as_size(size, THUMBNAIL_SIZE)
-	var out: Image = _resized(img, sz, Image.INTERPOLATE_LANCZOS)
-	return _save_png_raw(out, path)
-
-
 static func write_bmp(img: Image, path: String, size: Variant = null) -> Dictionary:
 	## Resize to size (default THUMBNAIL_SIZE) and write BMP.
 	var sz: Vector2i = _as_size(size, THUMBNAIL_SIZE)
@@ -588,298 +567,8 @@ static func render_preview(
 	return pv
 
 
-static func _mask_any(mask: PackedByteArray) -> bool:
-	for i in mask.size():
-		if mask[i] != 0:
-			return true
-	return false
-
-
-static func render_map_image(
-	heightmap: Variant, water_mask: Variant = null, size: Variant = null
-) -> Image:
-	## Clean top-down map (shaded terrain + blue water tint), no dots/legend.
-	var hm: Dictionary = _coerce(heightmap)
-	var gx: int = int(hm.get("grid_x", 0))
-	var gz: int = int(hm.get("grid_z", 0))
-	var sz: Variant = size
-	if sz == null:
-		sz = Vector2i(gx, gz)
-	var pv := Preview.new(heightmap, sz)
-	if water_mask != null:
-		var m: PackedByteArray = _as_mask(water_mask, gx, gz)
-		if _mask_any(m):
-			pv.draw_regions([m], [40, 120, 255], 150)
-	return pv.image
-
-
-static func _find(directory: String, filename: String) -> String:
-	var da := DirAccess.open(directory)
-	if da == null:
-		return ""
-	var target: String = filename.to_lower()
-	for name in da.get_files():
-		if str(name).to_lower() == target:
-			return directory.path_join(str(name))
-	return ""
-
-
-static func _class_of(prjid: String) -> Dictionary:
-	var low: String = prjid.to_lower()
-	for i in _CLASS_PREFIX.size():
-		if low.begins_with(_CLASS_PREFIX[i]):
-			return {
-				"label": _CLASS_LABEL[i],
-				"color": Color8(_CLASS_R[i], _CLASS_G[i], _CLASS_B[i]),
-			}
-	return {"label": "other/mesh", "color": Color8(140, 140, 140)}
-
-
-static func _bzn_objects(path: String) -> Array:
-	## Yield-like array of {prjid, x, z, team} for every ASCII [GameObject].
-	var out: Array = []
-	if not FileAccess.file_exists(path):
-		return out
-	var text: String = FileAccess.get_file_as_string(path).replace("\r", "")
-	var re_pid := RegEx.new()
-	var re_x := RegEx.new()
-	var re_z := RegEx.new()
-	var re_tm := RegEx.new()
-	re_pid.compile("(?m)^PrjID \\[1\\] =\\n(.*)$")
-	re_x.compile("(?m)^  x \\[1\\] =\\n(\\S+)")
-	re_z.compile("(?m)^  z \\[1\\] =\\n(\\S+)")
-	re_tm.compile("(?m)^team \\[1\\] =\\n(\\d+)")
-	var parts: PackedStringArray = text.split("[GameObject]")
-	for i in range(1, parts.size()):
-		var block: String = parts[i]
-		var pid_m: RegExMatch = re_pid.search(block)
-		if pid_m == null:
-			continue
-		var xm: RegExMatch = re_x.search(block)
-		var zm: RegExMatch = re_z.search(block)
-		if xm == null or zm == null:
-			continue
-		var team: int = 0
-		var tm: RegExMatch = re_tm.search(block)
-		if tm != null:
-			team = int(tm.get_string(1))
-		out.append({
-			"prjid": pid_m.get_string(1),
-			"x": float(xm.get_string(1)),
-			"z": float(zm.get_string(1)),
-			"team": team,
-		})
-	return out
-
-
-static func _is_water_mesh(mesh: String) -> bool:
-	var mat: String = mesh.get_basename() + ".material"
-	if not FileAccess.file_exists(mat):
-		return false
-	return FileAccess.get_file_as_string(mat).contains("thecavew")
-
-
-static func _water_footprint(mesh_path: String, hm: Dictionary) -> Variant:
-	## Boolean grid of the water mesh XZ footprint, or null. debug_map.py walk.
-	var raw: PackedByteArray = FileAccess.get_file_as_bytes(mesh_path)
-	if raw.size() < 16:
-		return null
-	var nl: int = -1
-	for i in range(2, raw.size()):
-		if raw[i] == 0x0A:
-			nl = i + 1
-			break
-	if nl < 0 or nl + 6 > raw.size():
-		return null
-	if raw.decode_u16(nl) != 0x3000:
-		return null
-	var p: int = nl + 6 + 1
-	if p + 6 > raw.size():
-		return null
-	if raw.decode_u16(p) != 0x4000:
-		return null
-	var b: int = -1
-	for j in range(p + 6, raw.size()):
-		if raw[j] == 0x0A:
-			b = j + 1
-			break
-	if b < 0 or b + 5 > raw.size():
-		return null
-	b += 1
-	var icount: int = raw.decode_u32(b)
-	b += 4 + 1 + icount * 2
-	if b + 10 > raw.size():
-		return null
-	var cid: int = raw.decode_u16(b)
-	var gsize: int = raw.decode_u32(b + 2)
-	if cid != 0x5000:
-		return null
-	var vcount: int = raw.decode_u32(b + 6)
-	var di: int = -1
-	var search_end: int = mini(raw.size() - 1, b + gsize)
-	for k in range(b + 10, search_end):
-		if raw.decode_u16(k) == 0x5210:
-			di = k + 6
-			break
-	if di < 0:
-		return null
-	var gz: int = int(hm.get("grid_z", 0))
-	var gx: int = int(hm.get("grid_x", 0))
-	if gx < 1 or gz < 1:
-		return null
-	var mask := PackedByteArray()
-	mask.resize(gz * gx)
-	var cell: float = 5.0
-	for v in vcount:
-		var off: int = di + v * 32
-		if off + 12 > raw.size():
-			break
-		# Mesh-local vertices are the transpose of world (x<->z) — debug_map.py.
-		var pz: float = raw.decode_float(off)
-		var px: float = raw.decode_float(off + 8)
-		var ix: int = int(px / cell)
-		var iz: int = int(pz / cell)
-		if iz >= 0 and iz < gz and ix >= 0 and ix < gx:
-			mask[iz * gx + ix] = 1
-	return mask
-
-
-static func water_mask_for_dir(
-	map_dir: String, heightmap: Variant, stem: String = ""
-) -> Variant:
-	## Combined water footprint, or null when there is no water.
-	var hm: Dictionary = _coerce(heightmap)
-	var placed := {}
-	if not stem.is_empty():
-		var bzn: String = map_dir.path_join("%s_S.bzn" % stem)
-		if not FileAccess.file_exists(bzn):
-			bzn = map_dir.path_join("%s.bzn" % stem)
-		if FileAccess.file_exists(bzn):
-			for rec in _bzn_objects(bzn):
-				placed[str(rec.get("prjid", "")).to_lower()] = true
-	var combined: PackedByteArray = PackedByteArray()
-	var have: bool = false
-	var da := DirAccess.open(map_dir)
-	if da == null:
-		return null
-	for name in da.get_files():
-		if str(name).get_extension().to_lower() != "mesh":
-			continue
-		var mesh: String = map_dir.path_join(str(name))
-		if not _is_water_mesh(mesh):
-			continue
-		if not stem.is_empty() and not placed.has(str(name).get_basename().to_lower()):
-			continue
-		var m: Variant = _water_footprint(mesh, hm)
-		if m == null:
-			continue
-		var mb: PackedByteArray = m
-		if not have:
-			combined = mb
-			have = true
-		else:
-			for i in mini(combined.size(), mb.size()):
-				if mb[i] != 0:
-					combined[i] = 1
-	if have:
-		return combined
-	return null
-
-
-static func render_debug(
-	map_dir: String, out_path: String = "", px: int = 900, stem: String = ""
-) -> Dictionary:
-	## Annotated top-down PNG. Returns {ok, path}. docs/03: keep what render emits;
-	## this is the public counterpart of debug_map.render_debug (no TTF legend).
-	if stem.is_empty():
-		stem = map_dir.get_file()
-		if stem.is_empty():
-			stem = map_dir.get_base_dir().get_file()
-	var hg2: String = _find(map_dir, "%s.hg2" % stem)
-	if hg2.is_empty():
-		hg2 = _find(map_dir, "%s.HG2" % stem)
-	if hg2.is_empty():
-		var da := DirAccess.open(map_dir)
-		if da != null:
-			for name in da.get_files():
-				if str(name).get_extension().to_lower() == "hg2":
-					hg2 = map_dir.path_join(str(name))
-					break
-	if hg2.is_empty():
-		return BzErrors.err(
-			"not_found",
-			"no .hg2 for %s in %s" % [stem, map_dir],
-			"",
-			map_dir
-		)
-	var read: Dictionary = BzHg2.read_hg2(hg2)
-	if BzErrors.is_err(read) or not read.get("ok", false):
-		if BzErrors.is_err(read):
-			return read
-		return BzErrors.err("no_terrain", "failed to read %s" % hg2, "", hg2)
-	var heightmap: Variant = read.get("heightmap")
-	var bzn: String = map_dir.path_join("%s_S.bzn" % stem)
-	if not FileAccess.file_exists(bzn):
-		bzn = map_dir.path_join("%s.bzn" % stem)
-	var pv := Preview.new(heightmap, Vector2i(px, px))
-	var mask: Variant = water_mask_for_dir(map_dir, heightmap, stem)
-	if mask is PackedByteArray and _mask_any(mask):
-		pv.draw_regions([mask], [40, 120, 255], 120)
-	var counts := {}
-	var dots := {}
-	for rec in _bzn_objects(bzn):
-		var info: Dictionary = _class_of(str(rec.get("prjid", "")))
-		var label: String = str(info["label"])
-		counts[label] = int(counts.get(label, 0)) + 1
-		var col: Color = info["color"]
-		var key: String = "%d,%d,%d" % [col.r8, col.g8, col.b8]
-		if not dots.has(key):
-			dots[key] = {"color": col, "pts": []}
-		(dots[key]["pts"] as Array).append([float(rec.get("x", 0.0)), float(rec.get("z", 0.0))])
-	var order: Array = [
-		Color8(255, 140, 0),
-		Color8(255, 230, 0),
-		Color8(0, 220, 255),
-		Color8(255, 0, 200),
-		Color8(200, 0, 255),
-		Color8(140, 140, 140),
-		Color8(255, 255, 255),
-	]
-	for col2 in order:
-		var key2: String = "%d,%d,%d" % [col2.r8, col2.g8, col2.b8]
-		if dots.has(key2):
-			var r: int = 6 if col2 == Color8(255, 255, 255) else 3
-			pv.draw_points(dots[key2]["pts"], col2, r)
-	# Legend box (swatches only — Godot Image has no PIL ImageDraw.text).
-	var nlines: int = 1
-	for lab in counts.keys():
-		nlines += 1
-	var box_h: int = 12 * nlines + 8
-	if pv.image != null:
-		pv.image.fill_rect(Rect2i(4, 4, 316, box_h), Color8(0, 0, 0))
-		var y: int = 20
-		for i in _CLASS_PREFIX.size():
-			var lab2: String = _CLASS_LABEL[i]
-			if counts.has(lab2):
-				pv.image.fill_rect(
-					Rect2i(8, y, 10, 10),
-					Color8(_CLASS_R[i], _CLASS_G[i], _CLASS_B[i])
-				)
-				y += 12
-		if counts.has("other/mesh"):
-			pv.image.fill_rect(Rect2i(8, y, 10, 10), Color8(140, 140, 140))
-	var dest: String = out_path
-	if dest.is_empty():
-		dest = map_dir.path_join("%s.debug.png" % stem)
-	var wr: Dictionary = pv.save(dest)
-	if BzErrors.is_err(wr):
-		return wr
-	return {"ok": true, "path": dest}
-
-
 static func _session_paths(session_dir: String) -> Dictionary:
-	## Private copy of BzSession.session_paths. BzSession.gd does not compile
-	## in Godot 4.7 (String.is_absolute); do not call it from this file.
+	## Local session-path map (no aipaths slot — render does not need it).
 	var residue: String = session_dir.path_join("residue")
 	return {
 		"root": session_dir,

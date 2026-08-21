@@ -6,10 +6,8 @@ func run(t) -> void:
 	var started: Array = []
 	var finished: Array = []
 	var failed: Array = []
-	var was_available: bool = Backend.available
 	var old_worker: Callable = Backend.test_worker
 
-	Backend.available = true
 	Backend.test_worker = _stub
 	var on_started := func(v): started.append(v)
 	var on_finished := func(v, _r): finished.append(v)
@@ -39,7 +37,6 @@ func run(t) -> void:
 	Backend.call_finished.disconnect(on_finished)
 	Backend.call_failed.disconnect(on_failed)
 	Backend.test_worker = old_worker
-	Backend.available = was_available
 
 
 func _stub(verb: String, _args: PackedStringArray) -> Dictionary:

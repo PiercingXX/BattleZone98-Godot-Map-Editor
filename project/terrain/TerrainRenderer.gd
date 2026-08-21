@@ -61,10 +61,6 @@ func set_water_visible(on: bool) -> void:
 	set_water_level(MapState.water_level())
 
 
-func is_water_visible() -> bool:
-	return _show_water
-
-
 func set_feature_mask(on: bool, tex: Texture2D = null, tint: Color = Color(0.12, 0.32, 0.62), water_m: float = -1.0) -> void:
 	_mask_on = on and tex != null
 	_mask_tint = tint

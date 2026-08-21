@@ -2,10 +2,9 @@ extends RefCounted
 class_name BzLayout
 ## Layout graph used by the Tier 2 validators (port of model/layout.py).
 ##
-## Only the construction + path APIs that validate/connectivity.py,
-## validate/balance.py and validate/report.py import. Generator-only
-## graph rules (LayoutGraph.validate / RuleResult / LayoutReport) are
-## out of scope (docs/03).
+## Only the construction + path APIs that the Tier 2 validators import.
+## Generator-only graph rules (LayoutGraph.validate / RuleResult /
+## LayoutReport) are out of scope.
 ##
 ## Python `Node` is `BzLayout.LayoutNode` here — Godot already owns `Node`.
 
@@ -13,7 +12,6 @@ const BASE := "base"
 const GEYSER := "geyser"
 const SCRAP := "scrap"
 const SPAWN := "spawn"
-const WAYPOINT := "waypoint"
 
 ## Rule B2: nearest-base separation as a fraction of the map diagonal.
 const B2_MIN_FRAC := 0.35
@@ -116,15 +114,6 @@ func economy_ids() -> Array:
 	for id in _nodes.keys():
 		var n: LayoutNode = _nodes[id]
 		if n.kind == GEYSER or n.kind == SCRAP:
-			out.append(n.id)
-	return out
-
-
-func waypoint_ids() -> Array:
-	var out: Array = []
-	for id in _nodes.keys():
-		var n: LayoutNode = _nodes[id]
-		if n.kind == WAYPOINT:
 			out.append(n.id)
 	return out
 
