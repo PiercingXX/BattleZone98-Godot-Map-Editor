@@ -6,6 +6,8 @@ const _CATEGORY_ORDER: PackedStringArray = [
 	"prop", "environment", "weapon", "other",
 ]
 const _PANEL_MIN_X := 294.0
+const _SWATCH_PX := 28
+const _SWATCH_BORDER := 2
 
 signal class_armed(rec: Dictionary)
 signal selection_query_applied
@@ -223,18 +225,22 @@ func sample_material(idx: int) -> String:
 
 func refresh_swatches() -> void:
 	var colors := MaterialPalette.colors()
+	# 2× source so the 28 px rect stays sharp after GPU scale.
+	var thumbnails := MaterialPalette.material_thumbnails(_SWATCH_PX * 2)
 	for i in _swatch_buttons.size():
 		var b: Button = _swatch_buttons[i]
 		b.tooltip_text = "%s  (%d)" % [MaterialPalette.type_name(i), i]
-		var sb := StyleBoxFlat.new()
-		sb.bg_color = colors[i]
-		sb.set_border_width_all(2)
-		sb.border_color = Color(1, 1, 1, 0.15)
-		sb.set_content_margin_all(2)
-		b.add_theme_stylebox_override("normal", sb)
-		var hover := sb.duplicate() as StyleBoxFlat
-		hover.border_color = Color(1, 1, 1, 0.55)
-		b.add_theme_stylebox_override("hover", hover)
+		var tex: Texture2D = null
+		if i < thumbnails.size() and thumbnails[i] is Texture2D:
+			tex = thumbnails[i]
+		var thumb := b.get_node_or_null("Thumb") as TextureRect
+		if thumb:
+			thumb.texture = tex
+			thumb.visible = tex != null
+		# Texture fills the button; stylebox is a selection ring. No atlas
+		# tile → keep the TRN flat colour as the swatch.
+		var bg := Color(0, 0, 0, 0) if tex != null else colors[i]
+		_apply_swatch_style(b, bg)
 	_highlight_swatch()
 
 
@@ -242,11 +248,38 @@ func _build_swatches() -> void:
 	_swatch_buttons.clear()
 	for i in 16:
 		var b := Button.new()
-		b.custom_minimum_size = Vector2(28, 22)
+		b.custom_minimum_size = Vector2(_SWATCH_PX, _SWATCH_PX)
 		b.focus_mode = Control.FOCUS_NONE
+		b.clip_contents = true
 		b.pressed.connect(_on_swatch.bind(i))
+		var thumb := TextureRect.new()
+		thumb.name = "Thumb"
+		thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		thumb.set_anchors_preset(Control.PRESET_FULL_RECT)
+		thumb.offset_left = _SWATCH_BORDER
+		thumb.offset_top = _SWATCH_BORDER
+		thumb.offset_right = -_SWATCH_BORDER
+		thumb.offset_bottom = -_SWATCH_BORDER
+		thumb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		thumb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		thumb.visible = false
+		b.add_child(thumb)
 		_swatches.add_child(b)
 		_swatch_buttons.append(b)
+
+
+func _apply_swatch_style(b: Button, bg: Color) -> void:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.set_border_width_all(_SWATCH_BORDER)
+	sb.border_color = Color(1, 1, 1, 0.15)
+	sb.set_content_margin_all(_SWATCH_BORDER)
+	b.add_theme_stylebox_override("normal", sb)
+	var hover := sb.duplicate() as StyleBoxFlat
+	hover.border_color = Color(1, 1, 1, 0.55)
+	b.add_theme_stylebox_override("hover", hover)
+	b.add_theme_stylebox_override("pressed", hover)
+	b.add_theme_stylebox_override("hover_pressed", hover)
 
 
 func _on_swatch(id: int) -> void:
@@ -262,13 +295,13 @@ func _highlight_swatch() -> void:
 	# button owns its own) so margins and hover styling survive.
 	for i in _swatch_buttons.size():
 		var b: Button = _swatch_buttons[i]
-		if not b.has_theme_stylebox_override("normal"):
-			continue
-		var sb := b.get_theme_stylebox("normal") as StyleBoxFlat
-		if sb == null:
-			continue
 		var active := i == ToolState.paint_material
-		sb.border_color = Color(0.95, 0.85, 0.25) if active else Color(1, 1, 1, 0.15)
+		var idle := Color(0.95, 0.85, 0.25) if active else Color(1, 1, 1, 0.15)
+		var hot := Color(0.95, 0.85, 0.25) if active else Color(1, 1, 1, 0.55)
+		for pair in [["normal", idle], ["hover", hot], ["pressed", hot], ["hover_pressed", hot]]:
+			var sb := b.get_theme_stylebox(str(pair[0])) as StyleBoxFlat
+			if sb:
+				sb.border_color = pair[1]
 
 
 func _fill() -> void:
@@ -539,10 +572,12 @@ func _on_armed() -> void:
 
 func _on_session() -> void:
 	# ToolState clears the armed class on session_changed; rebuild so the
-	# list does not keep a highlight from the previous map.
+	# list does not keep a highlight from the previous map. World (and its
+	# atlas) can change here too, so the swatches have to follow.
 	_fill()
 	if ToolState.armed.is_empty():
 		_list.deselect_all()
+	refresh_swatches()
 	refresh_context()
 
 

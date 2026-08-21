@@ -2,6 +2,9 @@ extends RefCounted
 class_name MaterialPalette
 ## Shared material colours / atlas UVs / type names for renderer and picker.
 
+static var _atlas_path: String = ""
+static var _atlas_image: Image = null
+
 
 static func colors() -> PackedColorArray:
 	var colors := PackedColorArray()
@@ -62,6 +65,87 @@ static func _current_world() -> Dictionary:
 		if str(world.get("id", "")).to_lower() == MapState.world.to_lower():
 			return world
 	return {}
+
+
+static func material_thumbnails(size: int = 28) -> Array:
+	## 16 slots: solid-tile crop from the world atlas, or null to use flat_color.
+	## Only tiles present in atlas_tiles are cropped — missing CSV rows keep
+	## the origin UV and would impersonate material 0 for unused slots.
+	var out: Array = []
+	out.resize(16)
+	var world := _current_world()
+	if world.is_empty():
+		return out
+	var path := str(world.get("atlas_image", ""))
+	if path.is_empty() or not FileAccess.file_exists(path):
+		return out
+	# DDS ice atlases blow out to white (same rule as TerrainRenderer).
+	if not path.to_lower().ends_with(".png"):
+		return out
+	var atlas := _load_atlas_png(path)
+	if atlas == null or atlas.get_width() < 2 or atlas.get_height() < 2:
+		return out
+	for i in 16:
+		var uv := _solid_tile_uv(world, i)
+		if uv.z <= 0.0 or uv.w <= 0.0:
+			continue
+		var tex := _crop_tile(atlas, uv, size)
+		if tex:
+			out[i] = tex
+	return out
+
+
+static func _load_atlas_png(path: String) -> Image:
+	if path == _atlas_path and _atlas_image != null:
+		return _atlas_image
+	var img := Image.load_from_file(path)
+	if img == null:
+		return null
+	_atlas_path = path
+	_atlas_image = img
+	return img
+
+
+static func _solid_tile_uv(world: Dictionary, idx: int) -> Vector4:
+	## Solid fill tile `{world}{i}{i}SA0` from the CSV table, or (0,0,0,0).
+	var tiles: Dictionary = world.get("atlas_tiles", {})
+	if tiles.is_empty() or idx < 0 or idx > 15:
+		return Vector4()
+	var wid := str(world.get("id", ""))
+	var prefix := wid.substr(0, mini(2, wid.length())).to_upper()
+	var d := ("%x" % idx).to_upper()
+	for name in [
+		"%s%s%sSA0.MAP" % [prefix, d, d],
+		"%s%s%sSA0" % [prefix, d, d],
+	]:
+		if not tiles.has(name):
+			continue
+		var r: Array = tiles[name]
+		if r.size() >= 4:
+			return Vector4(float(r[0]), float(r[1]), float(r[2]), float(r[3]))
+	return Vector4()
+
+
+static func _crop_tile(atlas: Image, uv: Vector4, size: int) -> ImageTexture:
+	var atlas_w := atlas.get_width()
+	var atlas_h := atlas.get_height()
+	var x0 := clampi(int(floor(uv.x * float(atlas_w))), 0, atlas_w - 1)
+	var y0 := clampi(int(floor(uv.y * float(atlas_h))), 0, atlas_h - 1)
+	var x1 := clampi(int(ceil((uv.x + uv.z) * float(atlas_w))), x0 + 1, atlas_w)
+	var y1 := clampi(int(ceil((uv.y + uv.w) * float(atlas_h))), y0 + 1, atlas_h)
+	var w := x1 - x0
+	var h := y1 - y0
+	# Skip the outer eighth so atlas seams do not dominate a 28 px swatch.
+	var inset_x := 0 if w < 8 else mini(w / 8, (w - 4) / 2)
+	var inset_y := 0 if h < 8 else mini(h / 8, (h - 4) / 2)
+	var crop: Image = atlas.get_region(Rect2i(
+		x0 + inset_x, y0 + inset_y, w - inset_x * 2, h - inset_y * 2
+	))
+	if crop == null or crop.get_width() < 1 or crop.get_height() < 1:
+		return null
+	if crop.get_width() != size or crop.get_height() != size:
+		crop.resize(size, size, Image.INTERPOLATE_BILINEAR)
+	return ImageTexture.create_from_image(crop)
 
 
 static func _texture_types() -> Array:
