@@ -51,6 +51,9 @@ var _gltf_cache: Dictionary = {}
 var _selected_set: Dictionary = {}
 var _hover_id: String = ""
 var _hull_mat: StandardMaterial3D
+var _gltf_loads_this_rebuild: int = 0
+var _gltf_deferred: Dictionary = {}
+const _GLTF_FIRST_PASS := 6
 
 
 func _ready() -> void:
@@ -108,13 +111,33 @@ func reset() -> void:
 	_by_id.clear()
 	_selected_set.clear()
 	_hover_id = ""
+	_gltf_deferred.clear()
+	_gltf_loads_this_rebuild = 0
 	set_process(false)
 	if _ghost:
 		_ghost.queue_free()
 		_ghost = null
 
 
+func sync_poses(field: HeightField) -> void:
+	for id in _by_id.keys():
+		var inst := _by_id[id] as Node3D
+		if inst == null:
+			continue
+		var rec := MapState.find_object(str(id))
+		if rec.is_empty():
+			continue
+		var x := float(rec.get("x", inst.position.x))
+		var z := float(rec.get("z", inst.position.z))
+		var y := float(rec.get("y", inst.position.y))
+		if field and field.grid_x > 0 and not bool(rec.get("pinned_y", false)):
+			y = field.height_at(x, z)
+		inst.position = Vector3(x, y, z)
+		inst.rotation.y = deg_to_rad(float(rec.get("yaw_deg", rad_to_deg(inst.rotation.y))))
+
+
 func rebuild(objects: Dictionary, field: HeightField) -> void:
+	_gltf_loads_this_rebuild = 0
 	var live: Dictionary = {}
 	for variant in objects.keys():
 		var records: Variant = objects[variant]
@@ -256,6 +279,7 @@ func apply_visibility() -> void:
 		var variant := str(inst.get_meta("variant", MapState.find_object_variant(str(id))))
 		var ghosted := is_variant_ghosted(variant)
 		inst.set_meta("ghosted", ghosted)
+		inst.set_meta("pickable", is_record_visible(rec) and variant == MapState.active_variant)
 		inst.visible = is_id_visible(str(id))
 		if rec.is_empty():
 			continue
@@ -392,12 +416,9 @@ func screen_points(camera: Camera3D) -> Dictionary:
 		var inst: Node3D = _by_id[id]
 		if inst == null or not inst.visible:
 			continue
-		if not is_id_pickable(str(id)):
+		if not bool(inst.get_meta("pickable", false)):
 			continue
-		var rec := MapState.find_object(str(id))
-		if rec.is_empty():
-			continue
-		var size := _size_for(str(rec.get("prjid", "")))
+		var size: Vector3 = inst.get_meta("size", Vector3(8, 6, 8))
 		var world := inst.position + Vector3(0.0, size.y * 0.5, 0.0)
 		if camera.is_position_behind(world):
 			continue
@@ -575,12 +596,9 @@ func pick(origin: Vector3, direction: Vector3) -> String:
 		var inst: Node3D = _by_id[id]
 		if inst == null or not inst.visible:
 			continue
-		if not is_id_pickable(str(id)):
+		if not bool(inst.get_meta("pickable", false)):
 			continue
-		var rec := MapState.find_object(str(id))
-		if rec.is_empty():
-			continue
-		var size := _size_for(str(rec.get("prjid", "")))
+		var size: Vector3 = inst.get_meta("size", Vector3(8, 6, 8))
 		# inst.position is the object's base; the visual extends size.y up.
 		var center := inst.position + Vector3(0.0, size.y * 0.5, 0.0)
 		var t := _ray_aabb(origin, direction, center, size)
@@ -607,6 +625,11 @@ func _update_placed(inst: Node3D, rec: Dictionary, field: HeightField, ghosted: 
 	inst.rotation.y = deg_to_rad(float(rec.get("yaw_deg", 0.0)))
 	inst.set_meta("variant", variant)
 	inst.set_meta("ghosted", ghosted)
+	var prjid := str(rec.get("prjid", ""))
+	inst.set_meta("prjid", prjid)
+	var size := _size_for(prjid)
+	inst.set_meta("size", size)
+	inst.set_meta("pickable", is_record_visible(rec) and variant == MapState.active_variant)
 	var shown := is_record_visible(rec)
 	if shown and variant != MapState.active_variant:
 		shown = ghost_other_variants
@@ -793,22 +816,61 @@ func _paint_accent(node: Node, col: Color) -> void:
 		_paint_accent(child, col)
 
 
+func pump_meshes(budget: int = 1) -> void:
+	if budget < 1 or _gltf_deferred.is_empty():
+		return
+	var prjid := str(_gltf_deferred.keys()[0])
+	var path := str(_gltf_deferred[prjid])
+	_gltf_deferred.erase(prjid)
+	if path.is_empty() or not FileAccess.file_exists(path):
+		return
+	if not _gltf_cache.has(path):
+		var doc := GLTFDocument.new()
+		var state := GLTFState.new()
+		if doc.append_from_file(path, state) != OK:
+			return
+		_gltf_cache[path] = doc.generate_scene(state)
+	var field := MapState.field
+	for id in _by_id.keys():
+		var inst := _by_id[id] as Node3D
+		if inst == null or str(inst.get_meta("prjid", "")) != prjid:
+			continue
+		if bool(inst.get_meta("gltf", false)):
+			continue
+		var rec := MapState.find_object(str(id))
+		if rec.is_empty():
+			continue
+		var variant := str(inst.get_meta("variant", MapState.active_variant))
+		var ghosted := bool(inst.get_meta("ghosted", false))
+		var neu := _make_visual(rec, ghosted)
+		_update_placed(neu, rec, field, ghosted, variant)
+		add_child(neu)
+		_by_id[str(id)] = neu
+		inst.queue_free()
+
+
 func _load_gltf(prjid: String) -> Node3D:
 	var info := MapState.class_info(prjid)
 	var path := str(info.get("mesh", ""))
 	if path.is_empty() or not FileAccess.file_exists(path):
 		return null
 	if not _gltf_cache.has(path):
+		if _gltf_loads_this_rebuild >= _GLTF_FIRST_PASS:
+			_gltf_deferred[prjid] = path
+			return null
+		_gltf_loads_this_rebuild += 1
 		var doc := GLTFDocument.new()
 		var state := GLTFState.new()
 		if doc.append_from_file(path, state) != OK:
 			return null
-		var scene := doc.generate_scene(state)
-		_gltf_cache[path] = scene
+		_gltf_cache[path] = doc.generate_scene(state)
 	var proto: Node = _gltf_cache[path]
 	if proto == null:
 		return null
-	return proto.duplicate() as Node3D
+	var inst := proto.duplicate() as Node3D
+	if inst:
+		inst.set_meta("gltf", true)
+	return inst
 
 
 func _fade(node: Node) -> void:

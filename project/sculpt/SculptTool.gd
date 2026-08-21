@@ -319,7 +319,6 @@ func _stamp_mask(cx_m: float, cz_m: float) -> void:
 				continue
 			mask[z * gx + x] = _mask_value
 	MapState.upload_mask(_mask_stem)
-	MapState.mark_features_dirty()
 	last_uploaded = (x1 - x0 + 1) * (z1 - z0 + 1)
 
 

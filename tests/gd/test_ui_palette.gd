@@ -163,6 +163,30 @@ func run(t) -> void:
 	_select_option(cat, "All")
 	clone.button_pressed = false
 
+	var many: Array = []
+	for i in 90:
+		many.append({
+			"prjid": "cls%02d" % i,
+			"label": "Class %d" % i,
+			"source": "game",
+			"category": "craft" if i < 50 else "building",
+			"placement_mode": "runtime",
+			"template_verified": false,
+		})
+	pal.set_classes({"classes": many}, "bzp")
+	t.ok(str(list.get_item_text(0)).begins_with("Type to search"), "unfiltered large list is a browse prompt")
+	t.ok(_index_of(list, "cls00") < 0, "individual classes are not dumped")
+	search.text = "cls00"
+	search.text_changed.emit("cls00")
+	t.ok(_index_of(list, "cls00") >= 0, "search still lists a hit")
+	search.text = ""
+	search.text_changed.emit("")
+	_select_option(cat, "building")
+	t.eq(list.item_count, 40, "category lists without a search")
+
+	_select_option(cat, "All")
+	clone.button_pressed = false
+
 	await _visibility_matrix(t, pal)
 
 	pal.queue_free()

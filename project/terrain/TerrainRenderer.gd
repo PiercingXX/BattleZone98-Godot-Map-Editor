@@ -13,6 +13,16 @@ var _mask_on: bool = false
 var _mask_tint: Color = Color(0.12, 0.32, 0.62)
 var _mask_water_level: float = -1.0
 var _sel_on: bool = false
+var _atlas_tex: Texture2D
+var _atlas_path: String = ""
+var _lut_tex: ImageTexture
+var _lut_world: String = ""
+var _brush_on: bool = false
+var _brush_center: Vector2 = Vector2.INF
+var _brush_radius: float = -1.0
+var _brush_falloff: float = -1.0
+var _brush_square: bool = false
+var _brush_count: int = 0
 
 
 func _ready() -> void:
@@ -36,6 +46,21 @@ func set_brush(on: bool, center: Vector2, radius: float, falloff: float, square:
 	for i in mini(4, pts.size()):
 		packed[i] = pts[i]
 	var count := mini(4, pts.size())
+	if (
+		on == _brush_on
+		and center == _brush_center
+		and is_equal_approx(radius, _brush_radius)
+		and is_equal_approx(falloff, _brush_falloff)
+		and square == _brush_square
+		and count == _brush_count
+	):
+		return
+	_brush_on = on
+	_brush_center = center
+	_brush_radius = radius
+	_brush_falloff = falloff
+	_brush_square = square
+	_brush_count = count
 	for child in get_children():
 		if child is MeshInstance3D:
 			var mat := (child as MeshInstance3D).material_override as ShaderMaterial
@@ -118,6 +143,8 @@ const _LUT_VARIANTS := 11  # variant nibble 0..10 → 'A'..'K' (F2 §2)
 ## kind: 0 solid, 1 cap, 2 diagonal. w == 0 marks "no such tile" and the
 ## shader falls back to the solid tile / flat colour.
 func _build_tile_lut() -> ImageTexture:
+	if _lut_tex != null and _lut_world == MapState.world:
+		return _lut_tex
 	var tiles: Dictionary = {}
 	for world in MapState.worlds:
 		if typeof(world) != TYPE_DICTIONARY:
@@ -158,7 +185,9 @@ func _build_tile_lut() -> ImageTexture:
 					if rect != null and (rect as Array).size() >= 4:
 						c = Color(rect[0], rect[1], rect[2], rect[3])
 					img.set_pixel(base * 16 + trans, kind * _LUT_VARIANTS + variant, c)
-	return ImageTexture.create_from_image(img)
+	_lut_tex = ImageTexture.create_from_image(img)
+	_lut_world = MapState.world
+	return _lut_tex
 
 
 func _load_atlas() -> Texture2D:
@@ -173,10 +202,14 @@ func _load_atlas() -> Texture2D:
 		# DDS ice atlases blow out to white in the viewport. PNG only.
 		if not path.to_lower().ends_with(".png"):
 			return null
+		if path == _atlas_path and _atlas_tex != null:
+			return _atlas_tex
 		var img := Image.load_from_file(path)
 		if img == null:
 			return null
-		return ImageTexture.create_from_image(img)
+		_atlas_tex = ImageTexture.create_from_image(img)
+		_atlas_path = path
+		return _atlas_tex
 	return null
 
 
@@ -190,6 +223,10 @@ func _set_all(name: String, value: Variant) -> void:
 
 func rebuild(p_field: HeightField) -> void:
 	field = p_field
+	_lut_tex = null
+	_lut_world = ""
+	_brush_on = false
+	_brush_center = Vector2.INF
 	for child in get_children():
 		child.queue_free()
 	if field == null or field.grid_x < 2:

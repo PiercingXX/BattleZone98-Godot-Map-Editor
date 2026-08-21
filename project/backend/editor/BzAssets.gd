@@ -58,6 +58,26 @@ const _DEFAULT_HEIGHT := {
 }
 
 
+## Convert one class to a cached `.glb` if it is not already there.
+## Used when Import Assets skipped conversion (index + proxies only).
+static func ensure_converted_mesh(prjid: String, game_root: String, cache_dir: String) -> Dictionary:
+	var stem := prjid.to_lower()
+	if stem.is_empty() or cache_dir.is_empty():
+		return {}
+	var glb := cache_dir.path_join("meshes").path_join("%s.glb" % stem)
+	if FileAccess.file_exists(glb):
+		return {"path": glb, "fidelity": "hd"}
+	var root := game_root
+	if root.is_empty() or not BzDiscover.is_game_install(root):
+		return {}
+	var search_roots: Array = [
+		root,
+		root.path_join("BZ_ASSETS"),
+		root.path_join("Edit"),
+	]
+	return _convert_class(stem, search_roots, glb)
+
+
 static func build_assets(
 	game_root: String,
 	cache_dir: String,

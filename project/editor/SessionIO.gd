@@ -84,10 +84,10 @@ func import_assets() -> void:
 		# Long job with no dialog: announce it so the button visibly did
 		# something. Completion refills the palette and logs the counts.
 		log.call(
-			"importing assets from %s — runs in the background, can take minutes"
+			"importing class index from %s — meshes convert when you arm a class"
 			% Settings.game_root, "info", true
 		)
-		Backend.assets(Settings.game_root, MapState.cache_dir(), true)
+		Backend.assets(Settings.game_root, MapState.cache_dir(), true, false)
 
 
 func test_in_game() -> void:

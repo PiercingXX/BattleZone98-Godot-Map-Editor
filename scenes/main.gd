@@ -204,8 +204,7 @@ func _wire() -> void:
 	if _status.has_signal("goto_submitted"):
 		_status.goto_submitted.connect(_on_goto_submitted)
 	_palette.class_armed.connect(func(rec):
-		ToolState.set_armed(rec)
-		_log.call("armed %s  %s  %s" % [rec.get("prjid"), rec.get("placement_mode"), rec.get("mesh_fidelity")])
+		_arm_class(rec)
 	)
 	_palette.selection_query_applied.connect(func():
 		if _objects:
@@ -255,6 +254,7 @@ func _wire() -> void:
 	MapState.objects_mutated.connect(_on_objects_mutated)
 	MapState.aipaths_changed.connect(_refresh_aipath_bar)
 	MapState.materials_changed.connect(_on_materials_changed)
+	MapState.object_poses_changed.connect(_on_object_poses_changed)
 	MapState.dirty_changed.connect(func():
 		if MapState.findings_stale and not MapState.findings.is_empty():
 			_findings.set_findings(MapState.findings, true)
@@ -330,6 +330,7 @@ func _process(_delta: float) -> void:
 	if not over_view:
 		_terrain.set_brush(false, Vector2.ZERO, 0.0, 0.0, false)
 		_update_select_hover(false)
+		_flush_live_gpu()
 		return
 	_update_select_hover(true)
 	var hit := _pick()
@@ -381,6 +382,7 @@ func _process(_delta: float) -> void:
 			else:
 				_sculpt.stamp(MapState.field, at.x, at.z)
 			_last_stamp = at
+	_flush_live_gpu()
 
 
 func _input(event: InputEvent) -> void:
@@ -678,6 +680,7 @@ func _on_lmb_up() -> void:
 	_stroking = false
 	if _sel_stroking:
 		_sel_stroking = false
+		MapState.flush_gpu()
 		_log.call(EditActions.terrain_selection_log("erase" if _sel_subtract else "add"))
 		return
 	if _mask_stroking:
@@ -687,6 +690,7 @@ func _on_lmb_up() -> void:
 			UndoStack.push(mask_cmd)
 			var mode := "erase" if _mask_erase else "paint"
 			_log.call("%s mask %s" % [mode, ToolState.mask_stem])
+		MapState.flush_gpu()
 		return
 	if ToolState.tool == "paint":
 		var paint_cmd = _sculpt.end_paint()
@@ -698,7 +702,8 @@ func _on_lmb_up() -> void:
 			UndoStack.push(cmd2, true)
 			if ToolState.tool == "clone":
 				_log.call("clone stamp")
-	_on_objects_mutated()
+	MapState.flush_gpu()
+	_on_object_poses_changed()
 
 
 func _begin_selection_stroke(p: Vector3, subtract: bool) -> void:
@@ -785,7 +790,8 @@ func _refresh_selection_overlay() -> void:
 	if MapState.selection_empty():
 		_terrain.set_selection_mask(false)
 		return
-	MapState.upload_terrain_selection()
+	if MapState.selection_texture == null:
+		MapState.upload_terrain_selection()
 	if MapState.selection_texture == null:
 		_terrain.set_selection_mask(false)
 		return
@@ -982,6 +988,7 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 			_log.call("%d findings (not an in-game verdict)" % MapState.findings.size())
 		"assets":
 			MapState.asset_index = result
+			MapState.rebuild_lookups()
 			Settings.last_cache_fingerprint = str(result.get("source_fingerprint", ""))
 			Settings.save()
 			_fill_palette()
@@ -1062,12 +1069,46 @@ func _try_load_asset_index() -> void:
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(idx))
 	if typeof(parsed) == TYPE_DICTIONARY:
 		MapState.asset_index = parsed
+		MapState.rebuild_lookups()
 		_fill_palette()
 
 
 func _fill_palette() -> void:
 	var pack: Dictionary = MapState.manifest.get("pack_context", {})
 	_palette.set_classes(MapState.asset_index, str(pack.get("kind", "bzp")))
+
+
+func _arm_class(rec: Dictionary) -> void:
+	if str(rec.get("mesh", "")).is_empty() and not Settings.game_root.is_empty():
+		var converted: Dictionary = BzAssets.ensure_converted_mesh(
+			str(rec.get("prjid", "")),
+			Settings.game_root,
+			MapState.cache_dir(),
+		)
+		var mesh := str(converted.get("path", ""))
+		if not mesh.is_empty():
+			rec = rec.duplicate()
+			rec["mesh"] = mesh
+			rec["mesh_fidelity"] = str(converted.get("fidelity", "hd"))
+			_patch_asset_mesh(str(rec.get("prjid", "")), mesh, str(rec.get("mesh_fidelity", "hd")))
+	ToolState.set_armed(rec)
+	_log.call("armed %s  %s  %s" % [rec.get("prjid"), rec.get("placement_mode"), rec.get("mesh_fidelity")])
+
+
+func _patch_asset_mesh(prjid: String, mesh: String, fidelity: String) -> void:
+	var classes: Variant = MapState.asset_index.get("classes", [])
+	if typeof(classes) != TYPE_ARRAY:
+		return
+	var key := prjid.to_lower()
+	for item in classes:
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		if str(item.get("prjid", "")).to_lower() != key:
+			continue
+		item["mesh"] = mesh
+		item["mesh_fidelity"] = fidelity
+		break
+	MapState.rebuild_lookups()
 
 
 func _on_finding_select(f: Dictionary) -> void:
@@ -1404,6 +1445,20 @@ func _on_session_changed() -> void:
 	camera_frame()
 	_terrain.refresh_materials()
 	_palette.refresh_swatches()
+
+
+func _flush_live_gpu() -> void:
+	if not MapState.has_session:
+		return
+	var uploaded := MapState.flush_gpu()
+	_sculpt.last_uploaded = uploaded
+	if _objects and _objects.has_method("pump_meshes"):
+		_objects.pump_meshes(1)
+
+
+func _on_object_poses_changed() -> void:
+	if _objects and _objects.has_method("sync_poses"):
+		_objects.sync_poses(MapState.field)
 
 
 func _on_objects_mutated() -> void:
@@ -1817,9 +1872,12 @@ func _on_more_selected(id: int) -> void:
 
 
 func _on_autosave() -> void:
-	if MapState.has_session and MapState.unsaved:
-		MapState.persist()
-		_log.call("autosaved session")
+	if not MapState.has_session or not MapState.unsaved:
+		return
+	if _stroking or Backend.busy:
+		return
+	MapState.persist()
+	_log.call("autosaved session")
 
 
 ## GIMP/Photoshop-style link between the New-map size dropdowns: depth

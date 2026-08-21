@@ -12,6 +12,8 @@ signal features_changed()
 signal aipaths_changed()
 signal mask_changed()
 signal selection_changed()
+## Y / xz pose only — markers should move in place, not rebuild.
+signal object_poses_changed()
 
 var stem: String = ""
 var width_m: int = 0
@@ -57,6 +59,15 @@ var findings: Array = []
 var findings_stale: bool = false
 var asset_index: Dictionary = {}
 var worlds: Array = []
+var _objects_by_id: Dictionary = {}
+var _variant_by_id: Dictionary = {}
+var _indexed_objects: Variant = null
+var _class_by_prjid: Dictionary = {}
+var _indexed_assets: Variant = null
+var _mat_gpu_dirty: bool = false
+var _mask_gpu_dirty: bool = false
+var _mask_gpu_stem: String = ""
+var _selection_gpu_dirty: bool = false
 
 ## True when the undo-point generation differs from the last open/save.
 ## Assigning `true` bumps a non-undoable dirty; `false` snapshots the save point.
@@ -140,6 +151,8 @@ func load_from_open(result: Dictionary) -> void:
 	_saved_generation = 0
 	UndoStack.clear()
 	mark_saved()
+	_rebuild_object_index()
+	_rebuild_class_index()
 	session_changed.emit()
 	water_changed.emit(water_level())
 
@@ -179,6 +192,13 @@ func clear() -> void:
 	materials = PackedInt32Array()
 	has_session = false
 	_saved_generation = 0
+	_objects_by_id.clear()
+	_variant_by_id.clear()
+	_indexed_objects = objects
+	_mat_gpu_dirty = false
+	_mask_gpu_dirty = false
+	_mask_gpu_stem = ""
+	_selection_gpu_dirty = false
 	session_changed.emit()
 
 
@@ -601,24 +621,36 @@ func write_mask_rect(feat_stem: String, x0: int, z0: int, w: int, d: int, values
 				mask[z * gx + x] = values[i]
 			i += 1
 	upload_mask(feat_stem)
+	flush_mask()
 	mark_features_dirty()
 
 
 func upload_mask(feat_stem: String) -> void:
 	if not has_heightmap() or feat_stem.is_empty():
 		return
-	var mask := ensure_mask(feat_stem)
+	_mask_gpu_stem = feat_stem
+	_mask_gpu_dirty = true
+
+
+func flush_mask() -> int:
+	if not _mask_gpu_dirty:
+		return 0
+	_mask_gpu_dirty = false
+	if not has_heightmap() or _mask_gpu_stem.is_empty():
+		return 0
+	var mask := ensure_mask(_mask_gpu_stem)
 	var gx := field.grid_x
 	var gz := field.grid_z
 	var n := gx * gz
 	if mask.size() != n:
 		mask.resize(n)
-		masks[feat_stem] = mask
+		masks[_mask_gpu_stem] = mask
 	mask_image = Image.create_from_data(gx, gz, false, Image.FORMAT_R8, mask)
 	if mask_texture == null or mask_texture.get_width() != gx or mask_texture.get_height() != gz:
 		mask_texture = ImageTexture.create_from_image(mask_image)
 	else:
 		mask_texture.update(mask_image)
+	return n
 
 
 func alloc_feature_stem(prefix: String) -> String:
@@ -812,24 +844,21 @@ func touch_object(variant: String, object_id: String) -> void:
 
 
 func find_object(object_id: String) -> Dictionary:
-	for variant in objects.keys():
-		var recs: Variant = objects[variant]
-		if typeof(recs) != TYPE_ARRAY:
-			continue
-		for rec in recs:
-			if typeof(rec) == TYPE_DICTIONARY and str(rec.get("id", "")) == object_id:
-				return rec
+	if object_id.is_empty():
+		return {}
+	_ensure_object_index()
+	var rec: Variant = _objects_by_id.get(object_id, null)
+	if typeof(rec) == TYPE_DICTIONARY:
+		return rec
 	return {}
 
 
 func find_object_variant(object_id: String) -> String:
-	for variant in objects.keys():
-		var recs: Variant = objects[variant]
-		if typeof(recs) != TYPE_ARRAY:
-			continue
-		for rec in recs:
-			if typeof(rec) == TYPE_DICTIONARY and str(rec.get("id", "")) == object_id:
-				return str(variant)
+	if object_id.is_empty():
+		return active_variant
+	_ensure_object_index()
+	if _variant_by_id.has(object_id):
+		return str(_variant_by_id[object_id])
 	return active_variant
 
 
@@ -837,7 +866,10 @@ func add_object_record(variant: String, rec: Dictionary) -> void:
 	if not objects.has(variant):
 		objects[variant] = []
 	objects[variant].append(rec)
-	touch_object(variant, str(rec.get("id", "")))
+	var oid := str(rec.get("id", ""))
+	_objects_by_id[oid] = rec
+	_variant_by_id[oid] = str(variant)
+	touch_object(variant, oid)
 	objects_changed()
 
 
@@ -851,6 +883,8 @@ func remove_object_record(variant: String, object_id: String) -> void:
 			continue
 		kept.append(rec)
 	objects[variant] = kept
+	_objects_by_id.erase(object_id)
+	_variant_by_id.erase(object_id)
 	touch_object(variant, object_id)
 	if object_id in selected_ids:
 		selected_ids.erase(object_id)
@@ -880,10 +914,16 @@ func player_in_variant(variant: String) -> bool:
 
 
 func class_info(prjid: String) -> Dictionary:
-	var classes: Array = asset_index.get("classes", [])
-	for rec in classes:
-		if typeof(rec) == TYPE_DICTIONARY and str(rec.get("prjid", "")).to_lower() == prjid.to_lower():
-			return rec
+	if prjid.is_empty():
+		return {}
+	_ensure_class_index()
+	var rec: Variant = _class_by_prjid.get(prjid.to_lower(), null)
+	if typeof(rec) == TYPE_DICTIONARY:
+		return rec
+	_rebuild_class_index()
+	rec = _class_by_prjid.get(prjid.to_lower(), null)
+	if typeof(rec) == TYPE_DICTIONARY:
+		return rec
 	return {}
 
 
@@ -907,7 +947,7 @@ func resnap_objects(x0: int, z0: int, w: int, d: int) -> void:
 				continue
 			rec["y"] = field.height_at(x, z)
 			touch_object(str(variant), str(rec.get("id", "")))
-	objects_changed()
+	object_poses_changed.emit()
 
 
 func set_material(tx: int, tz: int, mat_id: int) -> void:
@@ -926,25 +966,37 @@ func write_materials_rect(x0: int, z0: int, w: int, d: int, values: PackedInt32A
 				materials[z * mat_grid_x + x] = values[i]
 			i += 1
 	upload_materials()
+	flush_materials()
 
 
 func upload_materials() -> void:
 	if mat_grid_x < 1 or mat_grid_z < 1:
 		return
+	_mat_gpu_dirty = true
+
+
+func flush_materials() -> int:
+	if not _mat_gpu_dirty:
+		return 0
+	_mat_gpu_dirty = false
+	if mat_grid_x < 1 or mat_grid_z < 1:
+		return 0
 	# Full tile word per cell (F2 §2): R = byte0 (orientation<<4 | variant),
 	# G = byte1 (base<<4 | transition). The shader decodes the word and draws
 	# the same atlas tile the game would.
+	var n := mat_grid_x * mat_grid_z
 	var bytes := PackedByteArray()
-	bytes.resize(mat_grid_x * mat_grid_z * 2)
-	for i in materials.size():
+	bytes.resize(n * 2)
+	var count := mini(n, materials.size())
+	for i in count:
 		bytes[i * 2] = materials[i] & 0xFF
 		bytes[i * 2 + 1] = (materials[i] >> 8) & 0xFF
 	mat_image = Image.create_from_data(mat_grid_x, mat_grid_z, false, Image.FORMAT_RG8, bytes)
-	if mat_texture == null:
+	if mat_texture == null or mat_texture.get_width() != mat_grid_x or mat_texture.get_height() != mat_grid_z:
 		mat_texture = ImageTexture.create_from_image(mat_image)
 	else:
 		mat_texture.update(mat_image)
-	materials_changed.emit()
+	return n * 2
 
 
 func material_at(x_m: float, z_m: float) -> int:
@@ -964,10 +1016,13 @@ func _load_materials() -> void:
 	if file == null:
 		return
 	var n := mat_grid_x * mat_grid_z
+	var buf := file.get_buffer(n * 2)
 	materials.resize(n)
-	for i in n:
-		materials[i] = file.get_16()
+	var got := mini(n, int(buf.size() / 2))
+	for i in got:
+		materials[i] = buf.decode_u16(i * 2)
 	upload_materials()
+	flush_materials()
 
 
 func _write_materials() -> void:
@@ -977,8 +1032,12 @@ func _write_materials() -> void:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		return
-	for i in materials.size():
-		file.store_16(materials[i] & 0xFFFF)
+	var n := materials.size()
+	var buf := PackedByteArray()
+	buf.resize(n * 2)
+	for i in n:
+		buf.encode_u16(i * 2, materials[i] & 0xFFFF)
+	file.store_buffer(buf)
 
 
 func _read_json(path: String) -> Dictionary:
@@ -994,7 +1053,7 @@ func _write_json(path: String, data: Dictionary) -> void:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		return
-	file.store_string(JSON.stringify(data, "  "))
+	file.store_string(JSON.stringify(data))
 
 
 ## True when no terrain selection is active (every cell is editable).
@@ -1165,8 +1224,19 @@ func stamp_terrain_selection(
 				continue
 			var idx := z * gx + x
 			var add_v := int(round(w * 255.0))
-			terrain_selection[idx] = _combine_sel(int(terrain_selection[idx]), add_v, mode)
-	_recount_and_commit()
+			var old_v := int(terrain_selection[idx])
+			var new_v := _combine_sel(old_v, add_v, mode)
+			if new_v == old_v:
+				continue
+			terrain_selection[idx] = new_v
+			if old_v <= 0 and new_v > 0:
+				_selection_count += 1
+			elif old_v > 0 and new_v <= 0:
+				_selection_count -= 1
+	if _selection_count <= 0:
+		_reset_terrain_selection(true)
+		return
+	_selection_gpu_dirty = true
 
 
 func rect_terrain_selection(x0: int, z0: int, x1: int, z1: int, mode: String) -> void:
@@ -1273,20 +1343,30 @@ static func flood_fill_height(field: HeightField, sx: int, sz: int, tolerance_m:
 
 
 func upload_terrain_selection() -> void:
-	if not has_heightmap() or terrain_selection.is_empty():
+	_selection_gpu_dirty = true
+	flush_terrain_selection()
+
+
+func flush_terrain_selection() -> int:
+	if not _selection_gpu_dirty:
+		return 0
+	_selection_gpu_dirty = false
+	if not has_heightmap() or terrain_selection.is_empty() or _selection_count <= 0:
 		selection_image = null
 		selection_texture = null
-		return
+		return 0
 	var gx := field.grid_x
 	var gz := field.grid_z
 	var n := gx * gz
 	if terrain_selection.size() != n:
-		return
+		return 0
 	selection_image = Image.create_from_data(gx, gz, false, Image.FORMAT_R8, terrain_selection)
 	if selection_texture == null or selection_texture.get_width() != gx or selection_texture.get_height() != gz:
 		selection_texture = ImageTexture.create_from_image(selection_image)
 	else:
 		selection_texture.update(selection_image)
+	selection_changed.emit()
+	return n
 
 
 func _reset_terrain_selection(emit_change: bool) -> void:
@@ -1295,6 +1375,7 @@ func _reset_terrain_selection(emit_change: bool) -> void:
 	selection_texture = null
 	selection_image = null
 	_selection_count = 0
+	_selection_gpu_dirty = false
 	if emit_change and had:
 		selection_changed.emit()
 
@@ -1380,6 +1461,68 @@ func _recount_and_commit() -> void:
 	_selection_count = count
 	upload_terrain_selection()
 	selection_changed.emit()
+
+
+func rebuild_lookups() -> void:
+	_rebuild_object_index()
+	_rebuild_class_index()
+
+
+func flush_gpu() -> int:
+	var n := 0
+	if field != null:
+		n += field.flush_upload()
+	n += flush_materials()
+	n += flush_mask()
+	n += flush_terrain_selection()
+	return n
+
+
+func _ensure_object_index() -> void:
+	if is_same(objects, _indexed_objects):
+		return
+	_rebuild_object_index()
+
+
+func _rebuild_object_index() -> void:
+	_objects_by_id.clear()
+	_variant_by_id.clear()
+	for variant in objects.keys():
+		var recs: Variant = objects[variant]
+		if typeof(recs) != TYPE_ARRAY:
+			continue
+		var vname := str(variant)
+		for rec in recs:
+			if typeof(rec) != TYPE_DICTIONARY:
+				continue
+			var oid := str(rec.get("id", ""))
+			if oid.is_empty():
+				continue
+			_objects_by_id[oid] = rec
+			_variant_by_id[oid] = vname
+	_indexed_objects = objects
+
+
+func _ensure_class_index() -> void:
+	if is_same(asset_index, _indexed_assets):
+		return
+	_rebuild_class_index()
+
+
+func _rebuild_class_index() -> void:
+	_class_by_prjid.clear()
+	var classes: Variant = asset_index.get("classes", [])
+	if typeof(classes) != TYPE_ARRAY:
+		_indexed_assets = asset_index
+		return
+	for rec in classes:
+		if typeof(rec) != TYPE_DICTIONARY:
+			continue
+		var key := str(rec.get("prjid", "")).to_lower()
+		if key.is_empty():
+			continue
+		_class_by_prjid[key] = rec
+	_indexed_assets = asset_index
 
 
 func _uuid4() -> String:

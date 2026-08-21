@@ -55,4 +55,4 @@ func _apply_snaps(snaps: Array) -> void:
 			continue
 		rec["y"] = float(snap.get("y", rec.get("y", 0.0)))
 		MapState.touch_object(str(snap.get("variant", "")), str(snap.get("id", "")))
-	MapState.objects_changed()
+	MapState.object_poses_changed.emit()

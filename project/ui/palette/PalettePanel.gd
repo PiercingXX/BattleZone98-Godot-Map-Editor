@@ -8,6 +8,7 @@ const _CATEGORY_ORDER: PackedStringArray = [
 const _PANEL_MIN_X := 294.0
 const _SWATCH_PX := 28
 const _SWATCH_BORDER := 2
+const _LIST_ALL_MAX := 80
 
 signal class_armed(rec: Dictionary)
 signal selection_query_applied
@@ -310,6 +311,9 @@ func _fill() -> void:
 	var q := _filter.to_lower()
 	var cat := _selected_category()
 	var clone_only := _clone_safe.button_pressed
+	if q.is_empty() and cat.is_empty() and not clone_only and classes.size() > _LIST_ALL_MAX:
+		_fill_browse_prompt(classes)
+		return
 	var added := 0
 	for rec in classes:
 		if typeof(rec) != TYPE_DICTIONARY:
@@ -340,6 +344,31 @@ func _fill() -> void:
 	else:
 		_list.sort_items_by_text()
 		_restore_armed_selection()
+
+
+func _fill_browse_prompt(classes: Array) -> void:
+	var counts: Dictionary = {}
+	for rec in classes:
+		if typeof(rec) != TYPE_DICTIONARY:
+			continue
+		var c := str(rec.get("category", "other"))
+		if c.is_empty():
+			c = "other"
+		counts[c] = int(counts.get(c, 0)) + 1
+	var hint := _list.add_item("Type to search, or pick a category  (%d classes)" % classes.size())
+	_list.set_item_metadata(hint, {})
+	_list.set_item_disabled(hint, true)
+	for cat in _CATEGORY_ORDER:
+		if not counts.has(cat):
+			continue
+		var i := _list.add_item("%s  (%d)" % [cat, counts[cat]])
+		_list.set_item_metadata(i, {"browse_cat": cat})
+		counts.erase(cat)
+	var extra: Array = counts.keys()
+	extra.sort()
+	for cat in extra:
+		var i := _list.add_item("%s  (%d)" % [str(cat), counts[cat]])
+		_list.set_item_metadata(i, {"browse_cat": str(cat)})
 
 
 func _rebuild_category_items() -> void:
@@ -385,6 +414,16 @@ func _selected_category() -> String:
 	return str(meta) if meta != null else ""
 
 
+func _select_category(cat: String) -> void:
+	if _category == null:
+		return
+	for i in _category.item_count:
+		if str(_category.get_item_metadata(i)) == cat:
+			_category.select(i)
+			_fill()
+			return
+
+
 func _empty_message(total: int) -> String:
 	if total == 0:
 		if Settings.game_root.is_empty():
@@ -420,6 +459,10 @@ func _restore_armed_selection() -> void:
 func _on_selected(index: int) -> void:
 	var rec = _list.get_item_metadata(index)
 	if typeof(rec) != TYPE_DICTIONARY or rec.is_empty():
+		return
+	var browse := str(rec.get("browse_cat", ""))
+	if not browse.is_empty():
+		_select_category(browse)
 		return
 	if _list.is_item_disabled(index):
 		return
