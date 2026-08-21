@@ -25,8 +25,7 @@ data passes through verbatim; byte-identical round-trips are enforced by the
 test suite, not promised by convention.
 
 The internal boundary between the two halves is
-[`docs/02-bzmap-bridge.md`](docs/02-bzmap-bridge.md) (session model) and
-[`docs/03-gdscript-port.md`](docs/03-gdscript-port.md) (the port layout).
+[`docs/02-bzmap-bridge.md`](docs/02-bzmap-bridge.md) (session model).
 
 ## Features
 
@@ -48,7 +47,6 @@ The internal boundary between the two halves is
 |---|---|
 | [`AGENTS.md`](AGENTS.md) | Operating rules for Skippy. |
 | [`docs/02-bzmap-bridge.md`](docs/02-bzmap-bridge.md) | The session model and verb contract between the UI and the format layer. |
-| [`docs/03-gdscript-port.md`](docs/03-gdscript-port.md) | The pure-GDScript port: layout, conventions, module table. |
 | [`docs/formats/`](docs/formats/README.md) | Clean-room functional specs for every game file format (`F1`–`F8`). |
 
 ## Run it

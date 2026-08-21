@@ -13,8 +13,7 @@ round-trips are a test requirement, not an aspiration.**
 The format toolchain was originally the bundled Python package
 `backend/bzmap`, invoked as a subprocess per `docs/02-bzmap-bridge.md`. It
 was ported to GDScript in full (minus the map generator) on 2026-08-17, and
-`backend/` was deleted — see `docs/03-gdscript-port.md` for the decision,
-layout, and conventions, and git history (`af28863^`) for the Python
+`backend/` was deleted — see git history (`af28863^`) for the Python
 reference. Where the port and a spec in `docs/formats/` disagree, the ported
 (Python-derived) behavior wins; each such case is flagged in a code comment.
 

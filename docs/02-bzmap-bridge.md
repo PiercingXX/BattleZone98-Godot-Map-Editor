@@ -1,8 +1,7 @@
 # 02 — The `bzmap` bridge contract
 
 > **Status (2026-08-17):** the Python subprocess backend this document was
-> written against has been ported to GDScript in full — see
-> [`docs/03-gdscript-port.md`](03-gdscript-port.md). The **session model (§1),
+> written against has been ported to GDScript in full. The **session model (§1),
 > verb payload shapes (§3–4), error shapes (§5), and the crash-safety gate
 > (§6) remain the canonical contract**, now between the UI and the in-process
 > format layer under `project/backend/`. The invocation mechanics (§2) and

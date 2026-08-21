@@ -15,7 +15,7 @@ code copied to produce them.
 ## Where implementations go
 
 Every one of these formats is implemented in the **GDScript format layer**
-under `project/backend/formats/` (see `docs/03-gdscript-port.md`), ported from
+under `project/backend/formats/`, ported from
 the `bzmap` Python toolchain originally developed in the sibling repo
 `battlezone98-map-generator`. Format code lives there and only there — the
 editor UI never parses game bytes itself. See `AGENTS.md` §"the single most
