@@ -32,6 +32,33 @@ func run(t) -> void:
 	MapState.write_materials_rect(7, 7, 2, 2, big)
 	t.eq(MapState.materials[7 * 8 + 7], 7, "high corner clip")
 
+	MapState.materials.fill(0)
+	for z in range(2, 5):
+		for x in range(2, 5):
+			MapState.set_material(x, z, 5)
+	MapState.rematch_materials_rect(1, 1, 5, 5)
+	var gx := 8
+	t.eq(MapState.materials[3 * gx + 3], BzMat.encode_entry(5, 5), "3×3 interior stays solid")
+	var north: int = MapState.materials[2 * gx + 3]
+	t.eq((north >> 12) & 0xF, 5, "north edge keeps 5")
+	t.eq((north >> 8) & 0xF, 0, "north edge meets 0")
+	t.eq((north >> 7) & 1, 0, "straight edge is a cap")
+	var nw: int = MapState.materials[2 * gx + 2]
+	t.eq((nw >> 12) & 0xF, 5, "NW corner keeps 5")
+	t.eq((nw >> 8) & 0xF, 0)
+	t.eq((nw >> 7) & 1, 1, "NW outer corner is a diagonal")
+	t.eq(MapState.materials[1 * gx + 1], 0, "kitty-corner background stays solid")
+	MapState.materials.fill(0)
+	for x in range(2, 5):
+		MapState.set_material(x, 2, 5)
+	for z in range(3, 5):
+		MapState.set_material(2, z, 5)
+	MapState.rematch_materials_rect(1, 1, 5, 5)
+	var bite: int = MapState.materials[3 * gx + 3]
+	t.eq((bite >> 12) & 0xF, 0, "L-shape inner corner stays the background")
+	t.eq((bite >> 8) & 0xF, 5)
+	t.eq((bite >> 7) & 1, 1, "L-shape inner corner is a diagonal")
+
 	MapState.mat_grid_x = saved_x
 	MapState.mat_grid_z = saved_z
 	MapState.materials = saved_mats

@@ -69,6 +69,8 @@ var _mat_sel_btn: Button
 var _terrain_hint: Label
 var _clone_row: HBoxContainer
 var _clone_mats: CheckBox
+var _match_edges: CheckBox
+var _match_btn: Button
 var _clone_hint: Label
 var _snap_grid: OptionButton
 var _snap_angle: OptionButton
@@ -92,6 +94,7 @@ func _ready() -> void:
 	_shape_circle.pressed.connect(func(): _on_shape("circle"))
 	_shape_square.pressed.connect(func(): _on_shape("square"))
 	_build_swatches()
+	_build_paint_match()
 	_build_select_tools()
 	_build_snap_tools()
 	_build_symmetry()
@@ -267,6 +270,30 @@ func _build_swatches() -> void:
 		b.add_child(thumb)
 		_swatches.add_child(b)
 		_swatch_buttons.append(b)
+
+
+func _build_paint_match() -> void:
+	if _mats_section == null or _match_edges != null:
+		return
+	_match_edges = CheckBox.new()
+	_match_edges.name = "MatchEdges"
+	_match_edges.text = "Match corners"
+	_match_edges.tooltip_text = "After painting, recode the edge as caps and the corners as diagonals (the tiles the game actually draws)."
+	_match_edges.focus_mode = Control.FOCUS_NONE
+	_match_edges.button_pressed = ToolState.paint_match_edges
+	_match_edges.toggled.connect(func(on: bool) -> void:
+		ToolState.set_paint_match_edges(on)
+	)
+	_mats_section.add_child(_match_edges)
+	_match_btn = Button.new()
+	_match_btn.name = "MatchNow"
+	_match_btn.text = "Match now"
+	_match_btn.tooltip_text = "Recode caps and corners for the terrain selection, or the whole map if nothing is selected. Undoable."
+	_match_btn.focus_mode = Control.FOCUS_NONE
+	_match_btn.pressed.connect(func() -> void:
+		EditActions.rematch_material_edges(EditorFeedback.log)
+	)
+	_mats_section.add_child(_match_btn)
 
 
 func _apply_swatch_style(b: Button, bg: Color) -> void:
@@ -1294,6 +1321,8 @@ func _sync_from_state() -> void:
 	_highlight_swatch()
 	_sync_symmetry_from_state()
 	_sync_snap_from_state()
+	if _match_edges and _match_edges.button_pressed != ToolState.paint_match_edges:
+		_match_edges.button_pressed = ToolState.paint_match_edges
 	_syncing = false
 
 

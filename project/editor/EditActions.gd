@@ -90,6 +90,89 @@ static func shrink_terrain(cells: int, log: Callable = Callable()) -> void:
 	_log(log, terrain_selection_log("shrunk %d cell%s" % [cells, "s" if cells != 1 else ""]))
 
 
+static func rematch_material_edges(log: Callable = Callable()) -> void:
+	if not MapState.has_session:
+		_log(log, "open a map first")
+		return
+	if MapState.mat_grid_x < 1 or MapState.mat_grid_z < 1:
+		_log(log, "map has no material grid")
+		return
+	var gx := MapState.mat_grid_x
+	var gz := MapState.mat_grid_z
+	var x0 := 0
+	var z0 := 0
+	var x1 := gx - 1
+	var z1 := gz - 1
+	if not MapState.selection_empty() and MapState.has_heightmap():
+		var bounds := _mat_bounds_from_terrain_selection()
+		if bounds.size.x < 1 or bounds.size.y < 1:
+			_log(log, "selection does not cover any material tiles")
+			return
+		x0 = maxi(0, bounds.position.x - 1)
+		z0 = maxi(0, bounds.position.y - 1)
+		x1 = mini(gx - 1, bounds.position.x + bounds.size.x)
+		z1 = mini(gz - 1, bounds.position.y + bounds.size.y)
+	var w := x1 - x0 + 1
+	var d := z1 - z0 + 1
+	var before := _copy_materials_rect(x0, z0, w, d)
+	MapState.rematch_materials_rect(x0, z0, w, d)
+	MapState.flush_gpu()
+	var after := _copy_materials_rect(x0, z0, w, d)
+	if before == after:
+		_log(log, "corners already matched")
+		return
+	var cmd = MaterialStrokeCommand.new()
+	cmd.tool = "match"
+	cmd.setup(x0, z0, w, d, before, after)
+	UndoStack.push(cmd, true)
+	MapState.mark_materials_dirty()
+	_log(log, "matched caps and corners")
+
+
+static func _mat_bounds_from_terrain_selection() -> Rect2i:
+	var empty := Rect2i()
+	if MapState.selection_empty() or not MapState.has_heightmap():
+		return empty
+	var field: HeightField = MapState.field
+	var hgx := field.grid_x
+	var hgz := field.grid_z
+	var sel := MapState.terrain_selection
+	if sel.size() != hgx * hgz:
+		return empty
+	var cell := HeightField.CELL_M
+	var tile := 20.0
+	var min_x := MapState.mat_grid_x
+	var min_z := MapState.mat_grid_z
+	var max_x := -1
+	var max_z := -1
+	for hz in hgz:
+		for hx in hgx:
+			if sel[hz * hgx + hx] == 0:
+				continue
+			var tx := clampi(int(floor((float(hx) + 0.5) * cell / tile)), 0, MapState.mat_grid_x - 1)
+			var tz := clampi(int(floor((float(hz) + 0.5) * cell / tile)), 0, MapState.mat_grid_z - 1)
+			min_x = mini(min_x, tx)
+			min_z = mini(min_z, tz)
+			max_x = maxi(max_x, tx)
+			max_z = maxi(max_z, tz)
+	if max_x < min_x:
+		return empty
+	return Rect2i(min_x, min_z, max_x - min_x + 1, max_z - min_z + 1)
+
+
+static func _copy_materials_rect(x0: int, z0: int, w: int, d: int) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	out.resize(w * d)
+	var gx := MapState.mat_grid_x
+	var i := 0
+	for z in range(z0, z0 + d):
+		for x in range(x0, x0 + w):
+			if x >= 0 and z >= 0 and x < gx and z < MapState.mat_grid_z:
+				out[i] = MapState.materials[z * gx + x]
+			i += 1
+	return out
+
+
 static func select_terrain_by_material(log: Callable = Callable()) -> void:
 	if not MapState.has_session or not MapState.has_heightmap():
 		_log(log, "open a map first")

@@ -30,6 +30,8 @@ var strength: float = 0.45
 var falloff: float = 0.65
 var shape: String = "circle"
 var paint_material: int = 0
+## Paint stamps recode the 1-tile halo as caps / diagonals (F2 §5). Default on.
+var paint_match_edges: bool = true
 var armed: Dictionary = {}
 ## Active mask target: "water" / "plants" and its stem. Empty = none.
 var mask_kind: String = ""
@@ -110,6 +112,13 @@ func set_paint_material(id: int) -> void:
 	if paint_material == id:
 		return
 	paint_material = id
+	brush_changed.emit()
+
+
+func set_paint_match_edges(on: bool) -> void:
+	if paint_match_edges == on:
+		return
+	paint_match_edges = on
 	brush_changed.emit()
 
 

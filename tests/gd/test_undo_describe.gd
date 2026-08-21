@@ -19,6 +19,9 @@ func run(t) -> void:
 	t.eq(height.describe(), "noise stroke")
 
 	t.eq(MaterialStrokeCommand.new().describe(), "paint stroke")
+	var match_cmd := MaterialStrokeCommand.new()
+	match_cmd.tool = "match"
+	t.eq(match_cmd.describe(), "match corners")
 	t.eq(CloneStrokeCommand.new().describe(), "clone stroke")
 
 	var mask := MaskStrokeCommand.new()

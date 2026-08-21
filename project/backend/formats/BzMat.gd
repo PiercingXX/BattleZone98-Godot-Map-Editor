@@ -256,6 +256,117 @@ static func _march_square(colors: PackedInt32Array) -> int:
 	return encode_entry(base, nxt, cap, flip, rot)
 
 
+## F2 §5 painter: a 2×2 of vertex colours → tile word, with 1-vertex corners
+## promoted to diagonals (cap bit). Edges stay caps (flip bit). Height-based
+## auto_paint keeps `_march_square` unchanged.
+static func autotile_quad(colors: PackedInt32Array) -> int:
+	var word: int = _march_square(colors)
+	var mat_a: int = (word >> 12) & MATERIAL_MASK
+	var mat_b: int = (word >> 8) & MATERIAL_MASK
+	if mat_a == mat_b:
+		return word
+	var cap: int = (word >> 7) & 1
+	var flip: int = (word >> 6) & 1
+	if cap == 0 and flip == 0:
+		return word | (1 << 7)
+	return word
+
+
+## Face-centred match (F2 §5): `self_m` vs four orthogonal neighbour fills.
+## Out-of-range neighbours should be passed as `self_m` so map borders autotile.
+static func autotile_neighbors(self_m: int, n: int, e: int, s: int, w: int) -> int:
+	self_m &= MATERIAL_MASK
+	n &= MATERIAL_MASK
+	e &= MATERIAL_MASK
+	s &= MATERIAL_MASK
+	w &= MATERIAL_MASK
+	var ns := n == self_m
+	var es := e == self_m
+	var ss := s == self_m
+	var ws := w == self_m
+	var k: int = int(ns) + int(es) + int(ss) + int(ws)
+	if k == 4 or k == 0:
+		return encode_entry(self_m, self_m)
+	var other: int = self_m
+	if not ns:
+		other = n
+	elif not es:
+		other = e
+	elif not ss:
+		other = s
+	else:
+		other = w
+	if k == 3:
+		if not ns:
+			return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 0))
+		if not es:
+			return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 1))
+		if not ss:
+			return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 2))
+		return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 3))
+	if k == 2:
+		if ns and ss:
+			return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 1 if not es else 3))
+		if es and ws:
+			return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 0 if not ns else 2))
+		# Adjacent same-neighbours: this cell is an outer corner of `self_m`.
+		# The foreign vertex is opposite the two same sides (F2 §5.3).
+		if es and ss:
+			return _autotile_owned(self_m, other, _autotile_diag(self_m, other, 0))
+		if ss and ws:
+			return _autotile_owned(self_m, other, _autotile_diag(self_m, other, 1))
+		if ws and ns:
+			return _autotile_owned(self_m, other, _autotile_diag(self_m, other, 2))
+		return _autotile_owned(self_m, other, _autotile_diag(self_m, other, 3))
+	if ns:
+		return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 2))
+	if es:
+		return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 3))
+	if ss:
+		return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 0))
+	return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 1))
+
+
+static func _autotile_owned(self_m: int, other: int, word: int) -> int:
+	var cap: int = (word >> 7) & 1
+	var flip: int = (word >> 6) & 1
+	var rot: int = (word >> 4) & 0x3
+	var variant: int = word & 0x3
+	return encode_entry(self_m, other, cap, flip, rot, variant)
+
+
+static func _autotile_cap(self_m: int, other: int, side: int) -> int:
+	var c := PackedInt32Array([self_m, self_m, self_m, self_m])
+	match side:
+		0:
+			c[0] = other
+			c[1] = other
+		1:
+			c[1] = other
+			c[2] = other
+		2:
+			c[2] = other
+			c[3] = other
+		_:
+			c[0] = other
+			c[3] = other
+	return autotile_quad(c)
+
+
+static func _autotile_diag(self_m: int, other: int, corner: int) -> int:
+	var c := PackedInt32Array([self_m, self_m, self_m, self_m])
+	match corner:
+		0:
+			c[0] = other
+		1:
+			c[1] = other
+		2:
+			c[2] = other
+		_:
+			c[3] = other
+	return autotile_quad(c)
+
+
 static func auto_paint(heightmap: Variant, rules: Array) -> Variant:
 	var raw: PackedInt32Array = heightmap.data
 	var w: int = int(heightmap.grid_x)

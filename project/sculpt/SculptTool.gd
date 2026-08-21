@@ -340,6 +340,13 @@ func _stamp_paint(cx_m: float, cz_m: float) -> void:
 			if w <= 0.0:
 				continue
 			MapState.set_material(x, z, paint_material)
+	if ToolState.paint_match_edges:
+		var mx0 := maxi(0, x0 - 1)
+		var mz0 := maxi(0, z0 - 1)
+		var mx1 := mini(MapState.mat_grid_x - 1, x1 + 1)
+		var mz1 := mini(MapState.mat_grid_z - 1, z1 + 1)
+		_expand(mx0, mz0, mx1, mz1)
+		MapState.rematch_materials_rect(mx0, mz0, mx1 - mx0 + 1, mz1 - mz0 + 1)
 	MapState.upload_materials()
 
 

@@ -6,6 +6,7 @@ func run(t) -> void:
 	var tmp: String = _tmp_dir()
 	_test_encode_decode(t)
 	_test_march_square(t)
+	_test_autotile_neighbors(t)
 	_test_factor_pair(t)
 	_test_parse_one_zone(t, tmp)
 	_test_parse_two_zone(t, tmp)
@@ -65,6 +66,29 @@ func _test_march_square(t) -> void:
 	for c in cases:
 		var colors := PackedInt32Array(c[0])
 		t.eq(BzMat._march_square(colors), int(c[1]), "march %s" % str(c[0]))
+
+
+func _test_autotile_neighbors(t) -> void:
+	t.eq(BzMat.autotile_neighbors(5, 5, 5, 5, 5), BzMat.encode_entry(5, 5), "interior is solid")
+	t.eq(BzMat.autotile_neighbors(5, 0, 0, 0, 0), BzMat.encode_entry(5, 5), "island is solid")
+	var edge: int = BzMat.autotile_neighbors(5, 0, 5, 5, 5)
+	t.eq((edge >> 12) & 0xF, 5, "edge keeps painted base")
+	t.eq((edge >> 8) & 0xF, 0, "edge transitions to the outsider")
+	t.eq((edge >> 7) & 1, 0, "straight run is a cap")
+	t.eq((edge >> 6) & 1, 1, "cap uses the edge (flip) packing")
+	var corner: int = BzMat.autotile_neighbors(5, 0, 5, 5, 0)
+	t.eq((corner >> 12) & 0xF, 5, "corner keeps painted base")
+	t.eq((corner >> 8) & 0xF, 0, "corner transitions to the outsider")
+	t.eq((corner >> 7) & 1, 1, "outer corner is a diagonal")
+	var inner: int = BzMat.autotile_neighbors(0, 5, 0, 0, 5)
+	t.eq((inner >> 12) & 0xF, 0, "inner corner stays the background")
+	t.eq((inner >> 8) & 0xF, 5, "inner corner meets the painted pair")
+	t.eq((inner >> 7) & 1, 1, "inner corner is a diagonal")
+	# One-vertex march without promotion is a cap; autotile_quad upgrades it.
+	var raw: int = BzMat._march_square(PackedInt32Array([2, 1, 1, 1]))
+	t.eq((raw >> 7) & 1, 0, "march 1-vertex is a cap")
+	var promoted: int = BzMat.autotile_quad(PackedInt32Array([2, 1, 1, 1]))
+	t.eq((promoted >> 7) & 1, 1, "autotile_quad promotes the corner")
 
 
 func _test_factor_pair(t) -> void:

@@ -7,10 +7,15 @@ var width: int
 var depth: int
 var before: PackedInt32Array
 var after: PackedInt32Array
+var tool: String = ""
 
 
 func describe() -> String:
-	return "paint stroke"
+	if tool == "match":
+		return "match corners"
+	if tool.is_empty():
+		return "paint stroke"
+	return "%s stroke" % tool
 
 
 func setup(p_x0: int, p_z0: int, p_w: int, p_d: int, p_before: PackedInt32Array, p_after: PackedInt32Array) -> void:

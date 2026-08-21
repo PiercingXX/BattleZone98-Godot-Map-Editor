@@ -958,6 +958,35 @@ func set_material(tx: int, tz: int, mat_id: int) -> void:
 	materials[tz * mat_grid_x + tx] = word
 
 
+## F2 §5: recode a rect (plus a 1-tile halo) as solids / caps / diagonals
+## from each cell's base nibble and its four orthogonal neighbours.
+func rematch_materials_rect(x0: int, z0: int, w: int, d: int) -> void:
+	if mat_grid_x < 1 or mat_grid_z < 1 or materials.is_empty():
+		return
+	var gx := mat_grid_x
+	var gz := mat_grid_z
+	var fill := PackedByteArray()
+	fill.resize(gx * gz)
+	var nfill := mini(fill.size(), materials.size())
+	for i in nfill:
+		fill[i] = (materials[i] >> 12) & 0xF
+	var xa := clampi(x0, 0, gx - 1)
+	var za := clampi(z0, 0, gz - 1)
+	var xb := clampi(x0 + w - 1, 0, gx - 1)
+	var zb := clampi(z0 + d - 1, 0, gz - 1)
+	if xb < xa or zb < za:
+		return
+	for z in range(za, zb + 1):
+		for x in range(xa, xb + 1):
+			var self_m: int = fill[z * gx + x]
+			var nn: int = fill[(z - 1) * gx + x] if z > 0 else self_m
+			var ee: int = fill[z * gx + x + 1] if x + 1 < gx else self_m
+			var ss: int = fill[(z + 1) * gx + x] if z + 1 < gz else self_m
+			var ww: int = fill[z * gx + x - 1] if x > 0 else self_m
+			materials[z * gx + x] = BzMat.autotile_neighbors(self_m, nn, ee, ss, ww)
+	upload_materials()
+
+
 func write_materials_rect(x0: int, z0: int, w: int, d: int, values: PackedInt32Array) -> void:
 	var i := 0
 	for z in range(z0, z0 + d):
