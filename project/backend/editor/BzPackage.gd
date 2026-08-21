@@ -426,6 +426,9 @@ static func _install_addon(
 	var made: Dictionary = _ensure_dir(addon)
 	if BzErrors.is_err(made):
 		return made
+	var stripped: Array = []
+	if plain:
+		stripped = _strip_to_player(staging)
 	var copied: Array = []
 	var skipped: Array = []
 	var da := DirAccess.open(staging)
@@ -453,9 +456,9 @@ static func _install_addon(
 	var shared: Array = [] if plain else _copy_shared_lua(staging, addon)
 	var custom: Array = _copy_custom_assets(session_dir, addon)
 	var warnings: Array = (saved.get("warnings", []) as Array).duplicate()
-	if plain and not (skipped.is_empty() and evicted.is_empty()):
+	if plain:
 		warnings.append(
-			"terrain-test build: scripts stripped so the map loads as a plain mission"
+			"terrain-test build: scripts stripped and objects reduced to the player spawn"
 		)
 	return {
 		"ok": true,
@@ -463,11 +466,60 @@ static func _install_addon(
 		"dest": addon,
 		"files": copied,
 		"skipped": skipped,
+		"stripped": stripped,
 		"evicted": evicted,
 		"shared_lua": shared,
 		"custom_assets": custom,
 		"warnings": warnings,
 	}
+
+
+## Reduce every staged BZN to its player spawn.
+##
+## A terrain test only has to put you on the terrain. A pack map's furniture
+## does not survive without the pack: on xxPier02 the moat is mesh-carried
+## objects (xxp2tr/xxp2mo, legacy water carriers) whose current lives in the
+## script layer this build strips, and the player -- spawned correctly, exactly
+## on the ground -- gets thrown at 1500 m/s and the mission fails ten seconds
+## later. Keeping only the spawn removes everything that can do that, and the
+## terrain, tiles and lighting are untouched.
+##
+## A BZN with no user object is left alone: better to ship it as authored than
+## to ship one with nothing to play as.
+static func _strip_to_player(staging: String) -> Array:
+	var da := DirAccess.open(staging)
+	if da == null:
+		return []
+	var out: Array = []
+	for name_v in da.get_files():
+		var name: String = str(name_v)
+		if name.get_extension().to_lower() != "bzn":
+			continue
+		var path: String = staging.path_join(name)
+		var loaded: Dictionary = BzBzn.read_bzn(path)
+		if not bool(loaded.get("ok", false)):
+			continue
+		var bzn: BzBzn.BznFile = loaded.get("bznfile") as BzBzn.BznFile
+		if bzn == null or bzn.objects.is_empty():
+			continue
+		var keep: Array = []
+		for obj in bzn.objects:
+			var prj: String = "" if obj.prjid == null else str(obj.prjid)
+			if obj.is_user() or prj.to_lower() == "player":
+				keep.append(obj)
+				break
+		if keep.is_empty() or keep.size() == bzn.objects.size():
+			continue
+		var rebuilt = BzBzn.BznFile.build(
+			"\r\n".join(bzn.header), keep, "\r\n".join(bzn.tail)
+		)
+		rebuilt.set_header("size [1]", keep.size())
+		rebuilt.set_header("seq_count [1]", keep.size())
+		var wr: Dictionary = BzBzn.write_bzn(path, rebuilt)
+		if bool(wr.get("ok", true)):
+			out.append(name)
+	out.sort()
+	return out
 
 
 ## Script files already in ``dest_dir`` that belong to this map's stem.

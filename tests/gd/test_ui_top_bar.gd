@@ -140,26 +140,14 @@ func run(t) -> void:
 	_btn(bar, "Test").pressed.emit()
 	t.eq(tested[0], 1, "Test emits test_requested")
 
-	# The variant menu hangs off the Test button and drops out of it. Anchored
-	# anywhere else it lands adrift in the window, unattached to the click.
-	var vmenu := _btn(bar, "Test").find_child("TestVariantMenu", false, false) as PopupMenu
-	t.ok(vmenu != null, "variant menu is a child of the Test button")
-	if vmenu != null:
-		# Fill without showing: popping a real window blocks in headless.
-		t.eq(
-			bar.fill_test_variant_menu([["", "DM  (3 objects)"], ["_ST", "Teams  (9 objects)"]]),
-			2,
-			"menu lists the variants it was given"
-		)
-		t.eq(vmenu.get_item_text(0), "DM  (3 objects)")
-		var r := _btn(bar, "Test").get_global_rect()
-		var at: Rect2i = bar.test_variant_menu_rect()
-		t.eq(at.position.y, int(r.position.y + r.size.y), "menu drops directly below the button")
-		t.eq(at.position.x, int(r.position.x), "menu is left-aligned with the button")
-		var picked: Array = []
-		bar.test_variant_picked.connect(func(v: String): picked.append(v))
-		vmenu.id_pressed.emit(1)
-		t.eq(picked, ["_ST"], "picking reports the variant, not the row index")
+	t.ok(
+		"reduced to your spawn" in _btn(bar, "Test").tooltip_text.to_lower(),
+		"tooltip says it is a terrain-only build: %s" % _btn(bar, "Test").tooltip_text
+	)
+	t.ok(
+		_btn(bar, "Test").find_child("TestVariantMenu", false, false) == null,
+		"no variant menu: a terrain-only build has no layout to choose between"
+	)
 
 	var more_ids: Array = []
 	var save_as := [0]

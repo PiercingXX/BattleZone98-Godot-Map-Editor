@@ -50,39 +50,6 @@ local SBPAi = require("SBPAi")
 	t.eq(GameTest.source_stem(manifest), "xtvalley", "source stem is the residue's stem")
 	t.ok(GameTest.is_pack_map(session, "xtvalley"), "detected as a pack map")
 
-	# The variant menu is driven by the layouts the map ships, NOT by whether a
-	# mission script exists: a template-derived map has all four and no script.
-	var variants: Array = GameTest.testable_variants(session, "xtvalley", manifest)
-	t.ok(variants.size() >= 2, "several variants offered, got %s" % str(variants))
-	t.ok(variants.has(""), "DM offered")
-
-	# Renaming must not hide them. Residue is named after the SOURCE stem, so
-	# looking it up by the new name finds nothing and the menu never appears.
-	t.eq(
-		GameTest.testable_variants(session, "test1233", manifest).size(),
-		0,
-		"precondition: the renamed stem matches no residue BZN"
-	)
-	var no_script := session.path_join("noscript")
-	DirAccess.make_dir_recursive_absolute(no_script.path_join("residue").path_join("source"))
-	for v in ["", "_S", "_ST", "_SW"]:
-		_write_text(
-			no_script.path_join("residue").path_join("source").path_join("plainmap%s.bzn" % v), "x"
-		)
-	t.ok(
-		not GameTest.is_pack_map(no_script, "plainmap"),
-		"a map with no mission script is not a pack map"
-	)
-	t.eq(
-		GameTest.testable_variants(no_script, "plainmap", {}).size(),
-		4,
-		"...but its four layouts are still offered"
-	)
-	t.eq(ObjectMarkers.variant_display_name(""), "DM")
-	t.eq(ObjectMarkers.variant_display_name("_S"), "Strat")
-	t.eq(ObjectMarkers.variant_display_name("_ST"), "Teams")
-	t.eq(ObjectMarkers.variant_display_name("_SW"), "Wingman")
-
 	var pkg: Dictionary = BzPackage.package_session(session, "test", game_root)
 	t.ok(pkg.get("ok") == true, "package test: %s" % str(pkg))
 	if pkg.get("ok") != true:
@@ -101,15 +68,45 @@ local SBPAi = require("SBPAi")
 		"previous package's script evicted: %s" % str(pkg.get("evicted", []))
 	)
 
-	# The map itself must still be there, layout and all.
+	# Terrain, tiles and the map itself must still be there.
 	for want in ["xtvalley.hg2", "xtvalley.trn", "xtvalley.mat", "xtvalley.bzn"]:
 		t.ok(_exists_ci(addon, want), "%s shipped" % want)
-	t.ok(_exists_ci(addon, "xtvalley_ST.bzn"), "variant layouts shipped")
+
+	# ...but every object except the spawn is gone. A pack map's furniture does
+	# not survive without the pack: on xxPier02 the mesh-carried moat threw the
+	# correctly-spawned player at 1500 m/s and the mission failed.
+	t.ok(
+		(pkg.get("stripped", []) as Array).has("xtvalley.bzn"),
+		"BZN reported as stripped: %s" % str(pkg.get("stripped", []))
+	)
+	var lb: Dictionary = BzBzn.read_bzn(addon.path_join("xtvalley.bzn"))
+	t.ok(lb.get("ok", false), "parse shipped bzn: %s" % str(lb))
+	if lb.get("ok", false):
+		var shipped: BzBzn.BznFile = lb.get("bznfile") as BzBzn.BznFile
+		t.eq(shipped.objects.size(), 1, "only the spawn survives")
+		if shipped.objects.size() == 1:
+			var only = shipped.objects[0]
+			t.ok(
+				only.is_user() or str(only.prjid).to_lower() == "player",
+				"the survivor is the player, got prjid=%s" % str(only.prjid)
+			)
+
+	# The full addon build must still carry the whole layout.
+	var before: Dictionary = BzBzn.read_bzn(src_dir.path_join("xtvalley.bzn"))
+	var authored: int = (before.get("bznfile") as BzBzn.BznFile).objects.size()
+	t.ok(authored > 1, "template has a layout to lose (%d objects)" % authored)
 
 	# And "addon" mode must still ship the scripts -- this is not a global change.
 	var full: Dictionary = BzPackage.package_session(session, "addon", game_root)
 	t.ok(full.get("ok") == true, "package addon: %s" % str(full))
 	t.ok(_exists_ci(addon, "xtvalley.lua"), "full addon build still ships the map script")
+	var lb2: Dictionary = BzBzn.read_bzn(addon.path_join("xtvalley.bzn"))
+	if lb2.get("ok", false):
+		t.eq(
+			(lb2.get("bznfile") as BzBzn.BznFile).objects.size(),
+			authored,
+			"full addon build keeps every object"
+		)
 	_rm_rf(root)
 
 

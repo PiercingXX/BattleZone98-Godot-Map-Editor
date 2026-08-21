@@ -18,8 +18,6 @@ var log: Callable
 var shell: Node
 ## Path the user asked to open; recorded only after the open verb succeeds.
 var _pending_open_path: String = ""
-## Test run waiting on a variant pick from the Test button's menu.
-var _pending_test: GameTest = null
 var _new_after_save := false
 ## Stem to apply to the session once a template open completes.
 var template_stem := ""
@@ -100,49 +98,9 @@ func test_in_game() -> void:
 	if gt.is_active():
 		gt.cancel()
 		return
-	# A map with a layout per game mode gets asked about, because the build runs
-	# without whatever mode logic would normally choose. That is every BZP map,
-	# and every template-derived map too -- they ship DM/Strat/Teams/Wingman
-	# BZNs with no mission script at all, so gating on the script missed them.
-	# Residue is named after the SOURCE stem: renaming a map changes only
-	# MapState.stem, so looking these up by that name finds nothing.
-	var src_stem: String = GameTest.source_stem(MapState.manifest)
-	var variants: Array = GameTest.testable_variants(
-		MapState.session_dir, src_stem, MapState.manifest
-	)
-	if variants.size() < 2:
-		gt.begin()
-		return
-	var items: Array = []
-	for v_v in variants:
-		var v: String = str(v_v)
-		items.append([
-			v,
-			"%s  (%d objects)" % [
-				ObjectMarkers.variant_display_name(v), _variant_object_count(v)
-			],
-		])
-	var top: Variant = shell.get("_top") if shell != null else null
-	if not (top is Object and (top as Object).has_method("show_test_variant_menu")):
-		gt.begin()
-		return
-	_pending_test = gt
-	(top as Object).call("show_test_variant_menu", items)
-
-
-## The Test button's menu reports the pick here.
-func on_test_variant_picked(variant: String) -> void:
-	var gt := _pending_test
-	_pending_test = null
-	if gt == null or gt.is_active():
-		return
-	gt.begin(variant)
-
-
-func _variant_object_count(variant: String) -> int:
-	var per: Variant = MapState.objects.get(variant, [])
-	return (per as Array).size() if typeof(per) == TYPE_ARRAY else 0
-
+	# Terrain only: the build has no scripts and no objects but the spawn, so
+	# there is no layout to choose between. See BzPackage._strip_to_player.
+	gt.begin()
 
 func _game_test() -> GameTest:
 	if shell == null:
