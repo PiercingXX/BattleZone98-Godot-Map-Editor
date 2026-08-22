@@ -208,6 +208,5 @@ func _on_show_fog(on: bool) -> void:
 	if _syncing:
 		return
 	Settings.view_fog = on
-	Settings.save()
 	MapState.world_changed.emit()
 	EditorFeedback.log("view fog %s" % ("on" if on else "off"))

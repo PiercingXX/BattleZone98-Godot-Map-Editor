@@ -280,6 +280,29 @@ func _prefs_dialog(t) -> void:
 	cam.value = 2.0
 	t.eq(Settings.camera_speed_mul, 2.0)
 
+	# Ctrl is held for saving, undo and setting the clone source, so every
+	# twitch while it is down turns the camera. The rate is a dial, and it
+	# starts well below the old hand-tuned constant.
+	var orbit: HSlider = dlg.find_child("OrbitSensitivity", true, false)
+	t.ok(orbit != null, "ctrl-orbit sensitivity slider")
+	t.eq(orbit.min_value, Settings.ORBIT_SENS_MIN)
+	t.eq(orbit.max_value, Settings.ORBIT_SENS_MAX)
+	t.ok(Settings.ORBIT_SENS_DEFAULT < 1.0, "default is slower than the old rate")
+	orbit.value = 0.5
+	t.near(Settings.orbit_sensitivity, 0.5, 0.0001, "orbit slider writes Settings")
+	t.near(Settings.coerce_orbit_sensitivity(99.0), Settings.ORBIT_SENS_MAX, 0.0001)
+	t.near(Settings.coerce_orbit_sensitivity(-3.0), Settings.ORBIT_SENS_MIN, 0.0001)
+	t.near(Settings.coerce_orbit_sensitivity("junk"), Settings.ORBIT_SENS_DEFAULT, 0.0001)
+	Settings.orbit_sensitivity = Settings.ORBIT_SENS_DEFAULT
+
+	# Fog is a preview of the player's view, not a surface you can sculpt on.
+	# It must never come back switched on, whatever the last session left.
+	Settings.view_fog = true
+	Settings.save()
+	Settings.view_fog = false  # what a fresh process starts with
+	Settings._load()
+	t.ok(not Settings.view_fog, "fog never persists across a session")
+
 	var invert: CheckBox = dlg.find_child("InvertLook", true, false)
 	invert.button_pressed = true
 	t.ok(Settings.invert_look, "invert look checkbox writes Settings")

@@ -28,6 +28,8 @@ var _auto_60: Button
 var _auto_off: Button
 var _cam_speed: HSlider
 var _cam_label: Label
+var _orbit_sens: HSlider
+var _orbit_label: Label
 var _invert: CheckBox
 var _colorblind: CheckBox
 var _save_dir: LineEdit
@@ -63,7 +65,10 @@ func refresh() -> void:
 	_sync_autosave()
 	if _cam_speed:
 		_cam_speed.value = Settings.coerce_camera_speed(Settings.camera_speed_mul)
+	if _orbit_sens:
+		_orbit_sens.value = Settings.coerce_orbit_sensitivity(Settings.orbit_sensitivity)
 	_sync_cam_label()
+	_sync_orbit_label()
 	if _invert:
 		_invert.set_pressed_no_signal(Settings.invert_look)
 	if _colorblind:
@@ -191,6 +196,29 @@ func _build_ui() -> void:
 	_cam_label.name = "CameraSpeedValue"
 	_cam_label.custom_minimum_size = Vector2(48, 0)
 	cam_row.add_child(_cam_label)
+	var orbit_row := HBoxContainer.new()
+	orbit_row.add_theme_constant_override("separation", 8)
+	box.add_child(orbit_row)
+	var orbit_cap := Label.new()
+	orbit_cap.text = "Ctrl-orbit"
+	orbit_row.add_child(orbit_cap)
+	_orbit_sens = HSlider.new()
+	_orbit_sens.name = "OrbitSensitivity"
+	_orbit_sens.min_value = Settings.ORBIT_SENS_MIN
+	_orbit_sens.max_value = Settings.ORBIT_SENS_MAX
+	_orbit_sens.step = 0.05
+	_orbit_sens.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_orbit_sens.tooltip_text = (
+		"How fast holding Ctrl and moving the mouse orbits the view. "
+		+ "Lower is calmer; Ctrl is held for other things too."
+	)
+	_orbit_sens.value_changed.connect(_on_orbit_sens)
+	orbit_row.add_child(_orbit_sens)
+	_orbit_label = Label.new()
+	_orbit_label.name = "OrbitSensitivityValue"
+	_orbit_label.custom_minimum_size = Vector2(48, 0)
+	orbit_row.add_child(_orbit_label)
+
 	_invert = CheckBox.new()
 	_invert.name = "InvertLook"
 	_invert.text = "Invert look"
@@ -616,6 +644,20 @@ func _apply_autosave(seconds: int) -> void:
 		EditorFeedback.log("autosave every %ds" % next)
 
 
+func _on_orbit_sens(v: float) -> void:
+	if _applying:
+		return
+	var next := Settings.coerce_orbit_sensitivity(v)
+	if is_equal_approx(Settings.orbit_sensitivity, next):
+		_sync_orbit_label()
+		return
+	Settings.orbit_sensitivity = next
+	Settings.save()
+	Settings.notify_prefs()
+	_sync_orbit_label()
+	EditorFeedback.log("ctrl-orbit sensitivity %.2f×" % next)
+
+
 func _on_cam_speed(v: float) -> void:
 	if _applying:
 		return
@@ -723,6 +765,11 @@ func _sync_font_label() -> void:
 func _sync_cam_label() -> void:
 	if _cam_label:
 		_cam_label.text = "%.2f×" % Settings.coerce_camera_speed(Settings.camera_speed_mul)
+
+
+func _sync_orbit_label() -> void:
+	if _orbit_label:
+		_orbit_label.text = "%.2f×" % Settings.coerce_orbit_sensitivity(Settings.orbit_sensitivity)
 
 
 func _refresh_team_views() -> void:

@@ -14,6 +14,13 @@ const UI_FONT_SIZE_DEFAULT := 13
 const CAM_SPEED_MIN := 0.25
 const CAM_SPEED_MAX := 4.0
 const CAM_SPEED_DEFAULT := 1.0
+## Buttonless Ctrl+move orbit, as a multiplier on the base rate. Ctrl is held
+## for plenty of things that are not orbiting — Ctrl+S, Ctrl+Z, Ctrl+click to
+## set the clone source — so every twitch while it is down turns the camera.
+## Twice slowed by hand and still reported as too fast, so it is a dial now.
+const ORBIT_SENS_MIN := 0.05
+const ORBIT_SENS_MAX := 2.0
+const ORBIT_SENS_DEFAULT := 0.25
 const AUTOSAVE_DEFAULT_S := 30
 const AUTOSAVE_CHOICES: Array[int] = [0, 15, 30, 60]
 const LAYOUT_SPLIT_BODY_DEFAULT := 252
@@ -36,6 +43,8 @@ var default_save_dir: String = ""
 var walk_mode: bool = false
 ## Fly / pan multiplier. Clamped CAM_SPEED_MIN..CAM_SPEED_MAX.
 var camera_speed_mul: float = CAM_SPEED_DEFAULT
+## Buttonless Ctrl+move orbit rate. Clamped ORBIT_SENS_MIN..ORBIT_SENS_MAX.
+var orbit_sensitivity: float = ORBIT_SENS_DEFAULT
 ## Flip vertical mouse look (RMB).
 var invert_look: bool = false
 ## ObjectMarkers / team tint uses the colourblind table when true.
@@ -69,8 +78,11 @@ var view_labels: bool = false
 ## World → Fog: draw the map's fog in the viewport. Editor-side visibility
 ## only — the map's fog distances are saved either way.
 ##
-## Off by default. Game fog closes in at 250 m on a 2560 m map, which is a
-## preview of the player's view, not a surface you can sculpt on.
+## Deliberately NOT persisted, unlike every other view flag. Game fog closes in
+## at 250 m on a 2560 m map: it is a preview of the player's view, not a
+## surface you can sculpt on. A preview you can leave switched on comes back
+## next launch as an editor that cannot see, so every session starts clear and
+## the toggle lasts as long as you are looking.
 var view_fog: bool = false
 ## Object snap. 0 = off. Allowed grids 1/5/10/20 m; angles 15/45/90°.
 var snap_grid_m: float = 0.0
@@ -147,6 +159,9 @@ func _load() -> void:
 	default_save_dir = str(_cfg.get_value("paths", "default_save_dir", ""))
 	walk_mode = bool(_cfg.get_value("camera", "walk_mode", false))
 	camera_speed_mul = coerce_camera_speed(_cfg.get_value("camera", "speed_mul", CAM_SPEED_DEFAULT))
+	orbit_sensitivity = coerce_orbit_sensitivity(
+		_cfg.get_value("camera", "orbit_sensitivity", ORBIT_SENS_DEFAULT)
+	)
 	invert_look = bool(_cfg.get_value("camera", "invert_look", false))
 	colorblind_teams = bool(_cfg.get_value("view", "colorblind_teams", false))
 	autosave_interval_s = coerce_autosave_interval(
@@ -170,7 +185,7 @@ func _load() -> void:
 	view_grid = bool(_cfg.get_value("view", "grid", false))
 	view_slope = bool(_cfg.get_value("view", "slope", false))
 	view_labels = bool(_cfg.get_value("view", "labels", false))
-	view_fog = bool(_cfg.get_value("view", "fog", false))
+
 	_load_brush()
 	snap_grid_m = coerce_snap_grid(_cfg.get_value("snap", "grid_m", 0.0))
 	snap_angle = coerce_snap_angle(_cfg.get_value("snap", "angle", 0.0))
@@ -239,6 +254,8 @@ func save() -> void:
 	_cfg.set_value("camera", "walk_mode", walk_mode)
 	camera_speed_mul = coerce_camera_speed(camera_speed_mul)
 	_cfg.set_value("camera", "speed_mul", camera_speed_mul)
+	orbit_sensitivity = coerce_orbit_sensitivity(orbit_sensitivity)
+	_cfg.set_value("camera", "orbit_sensitivity", orbit_sensitivity)
 	_cfg.set_value("camera", "invert_look", invert_look)
 	_cfg.set_value("view", "colorblind_teams", colorblind_teams)
 	autosave_interval_s = coerce_autosave_interval(autosave_interval_s)
@@ -261,7 +278,7 @@ func save() -> void:
 	_cfg.set_value("view", "grid", view_grid)
 	_cfg.set_value("view", "slope", view_slope)
 	_cfg.set_value("view", "labels", view_labels)
-	_cfg.set_value("view", "fog", view_fog)
+
 	_save_brush()
 	snap_grid_m = coerce_snap_grid(snap_grid_m)
 	snap_angle = coerce_snap_angle(snap_angle)
@@ -489,6 +506,21 @@ func coerce_snap_grid(raw: Variant) -> float:
 
 func coerce_snap_angle(raw: Variant) -> float:
 	return SelectionGizmo.coerce_snap_angle(raw)
+
+
+func coerce_orbit_sensitivity(raw: Variant) -> float:
+	var v := ORBIT_SENS_DEFAULT
+	match typeof(raw):
+		TYPE_FLOAT, TYPE_INT:
+			v = float(raw)
+		TYPE_STRING:
+			if str(raw).is_valid_float():
+				v = float(str(raw))
+		_:
+			return ORBIT_SENS_DEFAULT
+	if not is_finite(v):
+		return ORBIT_SENS_DEFAULT
+	return clampf(v, ORBIT_SENS_MIN, ORBIT_SENS_MAX)
 
 
 func coerce_camera_speed(raw: Variant) -> float:

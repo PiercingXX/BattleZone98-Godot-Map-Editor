@@ -11,6 +11,8 @@ const MAP_SIZE_MIN := 40.0
 const MAP_SIZE_MAX := 20000.0
 const ZOOM_FACTOR := 0.85
 const ORBIT_WHEEL_STEP_PX := 60.0
+## Base rate for buttonless Ctrl+move orbit, before Settings.orbit_sensitivity.
+const BUTTONLESS_ORBIT_RATE := 0.03
 const MAP_WHEEL_PAN_PX := 60.0
 const HOVER_LIFT_M := 40.0
 const HOVER_BACK_M := 40.0
@@ -97,9 +99,12 @@ func handle_event(event: InputEvent) -> void:
 			# Shift/Ctrl also modulate WASD speed; never hijack mid-flight.
 			pass
 		elif mm.button_mask == 0 and mm.ctrl_pressed:
-			# Buttonless Ctrl+move orbits the pivot, deliberately slow
-			# (~1/32 of drag-orbit speed).
-			_orbit(mm.relative * 0.03)
+			# Buttonless Ctrl+move orbits the pivot, deliberately slow. Ctrl is
+			# held for things that are not orbiting, so the default is a
+			# hundredth of drag-orbit speed and Preferences can take it lower.
+			_orbit(mm.relative * BUTTONLESS_ORBIT_RATE * Settings.coerce_orbit_sensitivity(
+				Settings.orbit_sensitivity
+			))
 		elif mm.button_mask == 0 and mm.alt_pressed:
 			# Buttonless Alt+move pans the camera tripod-style.
 			rotate_y(look_yaw_delta(mm.relative.x, _look_sens))
