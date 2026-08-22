@@ -3,7 +3,9 @@
 Both are text formats. Confidence: **OBSERVED** unless a line says otherwise —
 this is the area where a single reference implementation, rather than two, was
 available, and where that implementation is demonstrably buggy in one specific
-place (§2.4). Read §2.4 before writing any position code.
+place (§2.4). Read §2.4 before writing any position code — the short version is
+that `MinX` / `MinZ` / `Height` are inert and an object's `pos` is already its
+world position.
 
 ---
 
@@ -20,9 +22,9 @@ Keys that matter to the editor:
 |---|---|---|
 | `Width` | (top level) | Map width **in metres** — `1280 × map_width_zones` |
 | `Depth` | (top level) | Map depth in metres — `1280 × map_depth_zones` |
-| `MinX` | (top level) | X offset applied to every object position (§2.4) |
-| `MinZ` | (top level) | Z offset applied to every object position |
-| `Height` | (top level) | Height offset applied to every object position |
+| `MinX` | (top level) | legacy, inert — always 0 (§2.4) |
+| `MinZ` | (top level) | legacy, inert — always 0 (§2.4) |
+| `Height` | (top level) | legacy, inert — always 0 (§2.4) |
 | `MaterialName` | `[Atlases]` | Atlas base name, e.g. `ac_detail_atlas` (F2 §4) |
 | `FlatColor` | `[TextureType*]` | Per-material flat colour; the atlas-less fallback (F2 §6) |
 
@@ -250,36 +252,34 @@ Note the trap the heuristic exists to handle: a **gun tower is a building that
 carries the vehicle field set**. Any classifier that keys purely off
 "building vs vehicle" gets it wrong.
 
-### 2.4 Coordinates and the TRN offsets — read this twice
+### 2.4 Coordinates and the TRN offsets
 
-An object's stored position is in BZN world coordinates. The `.trn`'s `MinX`,
-`MinZ` and `Height` are offsets between that stored frame and the frame the
-game's own editor displays.
+**`MinX`, `MinZ` and `Height` are legacy and inert. Do not implement an
+offset transform.** — **VERIFIED** (2026-08-22, from the operator): the keys
+survive in the file format but Redux no longer does anything with them. They
+should be 0, and an object's stored `pos` is simply its world position. The
+editor writes 0 for all three on a new map (`BzTrn._STANDALONE_SIZE`) and
+leaves whatever a residue `.trn` already says untouched, because rewriting an
+inert key would cost the byte-identical round trip for nothing.
 
-**The rule to implement, applied uniformly on all three axes and in both
-directions:**
+A non-zero value in a shipped map (stock Elysium's template carries
+`MinZ=98560`) is leftover data, not a displacement to apply.
+
+#### Why this section used to say the opposite
+
+Kept because the trap is real and the reasoning is worth not repeating. The
+reference implementation treats the three keys as a display offset —
 
 ```
-editor/display coordinate = stored BZN coordinate − offset
-stored BZN coordinate     = editor/display coordinate + offset
+display coordinate = stored BZN coordinate − offset
 ```
 
-with `offset` being `MinX` for x, `Height` for y, `MinZ` for z.
-
-**The reference implementation does not do this consistently, and you must not
-copy its behaviour.** Two defects are visible in it:
-
-1. On the X axis, its import and export paths do not invert each other — a
-   round trip through the tool shifts X by twice `MinX` whenever `MinX` is
-   non-zero.
-2. On the Y axis it subtracts `Height` on import but never adds it back on
-   export, so a round trip loses the height offset entirely.
-
-Both are silent on maps where the offsets are zero, which is most maps, which is
-why they survived. **The invariant that matters: import-then-export with no
-edits must reproduce every position exactly, on a map with non-zero `MinX`,
-`MinZ` and `Height`.** Make that an explicit test (§5, test 2) — it is the whole
-reason this section is here.
+— and does it inconsistently: on X its import and export do not invert each
+other (a round trip shifts X by twice `MinX`), and on Y it subtracts `Height`
+on import but never adds it back. Both defects are silent when the offsets are
+zero, which is every map, which is exactly why they survived unnoticed for
+years. A tool that copies the offset behaviour inherits the bugs and gains
+nothing, because the engine ignores the keys either way.
 
 Axis identity itself (which stored axis is width, which is depth, which is up)
 is specified in F8 §1 and is not reproduced here; the reference tooling's axis
@@ -351,10 +351,10 @@ the author may care about, but do not surface them as editable.
 1. **Byte-identical round trip** on every corpus ASCII `.bzn`, no edits. This is
    the test that catches field-order drift, indentation drift, and float
    formatting drift all at once.
-2. **Non-zero TRN offsets.** Take a map with non-zero `MinX`, `MinZ` and
-   `Height` — synthesise one if the corpus has none — and confirm import→export
-   reproduces every object position exactly. This is the test the reference
-   implementation fails; see §2.4.
+2. **Non-zero TRN offsets change nothing.** Take a map with non-zero `MinX`,
+   `MinZ` and `Height` — synthesise one if the corpus has none — and confirm
+   import→export reproduces every object position exactly, *unshifted*. The
+   keys are inert (§2.4); this test exists to prove no offset crept back in.
 3. **Triple position agreement.** After any edit that moves an object, assert all
    three stored copies (both `pos` blocks and `transform.posit_*`) match.
 4. **Class extras preserved.** For each class in §2.3 present in the corpus,

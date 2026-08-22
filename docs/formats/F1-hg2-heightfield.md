@@ -135,10 +135,12 @@ Apply it on **both** read and write. Mirroring only on write flips a map every
 time it is opened and saved and breaks the byte-identical round trip; applied
 to both, the pair is its own inverse and §7's round-trip test is untouched.
 
-**Objects are a separate question.** BZN `pos` is a world coordinate, not a
-terrain index, so nothing here mirrors it — but that means object-to-terrain
-alignment in any tool that got the terrain mirror wrong was also wrong, and it
-has to be re-checked against `MinX` (F3 §2) rather than assumed.
+**Objects do not mirror.** BZN `pos` is already a world coordinate, and the
+`.trn` offsets that once looked like they might displace it are inert (F3
+§2.4). So an object at `pos.x` sits over the terrain sample this mirror puts
+at that world X, and nothing else is applied. The corollary is that any tool
+which got the terrain mirror wrong also had its objects sitting on the wrong
+terrain — the fix here corrects both at once.
 
 ## 5. Axis orientation
 
