@@ -1,0 +1,33 @@
+[gd_scene load_steps=2 format=3 uid="uid://c8bzworldpanel1"]
+
+[ext_resource type="Script" path="res://project/ui/world/WorldPanel.gd" id="1_script"]
+
+[node name="WorldPanel" type="PanelContainer"]
+custom_minimum_size = Vector2(0, 96)
+script = ExtResource("1_script")
+
+[node name="Scroll" type="ScrollContainer" parent="."]
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="Box" type="VBoxContainer" parent="Scroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="Head" type="HBoxContainer" parent="Scroll/Box"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="TitleIcon" type="TextureRect" parent="Scroll/Box/Head"]
+custom_minimum_size = Vector2(16, 16)
+layout_mode = 2
+mouse_filter = 2
+expand_mode = 0
+stretch_mode = 5
+
+[node name="Title" type="Label" parent="Scroll/Box/Head"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "World"

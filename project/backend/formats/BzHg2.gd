@@ -5,6 +5,19 @@ class_name BzHg2
 ## On-disk samples are zone-major (F1 §4). In-memory `HeightMap.data` is world
 ## row-major, index `z * grid_x + x`, same as the Python 2-D array `[z, x]`.
 ##
+## X mirror (F1 §4.1, settled 2026-08-22 against the game): the engine walks a
+## zone's sample row from +X toward −X, so sample 0 of the first zone is the
+## map's EAST edge. Read as plain zone-major the whole map comes out mirrored
+## left-to-right — sculpt a ridge on the west side and the game puts it on the
+## east. `read` and `write` therefore mirror the X index and `data` is true
+## world space. `.mat` carries the same mirror (BzMat), which is why the two
+## grids stayed consistent with each other while both disagreed with the game.
+##
+## The mirror is applied on BOTH sides on purpose. Mirroring only on write
+## would flip a map every time it was opened and saved, and would break the
+## byte-identical open→save round trip; applied to both, the pair is its own
+## inverse and the round trip is untouched.
+##
 ## Python-vs-spec (F1) discrepancies — Python wins:
 ## - Header bytes 8–11 are two uint16s `unknownA`/`unknownB`, not F1's uint32
 ##   `map_version`. Typical stock files have unknownA=10, unknownB=0 (= 10).
@@ -121,9 +134,11 @@ class HeightMap:
 			for zx in p_zones_x:
 				for sub_z in zone_size:
 					var world_z: int = zy * zone_size + sub_z
-					var row: int = world_z * gx + zx * zone_size
+					var row: int = world_z * gx
 					for sub_x in zone_size:
-						words[row + sub_x] = buf.decode_u16(off)
+						# Mirror X (see the note at the top): disk sample 0 of
+						# the first zone is the map's east edge.
+						words[row + gx - 1 - (zx * zone_size + sub_x)] = buf.decode_u16(off)
 						off += 2
 		return BzHg2._ok_heightmap(
 			HeightMap.new(
@@ -148,9 +163,13 @@ class HeightMap:
 			for zx in zonesX:
 				for sub_z in zone_size:
 					var world_z: int = zy * zone_size + sub_z
-					var row: int = world_z * gx + zx * zone_size
+					var row: int = world_z * gx
 					for sub_x in zone_size:
-						out.encode_u16(off, data[row + sub_x] & 0xFFFF)
+						# Inverse of the read mirror; the pair keeps
+						# open→save byte-identical.
+						out.encode_u16(
+							off, data[row + gx - 1 - (zx * zone_size + sub_x)] & 0xFFFF
+						)
 						off += 2
 		var file := FileAccess.open(path, FileAccess.WRITE)
 		if file == null:

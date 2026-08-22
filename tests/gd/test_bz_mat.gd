@@ -14,7 +14,31 @@ func run(t) -> void:
 	_test_write_then_parse(t, tmp)
 	_test_flat_non_zone(t, tmp)
 	_test_auto_paint(t)
+	_test_expected_shape(t, tmp)
 	_test_errors(t, tmp)
+
+
+func _test_expected_shape(t, tmp: String) -> void:
+	## A 2x3-zone map: the factor-pair guess transposes it, the .hg2 shape does not.
+	var cols: int = 128  # 2 zones of X
+	var rows: int = 192  # 3 zones of Z
+	var words := PackedInt32Array()
+	words.resize(rows * cols)
+	words[5 * cols + 3] = 0xBEEF
+	var g := BzMat.MaterialGrid.new(words, rows, cols)
+	var path: String = tmp.path_join("two_by_three.mat")
+	t.ok(bool(g.write(path).get("ok")))
+	var guessed: Dictionary = BzMat.read_mat(path)
+	var gg: BzMat.MaterialGrid = guessed.get("grid") as BzMat.MaterialGrid
+	t.eq(gg.grid_x, 192, "no hint: the guess transposes a 2x3-zone map")
+	var told: Dictionary = BzMat.read_mat(path, rows, cols)
+	var tg: BzMat.MaterialGrid = told.get("grid") as BzMat.MaterialGrid
+	t.eq(tg.grid_x, cols, "told the .hg2 shape, X is 2 zones")
+	t.eq(tg.grid_z, rows, "told the .hg2 shape, Z is 3 zones")
+	t.eq(tg.data[5 * cols + 3], 0xBEEF, "round-trips in place at the right shape")
+	var wrong: Dictionary = BzMat.read_mat(path, 64, 64)
+	t.eq(wrong.get("ok"), false, "a .mat that does not match the .hg2 is refused")
+	t.ok(str(wrong.get("error", {}).get("message", "")).contains("heightmap wants"))
 
 
 func _test_encode_decode(t) -> void:
@@ -126,9 +150,11 @@ func _test_parse_one_zone(t, tmp: String) -> void:
 	var g: BzMat.MaterialGrid = result.get("grid") as BzMat.MaterialGrid
 	t.eq(g.grid_x, 64)
 	t.eq(g.grid_z, 64)
-	t.eq(g.data[0], 0x23A1)
-	t.eq(g.data[63 * 64 + 63], 0x4400)
-	t.eq(g.data[10 * 64 + 20], 0x5172)
+	# Disk X runs east→west, so disk tx lands at world 63 - tx (F2 §3.1).
+	t.eq(g.data[63], 0x23A1, "disk (0,0) is world (63,0)")
+	t.eq(g.data[63 * 64 + 0], 0x4400, "disk (63,63) is world (0,63)")
+	t.eq(g.data[10 * 64 + 43], 0x5172, "disk (20,10) is world (43,10)")
+	t.eq(g.data[0], 0, "world (0,0) is untouched")
 
 
 func _test_parse_two_zone(t, tmp: String) -> void:
@@ -142,11 +168,12 @@ func _test_parse_two_zone(t, tmp: String) -> void:
 	var g: BzMat.MaterialGrid = result.get("grid") as BzMat.MaterialGrid
 	t.eq(g.grid_x, 128)
 	t.eq(g.grid_z, 128)
-	t.eq(g.data[0], 0x1111)
-	t.eq(g.data[10 * 128 + 70], 0xABCD, "global (70,10) in zone (1,0)")
-	t.eq(g.data[70 * 128 + 10], 0x2222, "global (10,70) in zone (0,1)")
-	t.eq(g.data[70 * 128 + 70], 0x3333, "global (70,70) in zone (1,1)")
-	t.eq(g.data[10 * 128 + 69], 0, "neighbour untouched")
+	# The X mirror is global across zones: disk tx → world 127 - tx.
+	t.eq(g.data[127], 0x1111, "disk (0,0) is world (127,0)")
+	t.eq(g.data[10 * 128 + 57], 0xABCD, "disk (70,10) is world (57,10)")
+	t.eq(g.data[70 * 128 + 117], 0x2222, "disk (10,70) is world (117,70)")
+	t.eq(g.data[70 * 128 + 57], 0x3333, "disk (70,70) is world (57,70)")
+	t.eq(g.data[10 * 128 + 58], 0, "neighbour untouched")
 	t.eq(buf.decode_u16(1350 * 2), 0, "row-major slot for (70,10) is empty")
 	t.eq(buf.decode_u16(4742 * 2), 0xABCD, "zone-major slot holds (70,10)")
 
@@ -178,11 +205,14 @@ func _test_write_then_parse(t, tmp: String) -> void:
 	var g := BzMat.MaterialGrid.new(words, 128, 128)
 	var path: String = tmp.path_join("authored.mat")
 	t.ok(bool(g.write(path).get("ok")))
+	var raw: PackedByteArray = FileAccess.get_file_as_bytes(path)
+	t.eq(raw.decode_u16(_disk_index(57, 10, 2, 64) * 2), 0xABCD,
+		"world (70,10) writes to disk (57,10)")
 	var rd: Dictionary = BzMat.read_mat(path)
 	var back: BzMat.MaterialGrid = rd.get("grid") as BzMat.MaterialGrid
 	t.eq(back.grid_x, 128)
 	t.eq(back.grid_z, 128)
-	t.eq(back.data[10 * 128 + 70], 0xABCD)
+	t.eq(back.data[10 * 128 + 70], 0xABCD, "write→read is the identity in world space")
 	t.eq(back.data[0], 0x4400)
 
 

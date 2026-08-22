@@ -493,7 +493,11 @@ static func _open_map(path: String, session_dir: String) -> Dictionary:
 	var mat_grid_z: int
 	var mat_path: String = BzSession.find_source_file(source_dir, stem, ".mat")
 	if not mat_path.is_empty():
-		var mat_r: Variant = BzMat.MaterialGrid.read(mat_path)
+		var mat_r: Variant = BzMat.MaterialGrid.read(
+			mat_path,
+			int(heightmap.grid_z / BzMat.TILE_CELLS),
+			int(heightmap.grid_x / BzMat.TILE_CELLS)
+		)
 		if typeof(mat_r) == TYPE_DICTIONARY and bool(mat_r.get("ok", false)):
 			var grid = mat_r.get("grid")
 			BzSession.write_materials_u16(str(paths["materials"]), grid.data)
@@ -537,6 +541,7 @@ static func _open_map(path: String, session_dir: String) -> Dictionary:
 		"objects": dirty_objects,
 		"features": false,
 		"meta": [],
+		"trn": false,
 	})
 	var over := false
 	var words: PackedInt32Array = heightmap.data

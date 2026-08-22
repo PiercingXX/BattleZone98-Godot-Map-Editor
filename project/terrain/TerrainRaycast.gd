@@ -90,13 +90,21 @@ static func intersect(origin: Vector3, direction: Vector3, field: HeightField) -
 			break
 		walked += 1
 	# Fallback: drop a vertical sample at the XZ of the far point.
+	#
+	# Only when the ray actually ended up UNDER the surface there. A ray that
+	# leaves the map still above the terrain — every shallow, near-horizon
+	# view, and every ray angled upward — genuinely missed, and reporting the
+	# far slab exit as a hit put the cursor hundreds of metres away on the map
+	# border. Brush strokes then bridged from the real cursor to that point and
+	# painted a streak to the edge of the map.
 	if end.x >= 0.0 and end.z >= 0.0 and end.x <= width_m and end.z <= depth_m:
 		var y := field.height_at(end.x, end.z)
-		return {
-			"hit": true,
-			"position": Vector3(end.x, y, end.z),
-			"normal": normal_at(field, end.x, end.z),
-		}
+		if end.y <= y + HeightField.CELL_M:
+			return {
+				"hit": true,
+				"position": Vector3(end.x, y, end.z),
+				"normal": normal_at(field, end.x, end.z),
+			}
 	return miss
 
 

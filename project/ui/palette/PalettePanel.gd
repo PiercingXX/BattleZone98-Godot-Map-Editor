@@ -74,11 +74,13 @@ var _match_btn: Button
 var _kind_solid: Button
 var _kind_cap: Button
 var _kind_diag: Button
-var _trans_opt: OptionButton
 var _rot_btn: Button
 var _flip_box: CheckBox
-var _var_opt: OptionButton
 var _tile_hint: Label
+var _tile_grid: GridContainer
+var _tile_pick: Label
+var _tile_buttons: Array = []
+var _tile_sig: String = ""
 var _clone_hint: Label
 var _snap_grid: OptionButton
 var _snap_angle: OptionButton
@@ -265,7 +267,7 @@ func refresh_swatches() -> void:
 		var bg := Color(0, 0, 0, 0) if tex != null else colors[i]
 		_apply_swatch_style(b, bg)
 	_highlight_swatch()
-	_fill_transition_items()
+	_tile_sig = ""
 	_sync_paint_tile_from_state()
 
 
@@ -319,27 +321,27 @@ func _build_paint_match() -> void:
 	kinds.add_child(_kind_cap)
 	kinds.add_child(_kind_diag)
 	_mats_section.add_child(kinds)
-	var meet := HBoxContainer.new()
+	# Solids, caps, corners and their variants are all picked the same way:
+	# a grid of the tiles this world actually ships, drawn from the atlas the
+	# viewport paints with. Fixed height so switching kind cannot resize the
+	# rail under the cursor.
+	var meet := VBoxContainer.new()
 	meet.name = "TileMeetRow"
 	meet.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var meet_l := Label.new()
-	meet_l.text = "Meets"
-	meet_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_trans_opt = OptionButton.new()
-	_trans_opt.name = "PaintTransition"
-	_trans_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_trans_opt.focus_mode = Control.FOCUS_NONE
-	_trans_opt.fit_to_longest_item = false
-	_trans_opt.clip_text = true
-	_trans_opt.tooltip_text = "The other material on a cap or corner. The swatch is this cell's material."
-	_fill_transition_items()
-	_trans_opt.item_selected.connect(func(i: int) -> void:
-		if _syncing:
-			return
-		ToolState.set_paint_transition(_trans_opt.get_item_id(i))
-	)
+	meet_l.name = "TileChoiceLabel"
+	meet_l.text = "Tiles"
 	meet.add_child(meet_l)
-	meet.add_child(_trans_opt)
+	var scroll := ScrollContainer.new()
+	scroll.name = "TileChoiceScroll"
+	scroll.custom_minimum_size = Vector2(0, _SWATCH_PX * 2 + 14)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	meet.add_child(scroll)
+	_tile_grid = GridContainer.new()
+	_tile_grid.name = "TileChoices"
+	_tile_grid.columns = 6
+	_tile_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_tile_grid)
 	_mats_section.add_child(meet)
 	var face := HBoxContainer.new()
 	face.name = "TileFaceRow"
@@ -363,30 +365,17 @@ func _build_paint_match() -> void:
 	_mats_section.add_child(face)
 	var vari := HBoxContainer.new()
 	vari.name = "TileVariantRow"
-	var vari_l := Label.new()
-	vari_l.text = "Variant"
-	vari_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_var_opt = OptionButton.new()
-	_var_opt.name = "PaintVariant"
-	_var_opt.focus_mode = Control.FOCUS_NONE
-	_var_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_var_opt.fit_to_longest_item = false
-	_var_opt.clip_text = true
-	for i in 4:
-		_var_opt.add_item(char(65 + i), i)
-	_var_opt.item_selected.connect(func(i: int) -> void:
-		if _syncing:
-			return
-		ToolState.set_paint_variant(_var_opt.get_item_id(i))
-	)
-	vari.add_child(vari_l)
-	vari.add_child(_var_opt)
+	_tile_pick = Label.new()
+	_tile_pick.name = "TileChoiceValue"
+	_tile_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tile_pick.clip_text = true
+	vari.add_child(_tile_pick)
 	_mats_section.add_child(vari)
 	_tile_hint = Label.new()
 	_tile_hint.name = "TileHint"
 	_tile_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_tile_hint.add_theme_color_override("font_color", Color(0.62, 0.62, 0.64, 1))
-	_tile_hint.text = "Cap and Corner only list pairs this world actually ships. Alt+LMB samples the tile under the cursor."
+	_tile_hint.text = "The grid lists every tile this world ships for the chosen material. Alt+LMB samples the tile under the cursor."
 	_mats_section.add_child(_tile_hint)
 	_match_edges = CheckBox.new()
 	_match_edges.name = "MatchEdges"
@@ -420,51 +409,102 @@ func _kind_btn(caption: String, group: ButtonGroup) -> Button:
 	return b
 
 
-func _fill_transition_items() -> void:
-	if _trans_opt == null:
+func _fill_tile_choices() -> void:
+	## One image swatch per tile the world ships for this material and kind.
+	## Rebuilt only when the material or kind changes — cropping the atlas on
+	## every state sync would run on each brush-radius nudge.
+	if _tile_grid == null:
 		return
+	var sig := "%s:%d:%s" % [
+		MapState.world, ToolState.paint_material, ToolState.paint_kind
+	]
+	if sig != _tile_sig:
+		_tile_sig = sig
+		for b in _tile_buttons:
+			(b as Node).queue_free()
+		_tile_buttons.clear()
+		var swatches: Array = MaterialPalette.tile_swatches(
+			ToolState.paint_material, ToolState.paint_kind, _SWATCH_PX * 2
+		)
+		for entry_v in swatches:
+			var entry: Dictionary = entry_v
+			_tile_grid.add_child(_tile_button(entry))
+	_highlight_tile_choice()
+
+
+func _tile_button(entry: Dictionary) -> Button:
+	var trans := int(entry.get("trans", 0))
+	var variant := int(entry.get("variant", 0))
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(_SWATCH_PX, _SWATCH_PX)
+	b.focus_mode = Control.FOCUS_NONE
+	b.clip_contents = true
+	b.set_meta("trans", trans)
+	b.set_meta("variant", variant)
+	b.tooltip_text = _tile_caption(trans, variant)
+	var tex: Variant = entry.get("texture")
+	if tex is Texture2D:
+		var thumb := TextureRect.new()
+		thumb.name = "Thumb"
+		thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		thumb.set_anchors_preset(Control.PRESET_FULL_RECT)
+		thumb.offset_left = _SWATCH_BORDER
+		thumb.offset_top = _SWATCH_BORDER
+		thumb.offset_right = -_SWATCH_BORDER
+		thumb.offset_bottom = -_SWATCH_BORDER
+		thumb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		thumb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		thumb.texture = tex
+		b.add_child(thumb)
+		_apply_swatch_style(b, Color(0, 0, 0, 0))
+	else:
+		# No atlas to crop: the tile stays pickable, labelled instead of drawn.
+		b.text = "%d%s" % [trans, char(65 + clampi(variant, 0, 25))]
+		_apply_swatch_style(b, MaterialPalette.colors()[trans & 0xF])
+	b.pressed.connect(_on_tile_choice.bind(trans, variant))
+	_tile_buttons.append(b)
+	return b
+
+
+func _tile_caption(trans: int, variant: int) -> String:
+	var letter := char(65 + clampi(variant, 0, 25))
 	if ToolState.paint_kind == "solid":
-		_trans_opt.clear()
-		_trans_opt.add_item("—", 0)
-		_trans_opt.disabled = true
-		return
-	var partners: PackedInt32Array = MaterialPalette.transition_partners(
-		ToolState.paint_material, ToolState.paint_kind
-	)
-	_trans_opt.clear()
-	if partners.is_empty():
-		_trans_opt.add_item("(no tiles in this atlas)", 0)
-		_trans_opt.disabled = true
-		return
-	_trans_opt.disabled = false
-	var pick := 0
-	for i in partners.size():
-		var p: int = partners[i]
-		_trans_opt.add_item("%d  %s" % [p, MaterialPalette.type_name(p)], p)
-		if p == ToolState.paint_transition:
-			pick = i
-	_trans_opt.select(pick)
+		return "%s — variant %s" % [MaterialPalette.type_name(ToolState.paint_material), letter]
+	var kind := "corner" if ToolState.paint_kind == "diag" else "cap"
+	return "%s meeting %d %s — variant %s" % [
+		kind, trans, MaterialPalette.type_name(trans), letter
+	]
 
 
-func _fill_variant_items() -> void:
-	if _var_opt == null:
+func _on_tile_choice(trans: int, variant: int) -> void:
+	if _syncing:
 		return
-	var vars: PackedInt32Array = MaterialPalette.variants_for(
-		ToolState.paint_material, ToolState.paint_transition, ToolState.paint_kind
-	)
-	_var_opt.clear()
-	if vars.is_empty():
-		_var_opt.add_item("A", 0)
-		_var_opt.disabled = true
-		return
-	_var_opt.disabled = vars.size() < 2
-	var pick := 0
-	for i in vars.size():
-		var v: int = clampi(vars[i], 0, 25)
-		_var_opt.add_item(char(65 + v), v)
-		if v == ToolState.paint_variant:
-			pick = i
-	_var_opt.select(pick)
+	if ToolState.paint_kind != "solid":
+		ToolState.set_paint_transition(trans)
+	ToolState.set_paint_variant(variant)
+	if not ToolState.is_terrain_select_tool():
+		ToolState.set_tool("paint")
+	_highlight_tile_choice()
+
+
+func _highlight_tile_choice() -> void:
+	var solid := ToolState.paint_kind == "solid"
+	for b_v in _tile_buttons:
+		var b: Button = b_v
+		if not is_instance_valid(b):
+			continue
+		var active := (
+			int(b.get_meta("variant", -1)) == ToolState.paint_variant
+			and (solid or int(b.get_meta("trans", -1)) == ToolState.paint_transition)
+		)
+		var idle := Color(0.95, 0.85, 0.25) if active else Color(1, 1, 1, 0.15)
+		var hot := Color(0.95, 0.85, 0.25) if active else Color(1, 1, 1, 0.55)
+		for pair in [["normal", idle], ["hover", hot], ["pressed", hot], ["hover_pressed", hot]]:
+			var sb := b.get_theme_stylebox(str(pair[0])) as StyleBoxFlat
+			if sb:
+				sb.border_color = pair[1]
+	if _tile_pick:
+		_tile_pick.text = _tile_caption(ToolState.paint_transition, ToolState.paint_variant)
 
 
 func _apply_swatch_style(b: Button, bg: Color) -> void:
@@ -1517,8 +1557,7 @@ func _sync_paint_tile_from_state() -> void:
 			if not can_d else "Diagonal corner between two materials."
 		)
 		_kind_diag.button_pressed = ToolState.paint_kind == "diag"
-	_fill_transition_items()
-	_fill_variant_items()
+	_fill_tile_choices()
 	if _rot_btn:
 		if ToolState.paint_kind == "diag":
 			_rot_btn.text = "Facing  %s" % ToolState.paint_diag_facing()
@@ -1528,17 +1567,13 @@ func _sync_paint_tile_from_state() -> void:
 			_rot_btn.tooltip_text = "Rotate the cap tile."
 	if _flip_box and _flip_box.button_pressed != (ToolState.paint_flip != 0):
 		_flip_box.button_pressed = ToolState.paint_flip != 0
-	# Keep Meets / Facing / Variant in the layout on Solid so the rail
+	# Keep the tile grid and Facing row in the layout on Solid so the rail
 	# does not jump when the mapmaker switches to Cap or Corner.
 	var pair := ToolState.paint_kind != "solid"
-	if _trans_opt:
-		_trans_opt.disabled = _trans_opt.disabled or not pair
 	if _rot_btn:
 		_rot_btn.disabled = not pair
 	if _flip_box:
 		_flip_box.disabled = not pair
-	if _var_opt:
-		_var_opt.disabled = _var_opt.disabled or not pair
 	if _match_edges and _match_edges.button_pressed != ToolState.paint_match_edges:
 		_match_edges.button_pressed = ToolState.paint_match_edges
 	_syncing = was

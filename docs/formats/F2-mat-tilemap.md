@@ -129,6 +129,26 @@ left-to-right tile stream into zone blocks before writing, with an explicit
 comment that the game expects "zone quadrant" ordering. Both are consistent with
 the `.hg2` scheme and with nothing else. Confirm with §8 test 2.
 
+### 3.1 X runs east → west — **VERIFIED**
+
+`tx` counts **down** the world X axis, not up. The formula in §3 gives the
+right *slot*; what it does not say is that slot `tx = 0` is the map's **+X
+(east) edge**, so a `.mat` read as plain zone-major comes out mirrored
+left-to-right against its own `.hg2`, which does not do this:
+
+```
+world_tx = (map_width * 64) - 1 - tx
+```
+
+Settled 2026-08-22 by the §8 test-3 comparison: an arrow painted pointing west
+in the editor came back pointing east in game, with the terrain underneath it
+unmirrored. The likely origin is the reference Blender addon, which mirrors X
+to compensate for Blender's handedness and never mirrors it back.
+
+A reader and a writer that both apply this mirror still round-trip byte for
+byte (§8 test 1) — the pair is its own inverse — so the mirror is invisible to
+a tool that only copies files and visible to every tool that paints.
+
 ## 4. Atlas layout and tile naming
 
 The atlas image is named by the `.trn`'s `[Atlases] MaterialName` (F3 §1). Each

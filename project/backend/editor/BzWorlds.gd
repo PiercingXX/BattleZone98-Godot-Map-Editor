@@ -85,6 +85,10 @@ static func _describe_world(path: String, world_id: String) -> Dictionary:
 	var game_root: String = path.get_base_dir().get_base_dir().get_base_dir()
 	var looked: Dictionary = _atlas_lookup(game_root, atlas_name, world_id)
 	_apply_trn_solids(looked, texture_types, world_id)
+	var palette_name: String = ""
+	if cfg != null:
+		var pal_v: Variant = cfg.value("Color", "Palette")
+		palette_name = "" if pal_v == null else str(pal_v).strip_edges()
 	return {
 		"id": world_id,
 		"label": world_id.capitalize(),
@@ -94,8 +98,62 @@ static func _describe_world(path: String, world_id: String) -> Dictionary:
 		"tile_uvs": looked["tile_uvs"],
 		"atlas_tiles": looked.get("atlas_tiles", {}),
 		"sky": sky.strip_edges(),
+		# The world's stock .act. Fog colour is a palette entry (F6 §3), so a
+		# map that wants its own fog colour ships a copy of this file.
+		"palette_act": palette_name,
+		"palette_path": _act_lookup(game_root, palette_name, world_id),
 		"texture_types": texture_types,
 	}
+
+
+static func _act_lookup(game_root: String, palette_name: String, world_id: String) -> String:
+	## Absolute path of the world's `.act`, or "" when the install does not
+	## have it where we look. Same candidate-list shape as _atlas_lookup —
+	## a full recursive scan of the install per world is not worth it.
+	var names: Array[String] = []
+	var named: String = palette_name.get_file().strip_edges()
+	if not named.is_empty():
+		names.append(named)
+		if named.get_extension().is_empty():
+			names.append("%s.act" % named)
+	if not world_id.is_empty():
+		names.append("%s.act" % world_id.to_lower())
+	var dirs: Array[String] = [
+		game_root.path_join("Edit").path_join("act"),
+		game_root.path_join("Edit").path_join("Palettes"),
+		game_root.path_join("Edit"),
+		game_root.path_join("BZ_ASSETS").path_join("pc").path_join("textures"),
+		game_root.path_join("BZ_ASSETS").path_join("common").path_join("textures"),
+		game_root.path_join("BZ_ASSETS").path_join("common"),
+	]
+	for name in names:
+		for dir_path in dirs:
+			var candidate: String = dir_path.path_join(name)
+			if FileAccess.file_exists(candidate):
+				return candidate
+			# Installs differ in case; scan the directory once per miss.
+			var found: String = _file_named(dir_path, name)
+			if not found.is_empty():
+				return found
+	return ""
+
+
+static func _file_named(dir_path: String, name: String) -> String:
+	var da := DirAccess.open(dir_path)
+	if da == null:
+		return ""
+	var needle: String = name.to_lower()
+	da.include_hidden = true
+	da.include_navigational = false
+	da.list_dir_begin()
+	var fn: String = da.get_next()
+	while fn != "":
+		if not da.current_is_dir() and fn.to_lower() == needle:
+			da.list_dir_end()
+			return dir_path.path_join(fn)
+		fn = da.get_next()
+	da.list_dir_end()
+	return ""
 
 
 static func _atlas_lookup(game_root: String, atlas_name: String, world_id: String) -> Dictionary:

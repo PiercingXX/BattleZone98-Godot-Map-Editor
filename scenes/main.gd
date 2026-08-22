@@ -44,6 +44,7 @@ var _aipaths: AiPathOverlay
 @onready var _probe = %ProbeDialog
 @onready var _gallery = %MapGalleryDialog
 @onready var _world_env: WorldEnvironment = %WorldEnvironment
+@onready var _sun: DirectionalLight3D = %Sun
 
 var _sculpt = SculptTool.new()
 ## Accumulator for 10 Hz UI work (status text, label culling).
@@ -57,6 +58,8 @@ var _mask_erase: bool = false
 var _show_grid: bool = false
 var _setting_tool: bool = false
 var _ramp_a: Vector3 = Vector3.INF
+var _ramp_b: Vector3 = Vector3.INF
+var _ramp_dragging: bool = false
 var _last_stamp: Vector3 = Vector3.INF
 var _pending_package: String = ""
 var _probe_explicit: bool = false
@@ -139,6 +142,8 @@ func _ready() -> void:
 	_install_layout_persistence()
 	_apply_layout_settings()
 	_refresh_start_screen()
+	_apply_world_lighting()
+	MapState.world_changed.connect(_apply_world_lighting)
 	_name_right_tabs()
 	_try_load_asset_index()
 	_pack_kind.add_item("BZP map", 0)
@@ -318,6 +323,10 @@ func _process(_delta: float) -> void:
 		_finish_aipath_drag()
 	elif _aipath_dragging:
 		_update_aipath_drag()
+	if _ramp_dragging and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		_finish_ramp_drag()
+	elif _ramp_dragging:
+		_update_ramp_drag()
 	if _measuring:
 		_update_measure_drag()
 	if not MapState.has_session:
@@ -365,24 +374,39 @@ func _process(_delta: float) -> void:
 		# to land one dab per frame, leaving gaps that made strokes feel
 		# jerky. Density per metre is now constant at any mouse speed.
 		var spacing := maxf(HeightField.CELL_M, ToolState.radius_m * 0.15)
+		# Never bridge a jump the mouse cannot have made continuously. At a
+		# grazing camera angle one pixel of travel can move the terrain hit
+		# hundreds of metres, and bridging that painted a streak from the
+		# cursor to the far side of the map. Past the cutoff the stroke
+		# teleports instead: the brush only ever touches ground within its
+		# own radius of where the cursor actually is.
+		var bridge_max := maxf(ToolState.radius_m * 3.0, HeightField.CELL_M * 8.0)
+		if _last_stamp.distance_to(p2) > bridge_max:
+			_last_stamp = p2
+			_stamp_at(p2)
 		var guard := 0
 		while _last_stamp.distance_to(p2) >= spacing and guard < 64:
 			guard += 1
 			var dir := (p2 - _last_stamp) / _last_stamp.distance_to(p2)
 			var at := _last_stamp + dir * spacing
-			if _sel_stroking:
-				var mode := MapState.SEL_SUBTRACT if _sel_subtract else MapState.SEL_ADD
-				var pts: Array[Vector2] = ToolState.world_image_points(at.x, at.z)
-				if pts.is_empty():
-					pts = [Vector2(at.x, at.z)]
-				for pt in pts:
-					MapState.stamp_terrain_selection(
-						pt.x, pt.y, ToolState.radius_m, ToolState.falloff, ToolState.shape, mode
-					)
-			else:
-				_sculpt.stamp(MapState.field, at.x, at.z)
+			_stamp_at(at)
 			_last_stamp = at
 	_flush_live_gpu()
+
+
+func _stamp_at(at: Vector3) -> void:
+	## One dab of the live stroke at a world point.
+	if _sel_stroking:
+		var mode := MapState.SEL_SUBTRACT if _sel_subtract else MapState.SEL_ADD
+		var pts: Array[Vector2] = ToolState.world_image_points(at.x, at.z)
+		if pts.is_empty():
+			pts = [Vector2(at.x, at.z)]
+		for pt in pts:
+			MapState.stamp_terrain_selection(
+				pt.x, pt.y, ToolState.radius_m, ToolState.falloff, ToolState.shape, mode
+			)
+	else:
+		_sculpt.stamp(MapState.field, at.x, at.z)
 
 
 func _input(event: InputEvent) -> void:
@@ -417,6 +441,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_cancel_aipath_drag()
 		if _tsel_rect:
 			_cancel_terrain_rect()
+		if _ramp_dragging:
+			_cancel_ramp_drag()
 		if _measuring:
 			_clear_measure()
 			_log.call("measure cancelled")
@@ -555,6 +581,8 @@ func _on_view_gui_input(event: InputEvent) -> void:
 					_finish_select_gesture()
 				if _tsel_rect:
 					_finish_terrain_rect()
+				if _ramp_dragging:
+					_finish_ramp_drag()
 			elif ToolState.tool == "select" and Input.is_key_pressed(KEY_M):
 				var measure_hit := _pick()
 				if measure_hit.get("hit", false):
@@ -578,6 +606,8 @@ func _on_view_gui_input(event: InputEvent) -> void:
 			elif ToolState.tool == "select" and _try_begin_gizmo_drag():
 				pass
 			elif ToolState.tool == "select" and _begin_aipath_gesture(mb.shift_pressed):
+				pass
+			elif ToolState.tool == "select" and _try_begin_object_drag(mb.shift_pressed):
 				pass
 			elif ToolState.tool == "select":
 				_begin_select_gesture(mb.shift_pressed)
@@ -651,12 +681,7 @@ func _on_lmb_down(p: Vector3, hit: Dictionary, shift: bool, alt: bool = false, c
 		_apply_wand(p, shift, alt)
 		return
 	if ToolState.tool == "ramp":
-		if _ramp_a.x > 1.0e8:
-			_ramp_a = p
-			_log.call("ramp start %.1f, %.1f  h %.1f" % [p.x, p.z, p.y])
-		else:
-			EditActions.apply_ramp(_sculpt, _ramp_a, p, _log)
-			_ramp_a = Vector3.INF
+		_begin_ramp_drag(p)
 		return
 	if ToolState.tool == "clone":
 		if not ToolState.has_clone_source():
@@ -850,7 +875,7 @@ func _on_tool_state(name: String) -> void:
 	# TopBar subscribes to ToolState.tool_changed itself.
 	_apply_grid()
 	if name != "ramp":
-		_ramp_a = Vector3.INF
+		_cancel_ramp_drag()
 	if name != "place":
 		_objects.set_ghost(false, {}, MapState.field, Vector3.UP)
 	if name != "select":
@@ -868,6 +893,52 @@ func _on_tool_state(name: String) -> void:
 		_sync_gizmo()
 	if name != "rsel":
 		_cancel_terrain_rect()
+
+
+func preview_sun_minutes(minutes: int) -> void:
+	## Live drag feedback from the World panel: move the light now, leave the
+	## map edit to the panel's release handler.
+	_place_sun(minutes)
+
+
+func _place_sun(minutes: int) -> void:
+	if _sun == null:
+		return
+	var dir := WorldLighting.sun_to_light_direction(minutes)
+	# Basis.looking_at needs an up that is not parallel to the direction, and
+	# a noon sun points straight down.
+	var up := Vector3.UP if absf(dir.dot(Vector3.UP)) < 0.99 else Vector3.FORWARD
+	var xf := _sun.global_transform
+	xf.basis = Basis.looking_at(dir, up)
+	_sun.global_transform = xf
+	_sun.light_energy = WorldLighting.sun_energy(minutes)
+
+
+func _apply_world_lighting() -> void:
+	## Sun clock + fog, from the map's [NormalView] values onto the viewport.
+	_place_sun(MapState.sun_minutes())
+	if _world_env == null or _world_env.environment == null:
+		return
+	var env: Environment = _world_env.environment
+	var on: bool = Settings.view_fog and MapState.has_session
+	env.fog_enabled = on
+	if not on:
+		return
+	# Linear depth fog, not the exponential default: the game's FogStart /
+	# FogEnd are two distances with a straight ramp between them, and an
+	# exponential falloff would not show the mapmaker what they are setting.
+	env.fog_mode = Environment.FOG_MODE_DEPTH
+	env.fog_depth_curve = 1.0
+	var fog := WorldLighting.clamp_fog(
+		float(MapState.world_setting("fog_start_m")),
+		float(MapState.world_setting("fog_end_m"))
+	)
+	env.fog_depth_begin = fog.x
+	env.fog_depth_end = maxf(fog.y, fog.x + 1.0)
+	env.fog_light_color = MapState.fog_color()
+	env.fog_density = 1.0
+	env.fog_sky_affect = 1.0
+	env.fog_aerial_perspective = 0.0
 
 
 func _sync_sculpt() -> void:
@@ -1190,6 +1261,41 @@ func _sync_gizmo() -> void:
 		_gizmo.set_active_handle(_gizmo_handle)
 
 
+func _try_begin_object_drag(shift: bool) -> bool:
+	## Press straight on an object and it starts moving on X/Z at once — no
+	## trip through the gizmo handle. Shift is left to the selection gesture so
+	## shift+click still adds to and removes from the selection.
+	if shift or not MapState.has_session:
+		return false
+	var mouse := _viewport.get_mouse_position()
+	var origin := _camera.project_ray_origin(mouse)
+	var dir := _camera.project_ray_normal(mouse)
+	var id: String = _objects.pick(origin, dir)
+	if id.is_empty():
+		return false
+	if not MapState.selected_ids.has(id):
+		EditActions.select_id(id, false, _log)
+		_objects.highlight(MapState.selected_ids)
+		_fill_inspector()
+	var recs := _selection_records()
+	if recs.is_empty():
+		return false
+	_gizmo_pivot = SelectionGizmo.selection_pivot(recs)
+	var plane := SelectionGizmo.ray_ground(origin, dir, _gizmo_pivot.y)
+	if not plane.is_finite():
+		return false
+	_gizmo_dragging = true
+	_gizmo_handle = SelectionGizmo.HANDLE_XZ
+	_gizmo_start_hit = plane
+	_gizmo_dx = 0.0
+	_gizmo_dz = 0.0
+	_gizmo_dyaw = 0.0
+	if _gizmo:
+		_gizmo.set_active_handle(SelectionGizmo.HANDLE_XZ)
+	_objects.set_hover("")
+	return true
+
+
 func _try_begin_gizmo_drag() -> bool:
 	_sync_gizmo()
 	if _gizmo == null or not _gizmo.visible:
@@ -1265,6 +1371,10 @@ func _finish_gizmo_drag() -> void:
 		_gizmo.set_active_handle("")
 	if _objects and _objects.has_method("restore_placed"):
 		_objects.restore_placed()
+	if is_zero_approx(dx) and is_zero_approx(dz) and is_zero_approx(dyaw):
+		# A press with no travel is a click, not a move. Say nothing.
+		_sync_gizmo()
+		return
 	EditActions.apply_selection_transform(dx, dz, dyaw, pivot, _log)
 	_on_objects_mutated()
 
@@ -1283,6 +1393,71 @@ func _cancel_gizmo_drag() -> void:
 		_objects.restore_placed()
 	_sync_gizmo()
 	_log.call("gizmo cancelled")
+
+
+func _begin_ramp_drag(p: Vector3) -> void:
+	## Ramp is a press-drag-release gesture: A is where the button went down,
+	## B follows the cursor, and the ramp is cut on release.
+	if not MapState.has_session or not MapState.has_heightmap():
+		_log.call("open a map first")
+		return
+	_ramp_a = p
+	_ramp_b = p
+	_ramp_dragging = true
+	_sync_marquee_overlay()
+	if _marquee:
+		_marquee.queue_redraw()
+
+
+func _update_ramp_drag() -> void:
+	if not _ramp_dragging:
+		return
+	var hit := _pick()
+	if hit.get("hit", false):
+		_ramp_b = hit["position"]
+	_sync_marquee_overlay()
+	if _marquee:
+		_marquee.queue_redraw()
+	_status.set_cursor(_ramp_readout())
+
+
+func _finish_ramp_drag() -> void:
+	if not _ramp_dragging:
+		return
+	var a := _ramp_a
+	var b := _ramp_b
+	_ramp_dragging = false
+	_ramp_a = Vector3.INF
+	_ramp_b = Vector3.INF
+	if _marquee:
+		_marquee.queue_redraw()
+	if not a.is_finite() or not b.is_finite():
+		return
+	if Vector2(b.x - a.x, b.z - a.z).length() < 1.0:
+		_log.call("ramp needs a drag, not a click")
+		return
+	_sync_sculpt()
+	EditActions.apply_ramp(_sculpt, a, b, _log)
+	MapState.flush_gpu()
+	_on_object_poses_changed()
+
+
+func _cancel_ramp_drag() -> void:
+	var was := _ramp_dragging
+	_ramp_dragging = false
+	_ramp_a = Vector3.INF
+	_ramp_b = Vector3.INF
+	if _marquee:
+		_marquee.queue_redraw()
+	if was:
+		_log.call("ramp cancelled")
+
+
+func _ramp_readout() -> String:
+	var run := Vector2(_ramp_b.x - _ramp_a.x, _ramp_b.z - _ramp_a.z).length()
+	var rise := _ramp_b.y - _ramp_a.y
+	var deg := 0.0 if run < 0.001 else rad_to_deg(atan2(absf(rise), run))
+	return "ramp  %.0f m   rise %+.1f m   %.1f°  (30° is the climb limit)" % [run, rise, deg]
 
 
 func _begin_select_gesture(shift: bool) -> void:
@@ -1415,6 +1590,32 @@ func _on_marquee_draw() -> void:
 		var box2 := EditActions.screen_rect_from_drag(a, b)
 		_marquee.draw_rect(box2, Color(0.35, 0.55, 1.0, 0.16), true)
 		_marquee.draw_rect(box2, Color(0.70, 0.85, 1.0, 0.95), false, 1.5)
+		return
+	if _ramp_dragging and _ramp_a.is_finite() and _ramp_b.is_finite():
+		_draw_ramp_guide()
+
+
+func _draw_ramp_guide() -> void:
+	## 2D overlay, drawn over the viewport image — the guide stays readable
+	## across a hill that would swallow a line drawn in the 3D scene.
+	var a := _camera.unproject_position(_ramp_a)
+	var b := _camera.unproject_position(_ramp_b)
+	var shadow := Color(0.05, 0.05, 0.07, 0.85)
+	var ink := Color(0.98, 0.86, 0.28, 1.0)
+	_marquee.draw_dashed_line(a + Vector2.ONE, b + Vector2.ONE, shadow, 3.0, 9.0)
+	_marquee.draw_dashed_line(a, b, ink, 2.0, 9.0)
+	_marquee.draw_circle(a, 4.0, shadow)
+	_marquee.draw_circle(a, 2.5, ink)
+	_marquee.draw_circle(b, 4.0, shadow)
+	_marquee.draw_circle(b, 2.5, ink)
+	var font := _marquee.get_theme_default_font()
+	if font == null:
+		return
+	var size := _marquee.get_theme_default_font_size()
+	var text := _ramp_readout()
+	var at := b + Vector2(12.0, -10.0)
+	_marquee.draw_string(font, at + Vector2.ONE, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, shadow)
+	_marquee.draw_string(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, ink)
 
 
 func _on_session_changed() -> void:
@@ -1437,6 +1638,7 @@ func _on_session_changed() -> void:
 	_refresh_mask_overlay()
 	_refresh_selection_overlay()
 	_apply_view_settings()
+	_apply_world_lighting()
 	if not MapState.has_session:
 		return
 	if _terrain.has_method("rebuild"):

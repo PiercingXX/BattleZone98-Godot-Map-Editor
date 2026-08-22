@@ -12,6 +12,8 @@ signal features_changed()
 signal aipaths_changed()
 signal mask_changed()
 signal selection_changed()
+## Sun clock or fog changed — the viewport and the World panel both listen.
+signal world_changed()
 ## Y / xz pose only — markers should move in place, not rebuild.
 signal object_poses_changed()
 
@@ -160,6 +162,10 @@ func load_from_open(result: Dictionary) -> void:
 func persist() -> void:
 	if not has_session:
 		return
+	# Re-resolve the world's stock .act every time: the save step reads it out
+	# of meta.json, and the install path is machine-local, not map data.
+	if typeof(meta.get("world")) == TYPE_DICTIONARY:
+		(meta["world"] as Dictionary)["palette_source"] = world_palette_path()
 	field.write_r16(session_dir.path_join("terrain.r16"))
 	_write_materials()
 	_write_json(session_dir.path_join("objects.json"), objects)
@@ -387,6 +393,101 @@ func _dup_paths(recs: Array) -> Array:
 
 func has_heightmap() -> bool:
 	return field != null and field.grid_x > 0 and field.grid_z > 0
+
+
+# -- world lighting / fog (.trn [NormalView] + the fog palette) --------------
+
+
+func world_settings() -> Dictionary:
+	## The map's sun clock and fog, seeded from the source `.trn` the first
+	## time it is asked for. Lives in meta.json so it survives autosave and
+	## crash recovery like every other session-side edit.
+	var stored: Variant = meta.get("world")
+	if typeof(stored) == TYPE_DICTIONARY and not (stored as Dictionary).is_empty():
+		return stored
+	var seeded: Dictionary = WorldLighting.defaults()
+	var nv: Dictionary = _trn_section("NormalView")
+	if nv.has("Time"):
+		seeded["time"] = WorldLighting.time_from_minutes(
+			WorldLighting.minutes_from_time(nv["Time"])
+		)
+	for pair in [
+		["FogStart", "fog_start_m"], ["FogEnd", "fog_end_m"], ["FogBreak", "fog_break_m"]
+	]:
+		if nv.has(pair[0]):
+			seeded[pair[1]] = float(str(nv[pair[0]]).strip_edges().to_float())
+	var fogged: Vector2 = WorldLighting.clamp_fog(
+		float(seeded["fog_start_m"]), float(seeded["fog_end_m"])
+	)
+	seeded["fog_start_m"] = fogged.x
+	seeded["fog_end_m"] = fogged.y
+	var pal: String = world_palette_path()
+	if not pal.is_empty():
+		var read: Dictionary = BzAct.read(pal)
+		if bool(read.get("ok", false)):
+			seeded["fog_color"] = BzAct.fog_color(read["palette"]).to_html(false)
+	meta["world"] = seeded
+	return seeded
+
+
+func world_setting(key: String, fallback: Variant = null) -> Variant:
+	var w: Dictionary = world_settings()
+	return w.get(key, fallback if fallback != null else WorldLighting.defaults().get(key))
+
+
+func sun_minutes() -> int:
+	return WorldLighting.minutes_from_time(world_setting("time"))
+
+
+func fog_color() -> Color:
+	return Color(str(world_setting("fog_color")))
+
+
+func set_world_setting(key: String, value: Variant) -> void:
+	var w: Dictionary = world_settings().duplicate()
+	if w.get(key) == value:
+		return
+	w[key] = value
+	# FogStart may never pass FogEnd (the engine draws nothing between them
+	# the other way round), so the pair is clamped together, not per field.
+	var fogged: Vector2 = WorldLighting.clamp_fog(
+		float(w.get("fog_start_m", WorldLighting.FOG_START_DEFAULT)),
+		float(w.get("fog_end_m", WorldLighting.FOG_END_DEFAULT))
+	)
+	if key == "fog_start_m":
+		w["fog_start_m"] = fogged.x
+	elif key == "fog_end_m":
+		w["fog_end_m"] = fogged.y
+		w["fog_start_m"] = fogged.x
+	w["fog_break_m"] = clampf(
+		float(w.get("fog_break_m", WorldLighting.FOG_BREAK_DEFAULT)),
+		WorldLighting.FOG_MIN_M,
+		WorldLighting.FOG_MAX_M
+	)
+	meta["world"] = w
+	dirty["trn"] = true
+	dirty_changed.emit()
+	world_changed.emit()
+	note_unsaved()
+
+
+func world_palette_path() -> String:
+	## The stock `.act` for this map's world, or "" when the install has none
+	## where we look. Copying it is the only way to ship a fog colour (F6 §3).
+	for entry in worlds:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		if str(entry.get("id", "")).to_lower() == world.to_lower():
+			return str(entry.get("palette_path", ""))
+	return ""
+
+
+func _trn_section(name: String) -> Dictionary:
+	var trn: Variant = meta.get("trn")
+	if typeof(trn) != TYPE_DICTIONARY:
+		return {}
+	var section: Variant = (trn as Dictionary).get(name)
+	return section if typeof(section) == TYPE_DICTIONARY else {}
 
 
 func load_features_and_masks() -> void:

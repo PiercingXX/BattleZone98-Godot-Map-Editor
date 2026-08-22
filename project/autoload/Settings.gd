@@ -58,6 +58,9 @@ var view_grid: bool = false
 var view_slope: bool = false
 ## View → Labels: class / label billboards above object markers.
 var view_labels: bool = false
+## World → Fog: draw the map's fog in the viewport. Editor-side visibility
+## only — the map's fog distances are saved either way.
+var view_fog: bool = true
 ## Object snap. 0 = off. Allowed grids 1/5/10/20 m; angles 15/45/90°.
 var snap_grid_m: float = 0.0
 var snap_angle: float = 0.0
@@ -120,6 +123,7 @@ func _load() -> void:
 	view_grid = bool(_cfg.get_value("view", "grid", false))
 	view_slope = bool(_cfg.get_value("view", "slope", false))
 	view_labels = bool(_cfg.get_value("view", "labels", false))
+	view_fog = bool(_cfg.get_value("view", "fog", true))
 	snap_grid_m = coerce_snap_grid(_cfg.get_value("snap", "grid_m", 0.0))
 	snap_angle = coerce_snap_angle(_cfg.get_value("snap", "angle", 0.0))
 	ui_scale = coerce_ui_scale(_cfg.get_value("ui", "ui_scale", UI_SCALE_DEFAULT))
@@ -206,6 +210,7 @@ func save() -> void:
 	_cfg.set_value("view", "grid", view_grid)
 	_cfg.set_value("view", "slope", view_slope)
 	_cfg.set_value("view", "labels", view_labels)
+	_cfg.set_value("view", "fog", view_fog)
 	snap_grid_m = coerce_snap_grid(snap_grid_m)
 	snap_angle = coerce_snap_angle(snap_angle)
 	_cfg.set_value("snap", "grid_m", snap_grid_m)

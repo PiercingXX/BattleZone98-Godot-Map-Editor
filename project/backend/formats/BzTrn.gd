@@ -159,6 +159,23 @@ class TerrainConfig:
 				text += _EOL
 		BzTrn._write_text(path, text)
 
+	func ensure_section(p_name: String) -> Section:
+		## The section, appended to the file if it is not there yet.
+		##
+		## `set` refuses to create sections, and a `.trn` written by hand or by
+		## an older tool can be missing `[NormalView]` entirely — writing the
+		## sun clock into such a file has to add the header, not push_error.
+		var got: Variant = section(p_name)
+		if got != null:
+			return got as Section
+		if not _lines.is_empty() and not _lines[_lines.size() - 1].strip_edges().is_empty():
+			_lines.append("")
+		_lines.append("[%s]" % p_name)
+		var sec := Section.new(p_name, -1)
+		sections.append(sec)
+		_dirty = true
+		return sec
+
 	func sections_named(p_name: String) -> Array:
 		var found: Array = []
 		for section in sections:

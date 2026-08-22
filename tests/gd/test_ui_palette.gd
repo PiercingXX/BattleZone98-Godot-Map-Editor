@@ -411,26 +411,34 @@ func _paint_kind_rows_stable(t, pal: Node) -> void:
 	var face: Control = pal.find_child("TileFaceRow", true, false)
 	var vari: Control = pal.find_child("TileVariantRow", true, false)
 	t.ok(meet != null and face != null and vari != null, "cap/corner rows exist")
-	var trans: OptionButton = pal.find_child("PaintTransition", true, false)
+	var grid: GridContainer = pal.find_child("TileChoices", true, false)
+	t.ok(grid != null, "solids, caps, corners and variants share one swatch grid")
 	var rot: Button = pal.find_child("PaintRotate", true, false)
 	var mirror: CheckBox = pal.find_child("PaintMirror", true, false)
-	var variant: OptionButton = pal.find_child("PaintVariant", true, false)
+	var pick: Label = pal.find_child("TileChoiceValue", true, false)
+	t.ok(pick != null, "the picked tile is named under the grid")
 	var mats: Control = pal.find_child("MatsSection", true, false)
 	var rail: Control = pal as Control
 	ToolState.set_paint_kind("solid")
 	await t.tree.process_frame
 	t.ok(meet.is_visible_in_tree() and face.is_visible_in_tree() and vari.is_visible_in_tree(),
-		"Meets / Facing / Variant stay on Solid")
-	t.ok(trans.disabled and rot.disabled and mirror.disabled and variant.disabled,
-		"pair controls are disabled on Solid")
+		"Tiles / Facing / picked-tile rows stay on Solid")
+	t.ok(grid.get_child_count() > 0, "Solid lists its own variants as swatches")
+	t.ok(rot.disabled and mirror.disabled, "orientation is disabled on Solid")
 	var h0 := mats.size.y
 	var w0 := rail.size.x
 	ToolState.set_paint_kind("cap")
 	await t.tree.process_frame
 	t.eq(ToolState.paint_kind, "cap")
 	t.ok(meet.is_visible_in_tree() and face.is_visible_in_tree() and vari.is_visible_in_tree())
-	t.ok(not trans.disabled and not rot.disabled and not mirror.disabled,
-		"pair controls enable on Cap")
+	t.ok(not rot.disabled and not mirror.disabled, "orientation enables on Cap")
+	t.ok(grid.get_child_count() > 0, "Cap lists its pairs as swatches too")
+	var first: Button = grid.get_child(0) as Button
+	t.ok(first != null and first.has_meta("trans") and first.has_meta("variant"),
+		"each swatch carries the tile it picks")
+	first.pressed.emit()
+	t.eq(ToolState.paint_transition, int(first.get_meta("trans")), "clicking a swatch picks its pair")
+	t.eq(ToolState.paint_variant, int(first.get_meta("variant")), "and its variant")
 	t.eq(mats.size.y, h0, "mats height does not jump Solid → Cap")
 	t.eq(rail.size.x, w0, "rail width does not jump Solid → Cap")
 	ToolState.set_paint_kind("diag")

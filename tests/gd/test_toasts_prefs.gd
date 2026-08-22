@@ -260,6 +260,17 @@ func _prefs_dialog(t) -> void:
 	scale.value = 1.35
 	t.eq(Settings.ui_scale, Settings.coerce_ui_scale(1.35), "scale slider writes Settings")
 
+	# Held grab: the readout tracks, the window does not rescale until release.
+	Settings.ui_scale = 1.0
+	dlg.refresh()
+	scale.drag_started.emit()
+	scale.value = 1.5
+	t.eq(Settings.ui_scale, 1.0, "scale is not applied while the grab is held")
+	var readout: Label = dlg.find_child("UiScaleValue", true, false)
+	t.eq(readout.text, "%.2f×" % Settings.coerce_ui_scale(1.5), "readout still tracks live")
+	scale.drag_ended.emit(true)
+	t.eq(Settings.ui_scale, Settings.coerce_ui_scale(1.5), "scale lands on release")
+
 	dlg._apply_autosave(60)
 	t.eq(Settings.autosave_interval_s, 60, "autosave radio writes Settings")
 	dlg._apply_autosave(0)

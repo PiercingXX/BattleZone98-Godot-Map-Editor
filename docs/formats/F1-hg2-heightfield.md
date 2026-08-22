@@ -111,6 +111,35 @@ work. It breaks on every larger map. **Test on a 2×2 map or larger.**
 
 `.mat` uses the same zone-interleaved scheme at its own resolution — see F2 §3.
 
+### 4.1 X runs east → west — **VERIFIED**
+
+`sub_x` counts **down** the world X axis. The index formula above finds the
+right *slot*; what it does not say is that `x = 0` is the map's **+X (east)
+edge**. Reading the file as plain zone-major mirrors the whole map
+left-to-right:
+
+```
+world_x = (map_width * zone_length) - 1 - x
+```
+
+Settled 2026-08-22 against the game: terrain sculpted on the west side of the
+editor appeared on the east side in game, and the `.mat` textures moved with
+it. This is the same mirror §5 already suspected from the reference tooling's
+flipped X vertex ordering — the flip is real and belongs in the reader, not in
+a viewer.
+
+`.mat` carries the identical mirror (F2 §3.1), which is why the two grids
+stayed consistent with each other while both disagreed with the game.
+
+Apply it on **both** read and write. Mirroring only on write flips a map every
+time it is opened and saved and breaks the byte-identical round trip; applied
+to both, the pair is its own inverse and §7's round-trip test is untouched.
+
+**Objects are a separate question.** BZN `pos` is a world coordinate, not a
+terrain index, so nothing here mirrors it — but that means object-to-terrain
+alignment in any tool that got the terrain mirror wrong was also wrong, and it
+has to be re-checked against `MinX` (F3 §2) rather than assumed.
+
 ## 5. Axis orientation
 
 `x` increases along the map's width axis; `z` increases along the map's depth
@@ -120,6 +149,9 @@ The reference tooling had to flip its X vertex ordering and rotate its generated
 mesh to align with in-game terrain, which means **the storage handedness does
 not match a naive right-handed viewer setup**. The reliable calibration is not
 an argument about signs — it is §7's test.
+
+That test has now been run (§4.1): the X flip is a property of the file, and
+the reader/writer pair owns it.
 
 Relation to world/object coordinates (BZN `pos`, TRN `MinX`/`MinZ`) is specified
 in F3 §2 and F8 §1. Terrain sample `(x, z)` and object position are **not** in

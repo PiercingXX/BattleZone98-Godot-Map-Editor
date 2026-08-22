@@ -20,6 +20,9 @@ const MAP_SUFFIXES: Array[String] = [
 	".trn",
 	".hg2",
 	".mat",
+	# The map's own fog palette. Without it a packaged map ships a .trn
+	# pointing at an .act that is not in the pack.
+	".act",
 	".lgt",
 	".vxt",
 	".bzn",

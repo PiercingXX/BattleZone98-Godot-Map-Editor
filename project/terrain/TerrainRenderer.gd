@@ -287,7 +287,10 @@ func _add_chunk(cx: int, cz: int) -> void:
 	if MapState.selection_texture:
 		mat.set_shader_parameter("selection_tex", MapState.selection_texture)
 	inst.material_override = mat
-	inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# The chunk mesh is a flat plane until the vertex shader displaces it, and
+	# the shadow pass runs that same vertex shader — so the caster follows the
+	# sculpted surface, and hills shade their own valleys.
+	inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	add_child(inst)
 
 

@@ -123,7 +123,11 @@ static func open_map(path: String, session_dir: String) -> Dictionary:
 	var mat_grid_x: int
 	var mat_grid_z: int
 	if not mat_path.is_empty():
-		var mat_res: Dictionary = BzMat.read_mat(mat_path)
+		# Shape the tile grid from the companion .hg2 (F2 §1). Guessing it from
+		# the sample count transposes every non-square map.
+		var mat_res: Dictionary = BzMat.read_mat(
+			mat_path, int(heightmap.grid_z / BzMat.TILE_CELLS), int(heightmap.grid_x / BzMat.TILE_CELLS)
+		)
 		if not bool(mat_res.get("ok", false)):
 			return mat_res
 		var grid: BzMat.MaterialGrid = mat_res["grid"]
@@ -374,6 +378,10 @@ static func _parse_meta(files: Array, _stem: String) -> Dictionary:
 			"World": _trn_section_dict(trn_path, "World"),
 			"Sky": _trn_section_dict(trn_path, "Sky"),
 			"Clouds": _trn_section_dict(trn_path, "Clouds"),
+			# [Color] Palette names the .act the map's fog colour comes from
+			# (F6 §4); the editor needs it to know what to copy and rename.
+			"Color": _trn_section_dict(trn_path, "Color"),
+			"Size": _trn_section_dict(trn_path, "Size"),
 		}
 	return meta
 
@@ -648,6 +656,8 @@ static func _empty_dirty(variants: Variant = null) -> Dictionary:
 		"features": false,
 		"meta": [],
 		"aipaths": aipaths,
+		# Sun clock / fog / fog palette — the `.trn` [NormalView] + [Color].
+		"trn": false,
 	}
 
 

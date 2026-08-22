@@ -124,8 +124,10 @@ static func _ensure_catalog() -> void:
 		var parsed: Dictionary = _parse_tile_name(str(key))
 		if parsed.is_empty():
 			continue
+		# Solids (kind 0) are catalogued too: the tile picker presents them
+		# the same way as caps and corners, so it needs the same index.
 		var k: int = int(parsed.get("kind", -1))
-		if k < 1:
+		if k < 0:
 			continue
 		var ck := "%d:%d:%d" % [k, int(parsed.get("base", 0)), int(parsed.get("trans", 0))]
 		var variant: int = int(parsed.get("variant", 0))
@@ -180,6 +182,82 @@ static func material_thumbnails(size: int = 28) -> Array:
 		var tex := _crop_tile(atlas, uv, size)
 		if tex:
 			out[i] = tex
+	return out
+
+
+## Every tile this world ships for `base` at `kind`, as pickable swatches.
+##
+## One entry per (transition, variant) pair, each with the atlas crop that the
+## viewport will actually draw. Solids, caps, corners and variants all come
+## back in the same shape so the picker can present them identically instead
+## of hiding variants behind a dropdown.
+##
+## `texture` is null when the atlas is unavailable (no install, or a DDS the
+## editor cannot decode); the entry is still listed so the tile stays pickable.
+static func tile_swatches(base: int, kind: String, size: int = 35) -> Array:
+	base &= 0xF
+	var out: Array = []
+	var atlas: Image = null
+	var tiles: Dictionary = {}
+	var world := _current_world()
+	if not world.is_empty():
+		tiles = world.get("atlas_tiles", {})
+		var path := str(world.get("atlas_image", ""))
+		if not path.is_empty() and path.to_lower().ends_with(".png") \
+				and FileAccess.file_exists(path):
+			atlas = _load_atlas_png(path)
+	for entry in _tile_entries(base, kind, tiles):
+		var rec: Dictionary = entry
+		var tex: ImageTexture = null
+		if atlas != null and not str(rec.get("name", "")).is_empty():
+			var uv := _rect_of(tiles, str(rec["name"]))
+			if uv.z > 0.0 and uv.w > 0.0:
+				tex = _crop_tile(atlas, uv, size)
+		rec["texture"] = tex
+		out.append(rec)
+	return out
+
+
+static func _tile_entries(base: int, kind: String, tiles: Dictionary) -> Array:
+	var k := kind_code(kind)
+	var out: Array = []
+	var seen: Dictionary = {}
+	if not tiles.is_empty():
+		for key in tiles.keys():
+			var parsed := _parse_tile_name(str(key))
+			if parsed.is_empty() or int(parsed.get("kind", -1)) != k:
+				continue
+			var b: int = int(parsed.get("base", -1))
+			var tr: int = int(parsed.get("trans", -1))
+			if k == 0:
+				# A solid names its material in either nibble: Elysium's type 4
+				# ships as EL04SA0, not EL44SA0 (F2 §4).
+				if b != base and tr != base:
+					continue
+				tr = base
+			elif b != base:
+				continue
+			var v: int = int(parsed.get("variant", 0))
+			var id := "%d:%d" % [tr, v]
+			if seen.has(id):
+				continue
+			seen[id] = true
+			out.append({"trans": tr, "variant": v, "name": str(key)})
+	if out.is_empty():
+		# No atlas table to read — offer the shape of the choice anyway so the
+		# picker is not simply empty on a machine with no install.
+		if k == 0:
+			for v in 4:
+				out.append({"trans": base, "variant": v, "name": ""})
+		else:
+			for tr2 in 16:
+				if tr2 != base:
+					out.append({"trans": tr2, "variant": 0, "name": ""})
+	out.sort_custom(func(a, b):
+		if int(a["trans"]) != int(b["trans"]):
+			return int(a["trans"]) < int(b["trans"])
+		return int(a["variant"]) < int(b["variant"])
+	)
 	return out
 
 

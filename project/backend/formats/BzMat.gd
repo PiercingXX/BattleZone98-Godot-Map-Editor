@@ -13,9 +13,18 @@ class_name BzMat
 ##   transition:4 and a diagonal-mirror remap; this module does not implement
 ##   that remap. Read/write is verbatim uint16 either way — the layout only
 ##   matters for auto-paint.
-## - `read` infers (rows, cols) via closest factor pair (`rows <= cols`). A
-##   tall 3×2-zone map is therefore read as 2×3. Companion HG2 size-guard
-##   (F2 §8.4) is not in this module.
+##
+## X mirror (F2 §3.1, settled 2026-08-22 by the §8 test-3 in-game comparison):
+## the engine walks a zone's tile row from +X toward −X, so a `.mat` read as
+## plain zone-major comes out mirrored left-to-right against its own `.hg2`.
+## Painting an arrow pointing west in the editor produced one pointing east in
+## game. `read` and `write` therefore mirror the X index, and `data` is true
+## world space — same orientation as `BzHg2.HeightMap.data`. Mirroring both
+## directions keeps the open→save round trip byte-identical.
+##
+## The mirror belongs to the zone-interleaved game layout only. A `.mat` whose
+## dimensions are not a multiple of `ZONE_TILES` is not a shape the engine
+## loads; that fallback stays a flat row-major dump, unmirrored.
 
 const TILE_CELLS: int = 4
 const ZONE_TILES: int = 64
@@ -71,7 +80,11 @@ class MaterialGrid:
 		get:
 			return float(grid_z) * BzMat.TILE_M
 
-	static func read(path: String) -> Dictionary:
+	static func read(path: String, expect_rows: int = -1, expect_cols: int = -1) -> Dictionary:
+		## `expect_rows` / `expect_cols` come from the companion `.hg2` zone
+		## counts. Without them the shape is guessed from the sample count, and
+		## the guess transposes every non-square map (a 2×3-zone map reads as
+		## 3×2) — pass them whenever the heightmap is in hand.
 		var file := FileAccess.open(path, FileAccess.READ)
 		if file == null:
 			return BzMat._fail(
@@ -87,9 +100,23 @@ class MaterialGrid:
 		raw.resize(n)
 		for i in n:
 			raw[i] = buf.decode_u16(i * 2)
-		var pair: Vector2i = BzMat._closest_factor_pair(n)
-		var rows: int = pair.x
-		var cols: int = pair.y
+		var rows: int
+		var cols: int
+		if expect_rows > 0 and expect_cols > 0:
+			# F2 §8.4 size guard: a .mat that does not match its .hg2 belongs to
+			# another map. Refuse it by name rather than reading it crookedly.
+			if expect_rows * expect_cols != n:
+				return BzMat._fail(
+					"%s: %d tiles, but the heightmap wants %dx%d = %d"
+					% [path, n, expect_cols, expect_rows, expect_rows * expect_cols],
+					"The .mat belongs to a different map than the .hg2 next to it."
+				)
+			rows = expect_rows
+			cols = expect_cols
+		else:
+			var pair: Vector2i = BzMat._closest_factor_pair(n)
+			rows = pair.x
+			cols = pair.y
 		var zz_count: int = rows / ZONE_TILES
 		var zx_count: int = cols / ZONE_TILES
 		if rows % ZONE_TILES != 0 or cols % ZONE_TILES != 0:
@@ -101,9 +128,11 @@ class MaterialGrid:
 			for zxi in zx_count:
 				for sub_z in ZONE_TILES:
 					var world_z: int = zzi * ZONE_TILES + sub_z
-					var row: int = world_z * cols + zxi * ZONE_TILES
+					var row: int = world_z * cols
 					for sub_x in ZONE_TILES:
-						words[row + sub_x] = raw[src]
+						# Mirror X: disk tile 0 of the first zone is the map's
+						# east edge (see the X-mirror note at the top).
+						words[row + cols - 1 - (zxi * ZONE_TILES + sub_x)] = raw[src]
 						src += 1
 		return {"ok": true, "grid": MaterialGrid.new(words, rows, cols)}
 
@@ -123,9 +152,14 @@ class MaterialGrid:
 				for zxi in zx_count:
 					for sub_z in ZONE_TILES:
 						var world_z: int = zzi * ZONE_TILES + sub_z
-						var row: int = world_z * cols + zxi * ZONE_TILES
+						var row: int = world_z * cols
 						for sub_x in ZONE_TILES:
-							out.encode_u16(off, data[row + sub_x] & 0xFFFF)
+							# Inverse of the read mirror; the pair keeps
+							# open→save byte-identical.
+							out.encode_u16(
+								off,
+								data[row + cols - 1 - (zxi * ZONE_TILES + sub_x)] & 0xFFFF
+							)
 							off += 2
 		var file := FileAccess.open(path, FileAccess.WRITE)
 		if file == null:
@@ -432,8 +466,8 @@ static func auto_paint(heightmap: Variant, rules: Array) -> Variant:
 	return MaterialGrid.new(mat_data, mat_h, mat_w)
 
 
-static func read_mat(path: String) -> Dictionary:
-	return MaterialGrid.read(path)
+static func read_mat(path: String, expect_rows: int = -1, expect_cols: int = -1) -> Dictionary:
+	return MaterialGrid.read(path, expect_rows, expect_cols)
 
 
 static func write_mat(path: String, grid: MaterialGrid) -> Dictionary:

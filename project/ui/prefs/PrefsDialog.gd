@@ -7,6 +7,7 @@ var _scheme_godot: Button
 var _scheme_gimp: Button
 var _scale: HSlider
 var _scale_label: Label
+var _scale_dragging: bool = false
 var _auto_15: Button
 var _auto_30: Button
 var _auto_60: Button
@@ -96,6 +97,11 @@ func _build_ui() -> void:
 	_scale.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_scale.tooltip_text = "Window content scale (%.2f–%.2f)" % [Settings.UI_SCALE_MIN, Settings.UI_SCALE_MAX]
 	_scale.value_changed.connect(_on_scale)
+	# Rescaling the whole window on every intermediate value makes the slider
+	# fight the cursor it is being dragged with. While the grab is held the
+	# readout tracks live and nothing else moves; the scale lands on release.
+	_scale.drag_started.connect(func() -> void: _scale_dragging = true)
+	_scale.drag_ended.connect(_on_scale_drag_ended)
 	scale_row.add_child(_scale)
 	_scale_label = Label.new()
 	_scale_label.name = "UiScaleValue"
@@ -221,8 +227,23 @@ func _apply_scheme(scheme: String) -> void:
 	_sync_scheme()
 
 
+func _on_scale_drag_ended(value_changed: bool) -> void:
+	_scale_dragging = false
+	if _scale == null:
+		return
+	if value_changed or not is_equal_approx(
+		Settings.ui_scale, Settings.coerce_ui_scale(_scale.value)
+	):
+		_on_scale(_scale.value)
+
+
 func _on_scale(v: float) -> void:
 	if _applying:
+		return
+	if _scale_dragging:
+		# Preview only — the label reads the slider, not the applied setting.
+		if _scale_label:
+			_scale_label.text = "%.2f×" % Settings.coerce_ui_scale(v)
 		return
 	var next := Settings.coerce_ui_scale(v)
 	if is_equal_approx(Settings.ui_scale, next):

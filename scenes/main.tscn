@@ -1,4 +1,4 @@
-[gd_scene load_steps=26 format=3 uid="uid://c8bzmapmain0001"]
+[gd_scene load_steps=27 format=3 uid="uid://c8bzmapmain0001"]
 
 [ext_resource type="Script" path="res://scenes/main.gd" id="1_main"]
 [ext_resource type="Script" path="res://project/camera/FlyCamera.gd" id="2_cam"]
@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" path="res://project/ui/top_bar/TopBar.tscn" id="5_top"]
 [ext_resource type="PackedScene" path="res://project/ui/tool_rail/ToolRail.tscn" id="20_rail"]
 [ext_resource type="PackedScene" path="res://project/ui/view/ViewPanel.tscn" id="21_viewp"]
+[ext_resource type="PackedScene" path="res://project/ui/world/WorldPanel.tscn" id="22_world"]
 [ext_resource type="PackedScene" path="res://project/ui/palette/PalettePanel.tscn" id="6_pal"]
 [ext_resource type="PackedScene" path="res://project/ui/inspector/InspectorPanel.tscn" id="7_insp"]
 [ext_resource type="PackedScene" path="res://project/ui/findings/FindingsPanel.tscn" id="8_find"]
@@ -109,9 +110,14 @@ render_target_update_mode = 4
 [node name="World" type="Node3D" parent="Root/Body/Mid/Center/SubViewport"]
 
 [node name="Sun" type="DirectionalLight3D" parent="Root/Body/Mid/Center/SubViewport/World"]
+unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, -0.5, -0.866025, 0, 0.866025, -0.5, 0, 200, 0)
 light_energy = 1.15
-shadow_enabled = false
+shadow_enabled = true
+shadow_bias = 0.06
+shadow_normal_bias = 1.5
+directional_shadow_mode = 0
+directional_shadow_max_distance = 2350.0
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="Root/Body/Mid/Center/SubViewport/World"]
 unique_name_in_owner = true
@@ -210,6 +216,10 @@ drag_to_rearrange_enabled = true
 tabs_rearrange_group = 1
 
 [node name="ViewPanel" parent="Root/Body/Mid/Right/SplitB/Dock2" instance=ExtResource("21_viewp")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="WorldPanel" parent="Root/Body/Mid/Right/SplitB/Dock2" instance=ExtResource("22_world")]
 unique_name_in_owner = true
 layout_mode = 2
 

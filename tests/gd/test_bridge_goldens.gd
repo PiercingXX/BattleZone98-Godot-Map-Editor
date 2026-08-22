@@ -497,13 +497,14 @@ func _group_terrain_dirty_reencodes() -> void:
 	_t.ok(FileAccess.file_exists(hg2), "re-encoded hg2 exists")
 	if not FileAccess.file_exists(hg2):
 		return
-	# 1-zone: zone-major == row-major. Cell 100 is world (100, 0).
+	# 1 zone: zone-major == row-major, but disk X runs east→west (F1 §4.1),
+	# so world cell 100 is written at disk slot 255 - 100.
 	# Flags at that cell were 3 on the synthetic source; reconstruct ORs them.
 	var out_bytes := FileAccess.get_file_as_bytes(hg2)
-	if out_bytes.size() < 12 + 202:
+	if out_bytes.size() < 12 + _ZONE * 2:
 		_t.fail("re-encoded hg2 truncated")
 		return
-	var word := int(out_bytes.decode_u16(12 + 100 * 2))
+	var word := int(out_bytes.decode_u16(12 + (_ZONE - 1 - 100) * 2))
 	_t.eq(word & _HEIGHT_MASK, 1500, "re-encoded height at cell 100")
 	# Flag bits must survive (docs/02 pass-through of per-cell flags).
 	_t.eq(word >> 13, 3, "flag bits preserved on re-encode")
@@ -645,7 +646,9 @@ func _write_hg2(path: String, zx: int, zz: int) -> void:
 		for zxi in zx:
 			for z in _ZONE:
 				for x in _ZONE:
-					var wx: int = zxi * _ZONE + x
+					# Disk X runs east→west (F1 §4.1) — write the fixture at the
+					# world coordinate the assertions below name.
+					var wx: int = zx * _ZONE - 1 - (zxi * _ZONE + x)
 					var wz: int = zzi * _ZONE + z
 					var word: int = 1000 + (wx % 17) + (wz % 13)
 					if wx == 100 and wz == 0:
@@ -664,7 +667,8 @@ func _write_mat(path: String, zx: int, zz: int) -> void:
 		for zxi in zx:
 			for z in _MAT_ZONE:
 				for x in _MAT_ZONE:
-					var wx: int = zxi * _MAT_ZONE + x
+					# Same east→west disk X as the .hg2 (F2 §3.1).
+					var wx: int = zx * _MAT_ZONE - 1 - (zxi * _MAT_ZONE + x)
 					var wz: int = zzi * _MAT_ZONE + z
 					var word: int = ((wx % 16) << 12) | ((wz % 16) << 8)
 					buf.encode_u16(off, word)
