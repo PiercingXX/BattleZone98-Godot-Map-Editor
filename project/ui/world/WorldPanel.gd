@@ -55,9 +55,12 @@ func _build() -> void:
 	_box.add_child(_heading("Fog"))
 	_fog_show = CheckBox.new()
 	_fog_show.name = "ShowFog"
-	_fog_show.text = "Show in viewport"
+	_fog_show.text = "Preview in viewport"
 	_fog_show.focus_mode = Control.FOCUS_NONE
-	_fog_show.tooltip_text = "Editor only. The map's fog is saved either way."
+	_fog_show.tooltip_text = (
+		"Preview only, off by default — game fog is too close in to sculpt "
+		+ "through. The map's fog is saved either way."
+	)
 	_fog_show.toggled.connect(_on_show_fog)
 	_box.add_child(_fog_show)
 	_fog_start = _distance_spin("FogStart", "start m ", "Where the fog begins.")

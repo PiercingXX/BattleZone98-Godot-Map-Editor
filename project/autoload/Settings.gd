@@ -60,7 +60,10 @@ var view_slope: bool = false
 var view_labels: bool = false
 ## World → Fog: draw the map's fog in the viewport. Editor-side visibility
 ## only — the map's fog distances are saved either way.
-var view_fog: bool = true
+##
+## Off by default. Game fog closes in at 250 m on a 2560 m map, which is a
+## preview of the player's view, not a surface you can sculpt on.
+var view_fog: bool = false
 ## Object snap. 0 = off. Allowed grids 1/5/10/20 m; angles 15/45/90°.
 var snap_grid_m: float = 0.0
 var snap_angle: float = 0.0
@@ -123,7 +126,7 @@ func _load() -> void:
 	view_grid = bool(_cfg.get_value("view", "grid", false))
 	view_slope = bool(_cfg.get_value("view", "slope", false))
 	view_labels = bool(_cfg.get_value("view", "labels", false))
-	view_fog = bool(_cfg.get_value("view", "fog", true))
+	view_fog = bool(_cfg.get_value("view", "fog", false))
 	snap_grid_m = coerce_snap_grid(_cfg.get_value("snap", "grid_m", 0.0))
 	snap_angle = coerce_snap_angle(_cfg.get_value("snap", "angle", 0.0))
 	ui_scale = coerce_ui_scale(_cfg.get_value("ui", "ui_scale", UI_SCALE_DEFAULT))
