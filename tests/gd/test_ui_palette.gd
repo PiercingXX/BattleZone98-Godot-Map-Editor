@@ -10,6 +10,7 @@ func run(t) -> void:
 	var saved_f := ToolState.falloff
 	var saved_shape := ToolState.shape
 	var saved_mat := ToolState.paint_material
+	var saved_kind := ToolState.paint_kind
 	var saved_sym := ToolState.symmetry
 	var saved_armed: Dictionary = ToolState.armed.duplicate(true)
 	var saved_sel: Array[String] = MapState.selected_ids.duplicate()
@@ -199,6 +200,7 @@ func run(t) -> void:
 	ToolState.set_falloff(saved_f)
 	ToolState.set_shape(saved_shape)
 	ToolState.set_paint_material(saved_mat)
+	ToolState.set_paint_kind(saved_kind)
 	ToolState.set_symmetry(saved_sym)
 	MapState.width_m = saved_w
 	MapState.depth_m = saved_d
@@ -227,7 +229,7 @@ func _visibility_matrix(t, pal: Node) -> void:
 	}
 	var rail: Control = pal as Control
 	var rail_w: float = rail.custom_minimum_size.x
-	t.eq(rail_w, 294.0, "left rail min width is locked")
+	t.eq(rail_w, 310.0, "left rail min width is locked")
 	var first_w: float = -1.0
 	for tool in want.keys():
 		var name := str(tool)
@@ -345,6 +347,7 @@ func _visibility_matrix(t, pal: Node) -> void:
 	t.eq(pal.sample_material(3), "sampled mat 3 (%s)" % MaterialPalette.type_name(3))
 	t.eq(ToolState.paint_material, 3)
 	t.eq(ToolState.paint_kind, "solid")
+	await _paint_kind_rows_stable(t, pal)
 
 
 func _symmetry_selector(t, pal: Node) -> void:
@@ -399,6 +402,46 @@ func _symmetry_index(sym: OptionButton, id: String) -> int:
 		if str(sym.get_item_metadata(i)) == id:
 			return i
 	return -1
+
+
+func _paint_kind_rows_stable(t, pal: Node) -> void:
+	_apply_tool(pal, "paint")
+	await t.tree.process_frame
+	var meet: Control = pal.find_child("TileMeetRow", true, false)
+	var face: Control = pal.find_child("TileFaceRow", true, false)
+	var vari: Control = pal.find_child("TileVariantRow", true, false)
+	t.ok(meet != null and face != null and vari != null, "cap/corner rows exist")
+	var trans: OptionButton = pal.find_child("PaintTransition", true, false)
+	var rot: Button = pal.find_child("PaintRotate", true, false)
+	var mirror: CheckBox = pal.find_child("PaintMirror", true, false)
+	var variant: OptionButton = pal.find_child("PaintVariant", true, false)
+	var mats: Control = pal.find_child("MatsSection", true, false)
+	var rail: Control = pal as Control
+	ToolState.set_paint_kind("solid")
+	await t.tree.process_frame
+	t.ok(meet.is_visible_in_tree() and face.is_visible_in_tree() and vari.is_visible_in_tree(),
+		"Meets / Facing / Variant stay on Solid")
+	t.ok(trans.disabled and rot.disabled and mirror.disabled and variant.disabled,
+		"pair controls are disabled on Solid")
+	var h0 := mats.size.y
+	var w0 := rail.size.x
+	ToolState.set_paint_kind("cap")
+	await t.tree.process_frame
+	t.eq(ToolState.paint_kind, "cap")
+	t.ok(meet.is_visible_in_tree() and face.is_visible_in_tree() and vari.is_visible_in_tree())
+	t.ok(not trans.disabled and not rot.disabled and not mirror.disabled,
+		"pair controls enable on Cap")
+	t.eq(mats.size.y, h0, "mats height does not jump Solid → Cap")
+	t.eq(rail.size.x, w0, "rail width does not jump Solid → Cap")
+	ToolState.set_paint_kind("diag")
+	await t.tree.process_frame
+	t.eq(ToolState.paint_kind, "diag")
+	t.eq(mats.size.y, h0, "mats height does not jump Cap → Corner")
+	t.eq(rail.size.x, w0, "rail width does not jump Cap → Corner")
+	ToolState.set_paint_kind("solid")
+	await t.tree.process_frame
+	t.eq(mats.size.y, h0, "mats height does not jump Corner → Solid")
+	t.eq(rail.size.x, w0, "rail width does not jump Corner → Solid")
 
 
 func _apply_tool(pal: Node, tool: String) -> void:

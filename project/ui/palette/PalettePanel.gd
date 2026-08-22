@@ -5,7 +5,7 @@ const _CATEGORY_ORDER: PackedStringArray = [
 	"craft", "building", "pilot", "scrap", "geyser", "spawn", "pickup",
 	"prop", "environment", "weapon", "other",
 ]
-const _PANEL_MIN_X := 294.0
+const _PANEL_MIN_X := 310.0
 const _SWATCH_PX := 35
 const _SWATCH_BORDER := 2
 const _LIST_ALL_MAX := 80
@@ -329,6 +329,8 @@ func _build_paint_match() -> void:
 	_trans_opt.name = "PaintTransition"
 	_trans_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_trans_opt.focus_mode = Control.FOCUS_NONE
+	_trans_opt.fit_to_longest_item = false
+	_trans_opt.clip_text = true
 	_trans_opt.tooltip_text = "The other material on a cap or corner. The swatch is this cell's material."
 	_fill_transition_items()
 	_trans_opt.item_selected.connect(func(i: int) -> void:
@@ -345,6 +347,7 @@ func _build_paint_match() -> void:
 	_rot_btn.name = "PaintRotate"
 	_rot_btn.focus_mode = Control.FOCUS_NONE
 	_rot_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_rot_btn.clip_text = true
 	_rot_btn.pressed.connect(func() -> void: ToolState.cycle_paint_rot())
 	_flip_box = CheckBox.new()
 	_flip_box.name = "PaintMirror"
@@ -367,6 +370,8 @@ func _build_paint_match() -> void:
 	_var_opt.name = "PaintVariant"
 	_var_opt.focus_mode = Control.FOCUS_NONE
 	_var_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_var_opt.fit_to_longest_item = false
+	_var_opt.clip_text = true
 	for i in 4:
 		_var_opt.add_item(char(65 + i), i)
 	_var_opt.item_selected.connect(func(i: int) -> void:
@@ -417,6 +422,11 @@ func _kind_btn(caption: String, group: ButtonGroup) -> Button:
 
 func _fill_transition_items() -> void:
 	if _trans_opt == null:
+		return
+	if ToolState.paint_kind == "solid":
+		_trans_opt.clear()
+		_trans_opt.add_item("—", 0)
+		_trans_opt.disabled = true
 		return
 	var partners: PackedInt32Array = MaterialPalette.transition_partners(
 		ToolState.paint_material, ToolState.paint_kind
@@ -1518,13 +1528,17 @@ func _sync_paint_tile_from_state() -> void:
 			_rot_btn.tooltip_text = "Rotate the cap tile."
 	if _flip_box and _flip_box.button_pressed != (ToolState.paint_flip != 0):
 		_flip_box.button_pressed = ToolState.paint_flip != 0
-	var show_pair := ToolState.paint_kind != "solid"
+	# Keep Meets / Facing / Variant in the layout on Solid so the rail
+	# does not jump when the mapmaker switches to Cap or Corner.
+	var pair := ToolState.paint_kind != "solid"
 	if _trans_opt:
-		_trans_opt.get_parent().visible = show_pair
+		_trans_opt.disabled = _trans_opt.disabled or not pair
 	if _rot_btn:
-		_rot_btn.get_parent().visible = show_pair
+		_rot_btn.disabled = not pair
+	if _flip_box:
+		_flip_box.disabled = not pair
 	if _var_opt:
-		_var_opt.get_parent().visible = show_pair
+		_var_opt.disabled = _var_opt.disabled or not pair
 	if _match_edges and _match_edges.button_pressed != ToolState.paint_match_edges:
 		_match_edges.button_pressed = ToolState.paint_match_edges
 	_syncing = was
