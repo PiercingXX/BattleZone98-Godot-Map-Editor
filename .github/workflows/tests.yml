@@ -46,7 +46,10 @@ env:
   # only ever go down (MIN_PASS up), never quietly the other way.
   #
   # MIN_PASS  a test file that stops being discovered is a silent hole, not a
-  #           green build. Raise this when tests are added.
+  #           green build. Raise this when tests are added. 127 is the whole
+  #           suite: the spline and autotile-scoring work this editor did not
+  #           take brought five more test files with it, and their absence is
+  #           deliberate rather than a hole.
   # MAX_SKIP  zero. The five files that used to skip needed
   #           tests/gd/fixtures/bzn/*.bzn, which the blanket *.bzn ignore was
   #           hiding from every clone. Those fixtures are synthetic — no game
@@ -61,7 +64,7 @@ env:
   #           against it. A GDScript runtime error raises no assertion, so
   #           without these two the runner scores a file that quietly stopped
   #           testing as a pass.
-  GODOT_TEST_MIN_PASS: "130"
+  GODOT_TEST_MIN_PASS: "127"
   GODOT_TEST_MAX_SKIP: "0"
   GODOT_TEST_MAX_WARN: "0"
   GODOT_TEST_STRICT: "1"
@@ -76,7 +79,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Godot
         uses: chickensoft-games/setup-godot@v2
