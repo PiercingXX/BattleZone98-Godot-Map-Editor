@@ -4,6 +4,11 @@ extends RefCounted
 
 const FIX_BZN := "res://tests/gd/fixtures/bzn/untouched.bzn"
 
+## Synthetic .bzn fixtures are caught by .gitignore's blanket *.bzn ban
+## (AGENTS.md rule 3), so a fresh checkout — and every CI runner — has none.
+## The cases that need one report SKIP instead of asserting against nothing.
+const NEEDS_BZN_FIXTURE := "no local .bzn fixture (gitignored; see fixtures/bzn/README.txt)"
+
 
 func run(t) -> void:
 	_parse_grammar(t)
@@ -58,6 +63,8 @@ func _parse_unlabeled(t) -> void:
 
 
 func _emit_roundtrip(t) -> void:
+	if not t.require_files([FIX_BZN], NEEDS_BZN_FIXTURE):
+		return
 	var parsed: Dictionary = BzOpen.parse_aipaths_text(_fixture_two_paths())
 	var paths: Array = parsed.get("paths", [])
 	var emitted: String = BzOpen.emit_aipaths_block(paths, "\r\n")
@@ -112,6 +119,8 @@ func _respawn_name(t) -> void:
 
 
 func _session_sidecar(t) -> void:
+	if not t.require_files([FIX_BZN], NEEDS_BZN_FIXTURE):
+		return
 	var tmp: String = OS.get_temp_dir().path_join("bz_aip_open_%d" % Time.get_ticks_usec())
 	DirAccess.make_dir_recursive_absolute(tmp)
 	var src: String = tmp.path_join("src")
@@ -145,6 +154,8 @@ func _session_sidecar(t) -> void:
 
 
 func _untouched_tail_identity(t) -> void:
+	if not t.require_files([FIX_BZN], NEEDS_BZN_FIXTURE):
+		return
 	var tmp: String = OS.get_temp_dir().path_join("bz_aip_id_%d" % Time.get_ticks_usec())
 	DirAccess.make_dir_recursive_absolute(tmp)
 	var src: String = tmp.path_join("src")
@@ -173,6 +184,8 @@ func _untouched_tail_identity(t) -> void:
 
 
 func _dirty_writer(t) -> void:
+	if not t.require_files([FIX_BZN], NEEDS_BZN_FIXTURE):
+		return
 	var tmp: String = OS.get_temp_dir().path_join("bz_aip_wr_%d" % Time.get_ticks_usec())
 	DirAccess.make_dir_recursive_absolute(tmp)
 	var src: String = tmp.path_join("src")
@@ -281,34 +294,52 @@ func _overlay_kind(t) -> void:
 	t.ok(not AiPathOverlay.is_editable({"name": "", "has_label": false}))
 
 
+## The AI-paths toggle used to be an item in the top bar's View menu. It is a
+## checkbox in the bottom-right ViewPanel now (ViewPanel.SIMPLE plus the three
+## special-cased keys), so this drives that instead. Until it was rewritten it
+## asked TopBar for a "View" MenuButton, got null, and took the whole file
+## down with it — silently, because a GDScript runtime error raises no
+## assertion and the runner scored the file as a pass.
 func _view_menu(t) -> void:
 	AiPathOverlay.enabled = false
 	var saved_session := MapState.has_session
+	var saved_flag := Settings.view_aipaths
 	MapState.has_session = false
-	var bar: Node = load("res://project/ui/top_bar/TopBar.tscn").instantiate()
-	t.tree.root.add_child(bar)
+	var panel: Node = load("res://project/ui/view/ViewPanel.tscn").instantiate()
+	t.tree.root.add_child(panel)
 	await t.tree.process_frame
-	var view: MenuButton = bar.find_child("View", true, false)
-	var pop: PopupMenu = view.get_popup()
-	var idx := pop.get_item_index(bar.VIEW_AIPATHS)
-	t.ok(idx >= 0, "View menu lists AI Paths")
-	t.eq(pop.get_item_text(idx), "AI Paths")
-	t.ok(pop.is_item_disabled(idx), "AI Paths disabled with no map")
-	t.eq(pop.get_item_tooltip(idx), "Open a map first")
-	pop.id_pressed.emit(bar.VIEW_AIPATHS)
+
+	var check: CheckBox = panel.find_child("ViewAipaths", true, false)
+	t.ok(check != null, "the view panel carries an AI paths checkbox")
+	if check == null:
+		panel.queue_free()
+		MapState.has_session = saved_session
+		return
+	t.eq(check.text, "AI paths")
+	t.ok(check.disabled, "AI paths disabled with no map")
+	t.eq(check.tooltip_text, "Open a map first")
+
+	# A disabled checkbox cannot be clicked, but the handler refuses anyway —
+	# refresh() is the guard, so drive the signal directly.
+	panel._on_toggled(true, "aipaths")
 	t.eq(AiPathOverlay.enabled, false, "disabled toggle does not flip")
+
 	MapState.has_session = true
-	bar._refresh_view_menu()
-	t.ok(not pop.is_item_disabled(pop.get_item_index(bar.VIEW_AIPATHS)))
-	pop.id_pressed.emit(bar.VIEW_AIPATHS)
-	t.ok(AiPathOverlay.enabled, "View → AI Paths on")
-	pop.id_pressed.emit(bar.VIEW_AIPATHS)
+	panel.refresh()
+	t.ok(not check.disabled, "enabled once a map is open")
+	t.eq(check.tooltip_text, "", "and the reason-why tooltip goes away")
+
+	check.button_pressed = true
+	t.ok(AiPathOverlay.enabled, "view panel → AI paths on")
+	t.ok(Settings.view_aipaths, "and the setting follows")
+	check.button_pressed = false
 	t.ok(not AiPathOverlay.enabled, "second click off")
-	bar.queue_free()
+
+	panel.queue_free()
 	await t.tree.process_frame
 	MapState.has_session = saved_session
 	AiPathOverlay.enabled = false
-	Settings.view_aipaths = false
+	Settings.view_aipaths = saved_flag
 
 
 func _fixture_two_paths() -> String:

@@ -8,7 +8,33 @@ func run(t) -> void:
 	var game: String = _make_game(tmp)
 	_test_errors(t, tmp, game)
 	_test_success(t, tmp, game)
+	_test_non_square_mat_shape(t, tmp, game)
 	_rm_rf(tmp)
+
+
+## "legal sizes are 1280, 2560, 3840, 5120; non-square is allowed" — and the
+## New dialog has separate width and depth pickers, so this is a route users
+## have. create_map bakes the .mat and then reads it straight back in; read
+## without the companion zone counts, a 1x3-zone map's 12288 tile words are
+## guessed from their closest factor pair as 96x128 and the grid comes back
+## transposed.
+func _test_non_square_mat_shape(t, tmp: String, game: String) -> void:
+	var sess: String = tmp.path_join("ntall")
+	var created: Dictionary = BzNew.create_map("xxedtall", "mars", 1280, 3840, sess, game, 1000, "bzp")
+	t.eq(created.get("ok"), true, "non-square create_map ok")
+	if created.get("ok") != true:
+		t.fail("create_map failed: %s" % str(created))
+		return
+	var manifest: Dictionary = created.get("manifest", {})
+	t.eq(manifest.get("width_m"), 1280, "width")
+	t.eq(manifest.get("depth_m"), 3840, "depth")
+	t.eq(manifest.get("grid_x"), 256, "grid_x")
+	t.eq(manifest.get("grid_z"), 768, "grid_z")
+	# 1x3 zones at 64 tiles a zone. The factor-pair guess would say 128x96.
+	t.eq(manifest.get("mat_grid_x"), 64, "mat grid is 1 zone wide, not the factor-pair guess")
+	t.eq(manifest.get("mat_grid_z"), 192, "mat grid is 3 zones deep")
+	var mats: PackedByteArray = FileAccess.get_file_as_bytes(sess.path_join("materials.u16"))
+	t.eq(mats.size(), 64 * 192 * 2, "materials.u16 holds one word per tile")
 
 
 func _make_game(tmp: String) -> String:

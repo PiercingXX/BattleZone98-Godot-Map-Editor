@@ -1,4 +1,9 @@
 ; Copy to the project root as export_presets.cfg (gitignored) and adjust paths.
+; C10: the shipped build has zero runtime dependencies, and the dev-only trees
+; stay out of the .pck. exclude_filter drops tests/ (the suite, the benchmark
+; harness and its fixtures), scripts/ (the bash runners and the build-time
+; .gd tools) and docs/. Nothing under project/ or scenes/ references any of
+; them, so the export is a strict subset of what the editor loads at runtime.
 [preset.0]
 
 name="Windows Desktop"
@@ -8,7 +13,7 @@ dedicated_server=false
 custom_features=""
 export_filter="all_resources"
 include_filter=""
-exclude_filter=""
+exclude_filter="tests/*,scripts/*,docs/*"
 export_path="dist/BZ98MapEditor.exe"
 encryption_include_filters=""
 encryption_exclude_filters=""

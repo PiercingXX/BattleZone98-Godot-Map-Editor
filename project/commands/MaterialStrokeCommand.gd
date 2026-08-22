@@ -1,12 +1,8 @@
 extends RefCounted
 class_name MaterialStrokeCommand
+## One paint stroke: chunk before/after regions of material words.
 
-var x0: int
-var z0: int
-var width: int
-var depth: int
-var before: PackedInt32Array
-var after: PackedInt32Array
+var regions: Array = []
 var tool: String = ""
 
 
@@ -18,24 +14,58 @@ func describe() -> String:
 	return "%s stroke" % tool
 
 
-func setup(p_x0: int, p_z0: int, p_w: int, p_d: int, p_before: PackedInt32Array, p_after: PackedInt32Array) -> void:
-	x0 = p_x0
-	z0 = p_z0
-	width = p_w
-	depth = p_d
-	before = p_before
-	after = p_after
+## Single-rect form, for callers that already hold one dirty rect.
+func setup(
+	p_x0: int, p_z0: int, p_w: int, p_d: int, p_before: PackedInt32Array, p_after: PackedInt32Array
+) -> void:
+	setup_regions([RasterChunks.region(p_x0, p_z0, p_w, p_d, p_before, p_after)])
+
+
+func setup_regions(p_regions: Array) -> void:
+	regions = p_regions
 
 
 func cost_bytes() -> int:
-	return (before.size() + after.size()) * 4
+	var n := 0
+	for r_v in regions:
+		var r: Dictionary = r_v
+		var before: PackedInt32Array = r["before"]
+		var after: PackedInt32Array = r["after"]
+		n += (before.size() + after.size()) * 4
+	return n
 
 
 func do() -> void:
-	MapState.write_materials_rect(x0, z0, width, depth, after)
-	MapState.mark_materials_dirty()
+	_write("after")
 
 
 func undo() -> void:
-	MapState.write_materials_rect(x0, z0, width, depth, before)
+	_write("before")
+
+
+func _write(key: String) -> void:
+	# Straight into the live grid, then one upload: write_materials_rect()
+	# rebuilds the whole tile texture per call and a stroke is many regions.
+	if MapState.mat_grid_x < 1 or MapState.mat_grid_z < 1:
+		return
+	var gx := MapState.mat_grid_x
+	var gz := MapState.mat_grid_z
+	for r_v in regions:
+		var r: Dictionary = r_v
+		var x0 := int(r["x"])
+		var z0 := int(r["z"])
+		var w := int(r["w"])
+		var d := int(r["d"])
+		var values: PackedInt32Array = r[key]
+		var i := 0
+		for z in range(z0, z0 + d):
+			if z < 0 or z >= gz:
+				i += w
+				continue
+			for x in range(x0, x0 + w):
+				if x >= 0 and x < gx and i < values.size():
+					MapState.materials[z * gx + x] = values[i]
+				i += 1
+	MapState.upload_materials()
+	MapState.flush_materials()
 	MapState.mark_materials_dirty()

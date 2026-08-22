@@ -11,6 +11,7 @@ const TITLES := {
 	"PalettePanel": "Palette",
 	"FeaturesPanel": "Features",
 	"ViewPanel": "View",
+	"MinimapPanel": "Minimap",
 }
 
 

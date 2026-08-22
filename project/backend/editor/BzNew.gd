@@ -493,6 +493,10 @@ static func _open_map(path: String, session_dir: String) -> Dictionary:
 	var mat_grid_z: int
 	var mat_path: String = BzSession.find_source_file(source_dir, stem, ".mat")
 	if not mat_path.is_empty():
+		# The companion HG2's zone counts settle the .mat shape outright, the
+		# same way BzOpen does it. Read bare, a non-square template's tile count
+		# is guessed from its closest factor pair — 1x3 zones (64x192 tiles)
+		# comes back as 96x128 and the map is built transposed.
 		var mat_r: Variant = BzMat.MaterialGrid.read(
 			mat_path,
 			int(heightmap.grid_z / BzMat.TILE_CELLS),

@@ -26,12 +26,12 @@ func run(t) -> void:
 
 	# parse (INI-shaped — reuse BzTrn)
 	var cfg: BzTrn.TerrainConfig = BzTrn.read_trn(path)
-	t.eq(cfg.get("DESCRIPTION", "missionName"), "\"Silver Pools\"")
-	t.eq(cfg.get("WORKSHOP", "mapType"), "\"multiplayer\"")
-	t.eq(cfg.get("MULTIPLAYER", "minPlayers"), "\"1\"")
-	t.eq(cfg.get("MULTIPLAYER", "maxPlayers"), "\"14\"")
-	t.eq(cfg.get("MULTIPLAYER", "gameType"), "\"K\"")
-	t.eq(cfg.get("WORKSHOP", "customtags"), "\"\"")
+	t.eq(cfg.get_value("DESCRIPTION", "missionName"), "\"Silver Pools\"")
+	t.eq(cfg.get_value("WORKSHOP", "mapType"), "\"multiplayer\"")
+	t.eq(cfg.get_value("MULTIPLAYER", "minPlayers"), "\"1\"")
+	t.eq(cfg.get_value("MULTIPLAYER", "maxPlayers"), "\"14\"")
+	t.eq(cfg.get_value("MULTIPLAYER", "gameType"), "\"K\"")
+	t.eq(cfg.get_value("WORKSHOP", "customtags"), "\"\"")
 
 	# --- write → parse with non-defaults ---
 	BzIni.write_ini(
@@ -59,10 +59,10 @@ func run(t) -> void:
 	)
 	_eq_bytes(t, path, tagged_want, "write_ini tagged match ini.py")
 	var again: BzTrn.TerrainConfig = BzTrn.read_trn(path)
-	t.eq(again.get("DESCRIPTION", "missionName"), "\"Test Map\"")
-	t.eq(again.get("WORKSHOP", "customtags"), "\"strategy, small, mars\"")
-	t.eq(again.get("MULTIPLAYER", "minPlayers"), "\"2\"")
-	t.eq(again.get("MULTIPLAYER", "maxPlayers"), "\"8\"")
+	t.eq(again.get_value("DESCRIPTION", "missionName"), "\"Test Map\"")
+	t.eq(again.get_value("WORKSHOP", "customtags"), "\"strategy, small, mars\"")
+	t.eq(again.get_value("MULTIPLAYER", "minPlayers"), "\"2\"")
+	t.eq(again.get_value("MULTIPLAYER", "maxPlayers"), "\"8\"")
 
 	# fixture golden, if present
 	var fixture := ProjectSettings.globalize_path("res://tests/gd/fixtures/ini/default.ini")

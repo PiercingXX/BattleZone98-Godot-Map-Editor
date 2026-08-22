@@ -4,6 +4,11 @@ extends RefCounted
 
 const FIXTURE := "res://tests/gd/fixtures/bzn/untouched.bzn"
 
+## Synthetic .bzn fixtures are caught by .gitignore's blanket *.bzn ban
+## (AGENTS.md rule 3), so a fresh checkout — and every CI runner — has none.
+## The cases that need one report SKIP instead of asserting against nothing.
+const NEEDS_BZN_FIXTURE := "no local .bzn fixture (gitignored; see fixtures/bzn/README.txt)"
+
 
 func run(t) -> void:
 	var tmp: String = OS.get_temp_dir().path_join("bz_objects_%d" % Time.get_ticks_usec())
@@ -24,6 +29,8 @@ func _test_missing(t, tmp: String) -> void:
 
 
 func _test_from_fixture(t) -> void:
+	if not t.require_files([FIXTURE], NEEDS_BZN_FIXTURE):
+		return
 	var loaded: Dictionary = BzObjects.load_variant_objects(FIXTURE)
 	t.eq(loaded.get("ok"), true, "load_variant_objects fixture")
 	t.ok(loaded.has("records"))
@@ -65,6 +72,8 @@ func _test_from_fixture(t) -> void:
 
 
 func _test_template_and_apply(t, tmp: String) -> void:
+	if not t.require_files([FIXTURE], NEEDS_BZN_FIXTURE):
+		return
 	t.eq(BzObjects.template_text_for("eggeizr1", tmp), "", "empty residue → no template")
 
 	var src: String = tmp.path_join("source")

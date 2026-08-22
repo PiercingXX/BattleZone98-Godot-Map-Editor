@@ -146,6 +146,11 @@ func _evict() -> void:
 
 
 func _stamp_height_tool(command: RefCounted) -> void:
+	if command is CompositeCommand:
+		# A batched stroke still deserves its tool name in the history list.
+		for child in (command as CompositeCommand).commands:
+			_stamp_height_tool(child)
+		return
 	if not (command is HeightStrokeCommand):
 		return
 	var hs := command as HeightStrokeCommand

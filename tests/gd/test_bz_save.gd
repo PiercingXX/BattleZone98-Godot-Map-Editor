@@ -2,6 +2,13 @@ extends RefCounted
 ## BzSave: pass-through byte-identical save, dirty re-encode, error paths.
 
 
+const FIX_BZN := "res://tests/gd/fixtures/bzn/untouched.bzn"
+## Synthetic .bzn fixtures are caught by .gitignore's blanket *.bzn ban
+## (AGENTS.md rule 3), so a fresh checkout — and every CI runner — has none.
+## The cases that need one report SKIP instead of asserting against nothing.
+const NEEDS_BZN_FIXTURE := "no local .bzn fixture (gitignored; see fixtures/bzn/README.txt)"
+
+
 func run(t) -> void:
 	var tmp: String = OS.get_temp_dir().path_join("bz_save_%d" % Time.get_ticks_usec())
 	DirAccess.make_dir_recursive_absolute(tmp)
@@ -9,6 +16,7 @@ func run(t) -> void:
 	_test_untouched_roundtrip(t, tmp)
 	_test_stem_rename(t, tmp)
 	_test_dirty_terrain(t, tmp)
+	_test_lgt_follows_the_buffer_not_the_flag(t, tmp)
 	_test_dirty_materials(t, tmp)
 	_test_dirty_objects(t, tmp)
 	_test_features_copy(t, tmp)
@@ -140,6 +148,71 @@ func _test_dirty_terrain(t, tmp: String) -> void:
 	t.eq(out_hm.unknownA, 10, "unknownA preserved from residue header")
 
 
+## F3 §3 drops the .lgt after a terrain edit so the game re-bakes lighting.
+## The trigger has to be the buffer, not dirty.json: sculpt-then-undo leaves
+## the flag set with the heights back where they started, and honouring the
+## flag there deletes a lightmap that still matches the geometry — and, saving
+## in place, deletes the user's file for an edit they took back.
+func _test_lgt_follows_the_buffer_not_the_flag(t, tmp: String) -> void:
+	var edited: Dictionary = _lgt_case(t, tmp, "lgt_edited", true)
+	t.ok((edited["saved"].get("regenerated", []) as Array).has("lit.hg2"),
+		"a real edit re-encodes the heightmap")
+	t.ok(not FileAccess.file_exists(str(edited["out"]).path_join("lit.lgt")),
+		"a real edit drops the .lgt")
+	t.ok((edited["saved"].get("dropped", []) as Array).has("lit.lgt"),
+		"the drop is reported")
+
+	var undone: Dictionary = _lgt_case(t, tmp, "lgt_undone", false)
+	t.ok(not (undone["saved"].get("regenerated", []) as Array).has("lit.hg2"),
+		"heights back at the original: nothing to re-encode")
+	t.ok(FileAccess.file_exists(str(undone["out"]).path_join("lit.lgt")),
+		"a stale dirty flag no longer drops the .lgt")
+	t.ok(not (undone["saved"].get("dropped", []) as Array).has("lit.lgt"),
+		"nothing reported dropped")
+	t.ok(_same_bytes(str(undone["out"]).path_join("lit.lgt"),
+			str(undone["src"]).path_join("lit.lgt")),
+		"the .lgt is the one we read, byte for byte")
+	t.ok(_same_bytes(str(undone["out"]).path_join("lit.hg2"),
+			str(undone["src"]).path_join("lit.hg2")),
+		"and so is the .hg2")
+
+
+## Build a session whose dirty.json flags terrain either way, and whose
+## session buffer either does or does not actually differ from the residue.
+func _lgt_case(t, tmp: String, name: String, edit_buffer: bool) -> Dictionary:
+	var sess: String = tmp.path_join(name)
+	var paths: Dictionary = _paths(sess)
+	var src: String = sess.path_join("residue").path_join("source")
+	var n: int = 256 * 256
+	var words := PackedInt32Array()
+	words.resize(n)
+	words.fill(1000)
+	var hm := BzHg2.HeightMap.new(1, 1, words)
+	hm.write(src.path_join("lit.hg2"))
+	_write_bytes(src.path_join("lit.lgt"), "LGT-RESIDUE-BYTES".to_utf8_buffer())
+	_write_r16(str(paths["terrain"]), hm.data, true)
+	_write_flags(str(paths["hg2_flags"]), hm.data)
+	_write_json(str(paths["hg2_header"]), {
+		"version": 1, "depth": 8, "zonesX": 1, "zonesZ": 1, "unknownA": 10, "unknownB": 0,
+	})
+	_write_json(str(paths["manifest"]), {
+		"contract_version": 1, "stem": "lit", "variants": [""],
+		"mat_grid_x": 64, "mat_grid_z": 64,
+	})
+	# The flag is set in both cases — that is the point. Only the buffer differs.
+	_write_json(str(paths["dirty"]), {
+		"terrain": true, "materials": false, "objects": {"": []}, "features": false, "meta": [],
+	})
+	if edit_buffer:
+		var raw: PackedByteArray = FileAccess.get_file_as_bytes(str(paths["terrain"]))
+		raw.encode_u16(100 * 2, 1500)
+		_write_bytes(str(paths["terrain"]), raw)
+	var out_dir: String = tmp.path_join("out_%s" % name)
+	var saved: Dictionary = BzSave.save_session(sess, out_dir)
+	t.eq(saved.get("ok"), true, "%s save ok" % name)
+	return {"saved": saved, "out": out_dir, "src": src}
+
+
 func _test_dirty_materials(t, tmp: String) -> void:
 	var sess: String = tmp.path_join("dirty_m")
 	var src: String = sess.path_join("residue").path_join("source")
@@ -178,10 +251,12 @@ func _test_dirty_materials(t, tmp: String) -> void:
 
 
 func _test_dirty_objects(t, tmp: String) -> void:
+	if not t.require_files([FIX_BZN], NEEDS_BZN_FIXTURE):
+		return
 	var sess: String = tmp.path_join("dirty_o")
 	var src: String = sess.path_join("residue").path_join("source")
 	DirAccess.make_dir_recursive_absolute(src)
-	var fixture: String = ProjectSettings.globalize_path("res://tests/gd/fixtures/bzn/untouched.bzn")
+	var fixture: String = ProjectSettings.globalize_path(FIX_BZN)
 	DirAccess.copy_absolute(fixture, src.path_join("objmap.bzn"))
 	var loaded: Dictionary = BzObjects.load_variant_objects(src.path_join("objmap.bzn"), "obj")
 	t.ok(bool(loaded.get("ok")), "load fixture bzn")
@@ -268,6 +343,8 @@ func _test_features_copy(t, tmp: String) -> void:
 
 
 func _test_save_with_features(t, tmp: String) -> void:
+	if not t.require_files([FIX_BZN], NEEDS_BZN_FIXTURE):
+		return
 	var sess: String = tmp.path_join("feat_gen")
 	var src: String = sess.path_join("residue").path_join("source")
 	DirAccess.make_dir_recursive_absolute(src)
@@ -280,7 +357,7 @@ func _test_save_with_features(t, tmp: String) -> void:
 	_write_json(str(paths["hg2_header"]), {
 		"version": 1, "depth": 8, "zonesX": 1, "zonesZ": 1, "unknownA": 10, "unknownB": 0,
 	})
-	var fixture: String = ProjectSettings.globalize_path("res://tests/gd/fixtures/bzn/untouched.bzn")
+	var fixture: String = ProjectSettings.globalize_path(FIX_BZN)
 	DirAccess.copy_absolute(fixture, src.path_join("featmap.bzn"))
 	DirAccess.copy_absolute(fixture, src.path_join("featmap_S.bzn"))
 	_write_mask(sess.path_join("masks").path_join("wtr1.u8"), _pit_mask())
@@ -328,6 +405,8 @@ func _test_save_with_features(t, tmp: String) -> void:
 
 
 func _test_managed_carriers_not_duplicated(t, tmp: String) -> void:
+	if not t.require_files([FIX_BZN], NEEDS_BZN_FIXTURE):
+		return
 	var sess: String = tmp.path_join("feat_dup")
 	var src: String = sess.path_join("residue").path_join("source")
 	DirAccess.make_dir_recursive_absolute(src)
@@ -340,7 +419,7 @@ func _test_managed_carriers_not_duplicated(t, tmp: String) -> void:
 	_write_json(str(paths["hg2_header"]), {
 		"version": 1, "depth": 8, "zonesX": 1, "zonesZ": 1, "unknownA": 10, "unknownB": 0,
 	})
-	var fixture: String = ProjectSettings.globalize_path("res://tests/gd/fixtures/bzn/untouched.bzn")
+	var fixture: String = ProjectSettings.globalize_path(FIX_BZN)
 	DirAccess.copy_absolute(fixture, src.path_join("dupmap.bzn"))
 	_write_mask(sess.path_join("masks").path_join("wtr1.u8"), _pit_mask())
 	_write_json(sess.path_join("features.json"), {

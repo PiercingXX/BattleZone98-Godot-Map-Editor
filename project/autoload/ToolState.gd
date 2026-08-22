@@ -43,7 +43,7 @@ var armed: Dictionary = {}
 var mask_kind: String = ""
 var mask_stem: String = ""
 var mask_paint: bool = false
-## Editor-session only (not Settings). Survives map open/close in this run.
+## Persisted with the rest of the brush; survives map open/close and relaunch.
 var symmetry: String = SYMMETRY_OFF
 ## Magic-wand height tolerance in metres (tool state, not persisted).
 var wand_tolerance_m: float = 5.0
@@ -59,11 +59,282 @@ var snap_grid_m: float = 0.0
 ## Yaw snap in degrees. 0 = off. Allowed: 0 / 15 / 45 / 90.
 var snap_angle: float = 0.0
 
+## Generated tip id (BrushMask.IDS) or "" for the analytic circle/square.
+var brush_mask: String = ""
+## Tip rotation in degrees, and whether each dab gets a random turn on top.
+var brush_rotation_deg: float = 0.0
+var brush_random_rotation: bool = false
+## Dab gates: fraction of radius, and milliseconds. 0 disables either.
+var brush_spacing: float = 0.0
+var brush_spacing_ms: int = 0
+## How much pen pressure reaches dab size and dab opacity, 0..1 each.
+var brush_pressure_size: float = 0.0
+var brush_pressure_opacity: float = 0.0
+## Slope band in degrees against up. Armed by limit_slope.
+var limit_slope: bool = false
+var slope_min_deg: float = 0.0
+var slope_max_deg: float = 90.0
+var slope_feather_deg: float = 5.0
+## Height band in metres. Armed by limit_height.
+var limit_height: bool = false
+var height_min_m: float = 0.0
+var height_max_m: float = 409.5
+var height_feather_m: float = 2.0
+## Noise brush. Frequency is per world metre; amplitude is metres.
+var noise_frequency: float = 0.02
+var noise_octaves: int = 3
+var noise_amplitude_m: float = 6.0
+## Seeds the noise field and the random-rotation stream. Fixed = reproducible.
+var brush_seed: int = 1
+## Morphological erode / dilate disc, and its height slack per excess cell.
+var erode_radius_m: float = 10.0
+var erode_slack_m: float = 3.0
+## Set-height target in metres.
+var set_height_m: float = 25.0
+## Set-angle plane: slope in degrees and the compass bearing of the ascent.
+var angle_deg: float = 15.0
+var angle_dir_deg: float = 0.0
+## Set-angle origin in world XZ. Non-finite = use the stroke start.
+var angle_origin_m: Vector2 = Vector2.INF
+
+## Height kernels the sculpt tool can run. The shell routes these strings.
+const HEIGHT_BRUSHES: PackedStringArray = [
+	"raise", "lower", "flatten", "smooth", "noise",
+	"erode", "dilate", "setheight", "setangle",
+]
+
+## Brush settings are dragged, not clicked. Coalesce the writes the way the
+## layout splits do rather than hitting the config file per slider frame.
+const BRUSH_SAVE_IDLE_S := 1.0
+
+var _brush_save: Timer
+
 
 func _ready() -> void:
 	snap_grid_m = Settings.snap_grid_m
 	snap_angle = Settings.snap_angle
+	load_brush_settings()
+	BrushMaskLibrary.prewarm()
+	_brush_save = Timer.new()
+	_brush_save.name = "BrushSave"
+	_brush_save.one_shot = true
+	_brush_save.wait_time = BRUSH_SAVE_IDLE_S
+	_brush_save.timeout.connect(save_brush_settings)
+	add_child(_brush_save)
 	MapState.session_changed.connect(_on_session_changed)
+
+
+## Adopt the persisted brush. Called at boot; safe to call again in a test.
+func load_brush_settings() -> void:
+	radius_m = Settings.brush_radius_m
+	strength = Settings.brush_strength
+	falloff = Settings.brush_falloff
+	shape = Settings.brush_shape
+	symmetry = normalize_symmetry(Settings.brush_symmetry)
+	brush_mask = Settings.brush_mask
+	brush_rotation_deg = Settings.brush_rotation_deg
+	brush_random_rotation = Settings.brush_random_rotation
+	brush_spacing = Settings.brush_spacing
+	brush_spacing_ms = Settings.brush_spacing_ms
+	brush_pressure_size = Settings.brush_pressure_size
+	brush_pressure_opacity = Settings.brush_pressure_opacity
+	limit_slope = Settings.limit_slope
+	slope_min_deg = Settings.slope_min_deg
+	slope_max_deg = Settings.slope_max_deg
+	slope_feather_deg = Settings.slope_feather_deg
+	limit_height = Settings.limit_height
+	height_min_m = Settings.height_min_m
+	height_max_m = Settings.height_max_m
+	height_feather_m = Settings.height_feather_m
+	noise_frequency = Settings.noise_frequency
+	noise_octaves = Settings.noise_octaves
+	noise_amplitude_m = Settings.noise_amplitude_m
+	brush_seed = Settings.brush_seed
+	erode_radius_m = Settings.erode_radius_m
+	erode_slack_m = Settings.erode_slack_m
+	set_height_m = Settings.set_height_m
+	angle_deg = Settings.angle_deg
+	angle_dir_deg = Settings.angle_dir_deg
+	brush_changed.emit()
+
+
+## Write the live brush straight through. The idle timer routes here.
+func save_brush_settings() -> void:
+	Settings.brush_radius_m = radius_m
+	Settings.brush_strength = strength
+	Settings.brush_falloff = falloff
+	Settings.brush_shape = shape
+	Settings.brush_symmetry = symmetry
+	Settings.brush_mask = brush_mask
+	Settings.brush_rotation_deg = brush_rotation_deg
+	Settings.brush_random_rotation = brush_random_rotation
+	Settings.brush_spacing = brush_spacing
+	Settings.brush_spacing_ms = brush_spacing_ms
+	Settings.brush_pressure_size = brush_pressure_size
+	Settings.brush_pressure_opacity = brush_pressure_opacity
+	Settings.limit_slope = limit_slope
+	Settings.slope_min_deg = slope_min_deg
+	Settings.slope_max_deg = slope_max_deg
+	Settings.slope_feather_deg = slope_feather_deg
+	Settings.limit_height = limit_height
+	Settings.height_min_m = height_min_m
+	Settings.height_max_m = height_max_m
+	Settings.height_feather_m = height_feather_m
+	Settings.noise_frequency = noise_frequency
+	Settings.noise_octaves = noise_octaves
+	Settings.noise_amplitude_m = noise_amplitude_m
+	Settings.brush_seed = brush_seed
+	Settings.erode_radius_m = erode_radius_m
+	Settings.erode_slack_m = erode_slack_m
+	Settings.set_height_m = set_height_m
+	Settings.angle_deg = angle_deg
+	Settings.angle_dir_deg = angle_dir_deg
+	Settings.save()
+
+
+## The idle timer coalesces, it is not the source of truth: quitting inside
+## its window still has to keep the brush the mapmaker left set.
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_EXIT_TREE or _brush_save == null:
+		return
+	if not _brush_save.is_stopped():
+		save_brush_settings()
+
+
+## Note a brush edit: tell the panels now, hit the disk once the drag stops.
+func _brush_dirty() -> void:
+	brush_changed.emit()
+	if _brush_save != null:
+		_brush_save.start(BRUSH_SAVE_IDLE_S)
+
+
+static func is_height_brush(tool_name: String) -> bool:
+	return HEIGHT_BRUSHES.has(tool_name)
+
+
+## Tools that open a SculptTool stroke on mouse-down.
+static func is_stroke_tool(tool_name: String) -> bool:
+	return tool_name == "paint" or tool_name == "clone" or is_height_brush(tool_name)
+
+
+## Tools that should show the brush ring under the cursor.
+static func is_brush_tool(tool_name: String) -> bool:
+	return tool_name == "ramp" or tool_name == "qsel" or is_stroke_tool(tool_name)
+
+
+## March distance the shell should use between dabs of a drag.
+func stroke_spacing_m() -> float:
+	if brush_spacing > 0.0:
+		return maxf(HeightField.CELL_M, radius_m * brush_spacing)
+	return maxf(HeightField.CELL_M, radius_m * 0.15)
+
+
+## New brush settings, in one place so a panel can drive them generically.
+## Every setter emits brush_changed and arms the idle save.
+func set_brush_mask(id: String) -> void:
+	if not id.is_empty() and not BrushMaskLibrary.has(id):
+		id = ""
+	if brush_mask == id:
+		return
+	brush_mask = id
+	_brush_dirty()
+
+
+func set_brush_rotation(deg: float) -> void:
+	deg = fposmod(deg, 360.0)
+	if is_equal_approx(brush_rotation_deg, deg):
+		return
+	brush_rotation_deg = deg
+	_brush_dirty()
+
+
+func set_brush_random_rotation(on: bool) -> void:
+	if brush_random_rotation == on:
+		return
+	brush_random_rotation = on
+	_brush_dirty()
+
+
+func set_brush_spacing(frac: float, ms: int = -1) -> void:
+	frac = clampf(frac, 0.0, 4.0)
+	if ms >= 0:
+		brush_spacing_ms = clampi(ms, 0, 2000)
+	if is_equal_approx(brush_spacing, frac) and ms < 0:
+		return
+	brush_spacing = frac
+	_brush_dirty()
+
+
+func set_brush_pressure(size_factor: float, opacity_factor: float) -> void:
+	size_factor = clampf(size_factor, 0.0, 1.0)
+	opacity_factor = clampf(opacity_factor, 0.0, 1.0)
+	if is_equal_approx(brush_pressure_size, size_factor) \
+			and is_equal_approx(brush_pressure_opacity, opacity_factor):
+		return
+	brush_pressure_size = size_factor
+	brush_pressure_opacity = opacity_factor
+	_brush_dirty()
+
+
+func set_slope_limit(on: bool, lo: float = NAN, hi: float = NAN) -> void:
+	limit_slope = on
+	if is_finite(lo):
+		slope_min_deg = clampf(lo, 0.0, 90.0)
+	if is_finite(hi):
+		slope_max_deg = clampf(hi, 0.0, 90.0)
+	_brush_dirty()
+
+
+func set_height_limit(on: bool, lo: float = NAN, hi: float = NAN) -> void:
+	limit_height = on
+	if is_finite(lo):
+		height_min_m = lo
+	if is_finite(hi):
+		height_max_m = hi
+	_brush_dirty()
+
+
+func set_noise_params(freq: float, octaves: int, amplitude_m: float, p_seed: int) -> void:
+	noise_frequency = clampf(freq, 0.00001, 1.0)
+	noise_octaves = clampi(octaves, 1, 8)
+	noise_amplitude_m = maxf(amplitude_m, 0.0)
+	brush_seed = p_seed
+	_brush_dirty()
+
+
+func set_erode_params(radius: float, slack_m: float) -> void:
+	erode_radius_m = clampf(radius, HeightField.CELL_M, 4.0 * HeightField.CELL_M)
+	erode_slack_m = maxf(slack_m, 0.0)
+	_brush_dirty()
+
+
+func set_target_height(h_m: float) -> void:
+	if is_equal_approx(set_height_m, h_m):
+		return
+	set_height_m = h_m
+	_brush_dirty()
+
+
+func set_target_angle(deg: float, bearing_deg: float) -> void:
+	deg = clampf(deg, -89.0, 89.0)
+	bearing_deg = fposmod(bearing_deg, 360.0)
+	if is_equal_approx(angle_deg, deg) and is_equal_approx(angle_dir_deg, bearing_deg):
+		return
+	angle_deg = deg
+	angle_dir_deg = bearing_deg
+	_brush_dirty()
+
+
+func set_angle_origin(x_m: float, z_m: float) -> void:
+	angle_origin_m = Vector2(x_m, z_m)
+
+
+func clear_angle_origin() -> void:
+	angle_origin_m = Vector2.INF
+
+
+func has_angle_origin() -> bool:
+	return angle_origin_m.is_finite()
 
 
 func _on_session_changed() -> void:
@@ -74,6 +345,8 @@ func _on_session_changed() -> void:
 		clear_mask_target()
 	if clone_source_m.is_finite():
 		clone_source_m = Vector2.INF
+	if angle_origin_m.is_finite():
+		angle_origin_m = Vector2.INF
 
 
 func set_tool(name: String) -> void:
@@ -89,28 +362,28 @@ func set_radius(v: float) -> void:
 	if is_equal_approx(radius_m, v):
 		return
 	radius_m = v
-	brush_changed.emit()
+	_brush_dirty()
 
 
 func set_strength(v: float) -> void:
 	if is_equal_approx(strength, v):
 		return
 	strength = v
-	brush_changed.emit()
+	_brush_dirty()
 
 
 func set_falloff(v: float) -> void:
 	if is_equal_approx(falloff, v):
 		return
 	falloff = v
-	brush_changed.emit()
+	_brush_dirty()
 
 
 func set_shape(v: String) -> void:
 	if shape == v:
 		return
 	shape = v
-	brush_changed.emit()
+	_brush_dirty()
 
 
 func set_paint_material(id: int) -> void:
@@ -381,6 +654,8 @@ func set_symmetry(mode: String) -> void:
 		return
 	symmetry = mode
 	symmetry_changed.emit()
+	if _brush_save != null:
+		_brush_save.start(BRUSH_SAVE_IDLE_S)
 
 
 static func normalize_symmetry(mode: String) -> String:

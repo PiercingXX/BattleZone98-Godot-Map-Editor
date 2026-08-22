@@ -5,6 +5,20 @@ class_name PrefsDialog
 var _applying: bool = false
 var _scheme_godot: Button
 var _scheme_gimp: Button
+var _bindings: Tree
+var _binding_status: Label
+var _btn_rebind: Button
+var _btn_clear: Button
+var _btn_reset: Button
+var _btn_reset_all: Button
+var _confirm_row: HBoxContainer
+## Action waiting for a keypress, "" when not capturing.
+var _capture_action: String = ""
+## Chord captured but parked behind a conflict the user has not answered.
+var _pending_action: String = ""
+var _pending_chord: Dictionary = {}
+var _font: HSlider
+var _font_label: Label
 var _scale: HSlider
 var _scale_label: Label
 var _scale_dragging: bool = false
@@ -25,8 +39,8 @@ func _ready() -> void:
 	unresizable = false
 	visible = false
 	close_requested.connect(hide)
-	min_size = Vector2i(460, 520)
-	size = Vector2i(480, 560)
+	min_size = Vector2i(500, 600)
+	size = Vector2i(540, 760)
 	_build_ui()
 	refresh()
 
@@ -39,9 +53,13 @@ func popup_prefs() -> void:
 func refresh() -> void:
 	_applying = true
 	_sync_scheme()
+	_rebuild_bindings()
 	if _scale:
 		_scale.value = Settings.coerce_ui_scale(Settings.ui_scale)
 	_sync_scale_label()
+	if _font:
+		_font.value = Settings.coerce_ui_font_size(Settings.ui_font_size)
+	_sync_font_label()
 	_sync_autosave()
 	if _cam_speed:
 		_cam_speed.value = Settings.coerce_camera_speed(Settings.camera_speed_mul)
@@ -85,6 +103,9 @@ func _build_ui() -> void:
 	scheme_row.add_child(_scheme_godot)
 	scheme_row.add_child(_scheme_gimp)
 
+	box.add_child(_heading("Key bindings"))
+	_build_bindings(box)
+
 	box.add_child(_heading("UI scale"))
 	var scale_row := HBoxContainer.new()
 	scale_row.add_theme_constant_override("separation", 8)
@@ -107,6 +128,26 @@ func _build_ui() -> void:
 	_scale_label.name = "UiScaleValue"
 	_scale_label.custom_minimum_size = Vector2(48, 0)
 	scale_row.add_child(_scale_label)
+
+	box.add_child(_heading("Text size"))
+	var font_row := HBoxContainer.new()
+	font_row.add_theme_constant_override("separation", 8)
+	box.add_child(font_row)
+	_font = HSlider.new()
+	_font.name = "FontSize"
+	_font.min_value = Settings.UI_FONT_SIZE_MIN
+	_font.max_value = Settings.UI_FONT_SIZE_MAX
+	_font.step = 1
+	_font.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_font.tooltip_text = "Base text size in points (%d–%d). Independent of UI scale." % [
+		Settings.UI_FONT_SIZE_MIN, Settings.UI_FONT_SIZE_MAX,
+	]
+	_font.value_changed.connect(_on_font_size)
+	font_row.add_child(_font)
+	_font_label = Label.new()
+	_font_label.name = "FontSizeValue"
+	_font_label.custom_minimum_size = Vector2(48, 0)
+	font_row.add_child(_font_label)
 
 	box.add_child(_heading("Autosave"))
 	var auto_row := HBoxContainer.new()
@@ -193,6 +234,282 @@ func _build_ui() -> void:
 	add_child(_browse)
 
 
+func _build_bindings(box: VBoxContainer) -> void:
+	_bindings = Tree.new()
+	_bindings.name = "Bindings"
+	_bindings.columns = 2
+	_bindings.column_titles_visible = true
+	_bindings.set_column_title(0, "Action")
+	_bindings.set_column_title(1, "Shortcut")
+	_bindings.set_column_expand(1, false)
+	_bindings.set_column_custom_minimum_width(1, 140)
+	_bindings.hide_root = true
+	_bindings.allow_rmb_select = false
+	_bindings.custom_minimum_size = Vector2(0, 220)
+	_bindings.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_bindings.item_activated.connect(_begin_capture)
+	_bindings.item_selected.connect(_on_binding_selected)
+	box.add_child(_bindings)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	box.add_child(row)
+	_btn_rebind = _bind_button("Rebind…", "RebindKey",
+		"Press the next chord to bind it to the selected action")
+	_btn_rebind.pressed.connect(_begin_capture)
+	row.add_child(_btn_rebind)
+	_btn_clear = _bind_button("Clear", "ClearKey",
+		"Leave the selected action with no shortcut")
+	_btn_clear.pressed.connect(_clear_selected)
+	row.add_child(_btn_clear)
+	_btn_reset = _bind_button("Reset", "ResetKey",
+		"Restore the shipped shortcut for the selected action")
+	_btn_reset.pressed.connect(_reset_selected)
+	row.add_child(_btn_reset)
+	_btn_reset_all = _bind_button("Reset all", "ResetAllKeys",
+		"Restore every shortcut in this scheme")
+	_btn_reset_all.pressed.connect(_reset_all_bindings)
+	row.add_child(_btn_reset_all)
+
+	_confirm_row = HBoxContainer.new()
+	_confirm_row.name = "ConfirmRow"
+	_confirm_row.add_theme_constant_override("separation", 8)
+	_confirm_row.visible = false
+	box.add_child(_confirm_row)
+	var reassign := _bind_button("Reassign", "ConfirmRebind",
+		"Take the chord and unbind whatever holds it")
+	reassign.pressed.connect(_confirm_pending)
+	_confirm_row.add_child(reassign)
+	var keep := _bind_button("Cancel", "CancelRebind", "Leave both bindings alone")
+	keep.pressed.connect(_cancel_pending)
+	_confirm_row.add_child(keep)
+
+	_binding_status = Label.new()
+	_binding_status.name = "BindingStatus"
+	_binding_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_binding_status.add_theme_color_override("font_color", Color(0.72, 0.74, 0.78))
+	box.add_child(_binding_status)
+
+
+func _bind_button(caption: String, node_name: String, tip: String) -> Button:
+	var b := Button.new()
+	b.name = node_name
+	b.text = caption
+	b.tooltip_text = tip
+	return b
+
+
+## Category → action rows for the active scheme. Reads the registry, so an
+## action another feature registered shows up without touching this file.
+func _rebuild_bindings() -> void:
+	if _bindings == null:
+		return
+	var keep := _selected_action()
+	_bindings.clear()
+	var root := _bindings.create_item()
+	var scheme := Keymap.active_scheme()
+	for raw_category in Keymap.categories():
+		var category := str(raw_category)
+		var head := _bindings.create_item(root)
+		head.set_text(0, category)
+		head.set_selectable(0, false)
+		head.set_selectable(1, false)
+		for raw_action in Keymap.actions_in(category):
+			var action := str(raw_action)
+			var item := _bindings.create_item(head)
+			item.set_text(0, Keymap.action_label(action))
+			item.set_tooltip_text(0, Keymap.action_tooltip(action))
+			item.set_metadata(0, action)
+			item.set_text(1, Keymap.format_action(action, scheme))
+			item.set_selectable(1, false)
+			if Keymap.has_override(action, scheme):
+				item.set_custom_color(1, DarkTheme.token("accent_hover"))
+				item.set_tooltip_text(1, "Custom — default is %s" % Keymap.format_binding(
+					Keymap.default_binding(action, scheme)
+				))
+			if action == keep:
+				item.select(0)
+
+
+func _selected_action() -> String:
+	if _bindings == null:
+		return ""
+	var item := _bindings.get_selected()
+	if item == null:
+		return ""
+	var meta: Variant = item.get_metadata(0)
+	return str(meta) if meta != null else ""
+
+
+func _on_binding_selected() -> void:
+	if _capture_action.is_empty() and _pending_action.is_empty():
+		_set_status(Keymap.action_tooltip(_selected_action()))
+
+
+## Arm capture: the next non-modifier keypress becomes the new chord.
+func _begin_capture() -> void:
+	var action := _selected_action()
+	if action.is_empty():
+		_set_status("pick an action first")
+		return
+	_cancel_pending()
+	_capture_action = action
+	set_process_input(true)
+	_set_status("press a chord for %s — Esc cancels" % Keymap.action_label(action))
+
+
+func _end_capture() -> void:
+	_capture_action = ""
+	set_process_input(false)
+
+
+func _input(event: InputEvent) -> void:
+	if _capture_action.is_empty():
+		return
+	var k := event as InputEventKey
+	if k == null or not k.pressed or k.echo:
+		return
+	get_viewport().set_input_as_handled()
+	_capture_key(k)
+
+
+## Seam the tests drive: everything from here down is scheme logic, not input
+## plumbing.
+func _capture_key(k: InputEventKey) -> void:
+	if _capture_action.is_empty():
+		return
+	if KeyAction.is_modifier_key(k.keycode):
+		return
+	var action := _capture_action
+	_end_capture()
+	if k.keycode == KEY_ESCAPE:
+		_set_status("rebind cancelled")
+		return
+	_offer_binding(action, KeyAction.chord_from_event(k))
+
+
+## Bind when the chord is free; park it behind a named clash when it is not.
+## Returns the clash line, "" when the binding went through.
+func _offer_binding(action: String, chord: Dictionary) -> String:
+	var scheme := Keymap.active_scheme()
+	var clash := Keymap.conflict_text(action, chord, scheme)
+	if clash.is_empty():
+		_commit_binding(action, chord)
+		return ""
+	_pending_action = action
+	_pending_chord = chord
+	_show_confirm(true)
+	_set_status("%s. Reassign it to %s?" % [clash, Keymap.action_label(action)])
+	return clash
+
+
+func _confirm_pending() -> void:
+	if _pending_action.is_empty():
+		return
+	var scheme := Keymap.active_scheme()
+	var action := _pending_action
+	var chord := _pending_chord.duplicate()
+	for other in Keymap.conflicts_with(action, chord, scheme):
+		Keymap.unbind(str(other), scheme)
+		EditorFeedback.log("%s unbound — %s took its chord" % [
+			Keymap.action_label(str(other)), Keymap.action_label(action),
+		])
+	_clear_pending()
+	_commit_binding(action, chord)
+
+
+func _cancel_pending() -> void:
+	if _pending_action.is_empty():
+		return
+	_clear_pending()
+	_set_status("binding unchanged")
+
+
+func _clear_pending() -> void:
+	_pending_action = ""
+	_pending_chord = {}
+	_show_confirm(false)
+
+
+func _show_confirm(on: bool) -> void:
+	if _confirm_row:
+		_confirm_row.visible = on
+
+
+func _commit_binding(action: String, chord: Dictionary) -> void:
+	if not Keymap.set_binding(action, chord, Keymap.active_scheme()):
+		_set_status("cannot bind %s" % action)
+		return
+	_after_binding_change()
+	_set_status("%s → %s" % [
+		Keymap.action_label(action), Keymap.format_binding(chord),
+	])
+	EditorFeedback.log("bound %s to %s" % [action, Keymap.format_binding(chord)])
+
+
+func _clear_selected() -> void:
+	var action := _selected_action()
+	if action.is_empty():
+		_set_status("pick an action first")
+		return
+	_cancel_pending()
+	Keymap.unbind(action, Keymap.active_scheme())
+	_after_binding_change()
+	_set_status("%s has no shortcut" % Keymap.action_label(action))
+
+
+func _reset_selected() -> void:
+	var action := _selected_action()
+	if action.is_empty():
+		_set_status("pick an action first")
+		return
+	_cancel_pending()
+	Keymap.reset_binding(action, Keymap.active_scheme())
+	_after_binding_change()
+	_set_status("%s → %s (default)" % [
+		Keymap.action_label(action), Keymap.format_action(action),
+	])
+
+
+func _reset_all_bindings() -> void:
+	_cancel_pending()
+	var scheme := Keymap.active_scheme()
+	Keymap.reset_all(scheme)
+	_after_binding_change()
+	_set_status("every %s shortcut is back to default" % Keymap.scheme_label(scheme))
+	EditorFeedback.log("keymap reset to %s defaults" % Keymap.scheme_label(scheme))
+
+
+func _after_binding_change() -> void:
+	_rebuild_bindings()
+	_refresh_keymap_views()
+
+
+func _set_status(text: String) -> void:
+	if _binding_status:
+		_binding_status.text = text
+
+
+func binding_status() -> String:
+	return _binding_status.text if _binding_status else ""
+
+
+## Tooltips and the help window quote chords, so they go stale on a rebind.
+func _refresh_keymap_views() -> void:
+	var shell := _shell()
+	if shell == null:
+		return
+	var help: Variant = shell.get("_help")
+	if help != null and help.has_method("refresh"):
+		help.call("refresh")
+	var top: Variant = shell.get("_top")
+	if top != null and top.has_method("refresh_keymap"):
+		top.call("refresh_keymap")
+	var rail: Variant = shell.get("_rail")
+	if rail != null and rail.has_method("refresh_keymap"):
+		rail.call("refresh_keymap")
+
+
 func _heading(caption: String) -> Label:
 	var l := Label.new()
 	l.text = caption
@@ -225,6 +542,8 @@ func _apply_scheme(scheme: String) -> void:
 		Settings.save()
 		EditorFeedback.log("keyboard scheme %s" % next)
 	_sync_scheme()
+	_cancel_pending()
+	_rebuild_bindings()
 
 
 func _on_scale_drag_ended(value_changed: bool) -> void:
@@ -254,6 +573,29 @@ func _on_scale(v: float) -> void:
 	Settings.save()
 	_sync_scale_label()
 	EditorFeedback.log("ui scale %.2f" % next)
+
+
+func _on_font_size(v: float) -> void:
+	if _applying:
+		return
+	var next := Settings.coerce_ui_font_size(int(round(v)))
+	if Settings.ui_font_size == next:
+		_sync_font_label()
+		return
+	Settings.ui_font_size = next
+	Settings.save()
+	_apply_theme()
+	_sync_font_label()
+	EditorFeedback.log("ui font size %d" % next)
+
+
+## Font size lives in the Theme, so the theme has to be rebuilt and reseated
+## on the root Control; every panel inherits from there.
+func _apply_theme() -> void:
+	var shell := _shell()
+	if shell is Control:
+		DarkTheme.apply_to(shell as Control)
+	theme = DarkTheme.make()
 
 
 func _apply_autosave(seconds: int) -> void:
@@ -371,6 +713,11 @@ func _sync_autosave() -> void:
 func _sync_scale_label() -> void:
 	if _scale_label:
 		_scale_label.text = "%.2f×" % Settings.coerce_ui_scale(Settings.ui_scale)
+
+
+func _sync_font_label() -> void:
+	if _font_label:
+		_font_label.text = "%d pt" % Settings.coerce_ui_font_size(Settings.ui_font_size)
 
 
 func _sync_cam_label() -> void:

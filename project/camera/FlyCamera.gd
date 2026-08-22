@@ -14,6 +14,8 @@ const ORBIT_WHEEL_STEP_PX := 60.0
 const MAP_WHEEL_PAN_PX := 60.0
 const HOVER_LIFT_M := 40.0
 const HOVER_BACK_M := 40.0
+## Walk mode's floor: how far above the surface the eye is held.
+const WALK_CLEARANCE_M := 4.0
 ## Godot identity looks −Z (south). Yaw π faces +Z (north).
 const NORTH_YAW := PI
 const COMPASS_HUB_RATIO := 0.28
@@ -217,11 +219,20 @@ func _orbit(rel: Vector2) -> void:
 
 
 func _process(delta: float) -> void:
-	if _text_focused():
-		return
 	if map_mode:
-		_process_map_pan(delta)
+		if not _text_focused():
+			_process_map_pan(delta)
 		return
+	if not _text_focused():
+		_process_fly(delta)
+	# Unconditionally, once a frame — not inside the WASD branch above. The
+	# wheel and drag verbs move the camera between frames and never went
+	# through that branch, so walk mode let the mouse fly you underground.
+	# Sculpting under a parked camera has to push it up too.
+	enforce_walk_floor()
+
+
+func _process_fly(delta: float) -> void:
 	var wish := Vector3.ZERO
 	if Input.is_key_pressed(KEY_W):
 		wish -= global_transform.basis.z
@@ -243,9 +254,19 @@ func _process(delta: float) -> void:
 		Settings.coerce_camera_speed(Settings.camera_speed_mul),
 	)
 	global_position += wish.normalized() * base_speed * mul * delta
-	if Settings.walk_mode and MapState.has_session and MapState.field.grid_x > 1:
-		var ground := MapState.field.height_at(global_position.x, global_position.z)
-		global_position.y = maxf(global_position.y, ground + 4.0)
+
+
+## Walk mode's promise: the eye never gets closer than WALK_CLEARANCE_M to the
+## surface. Raises only — a camera already well clear is left alone, so framing
+## and bookmarks are unaffected. Map mode is exempt: that camera is orthographic
+## and parked at MAP_CAM_Y, where height carries no meaning.
+func enforce_walk_floor() -> void:
+	if map_mode or not Settings.walk_mode:
+		return
+	if not MapState.has_session or MapState.field == null or MapState.field.grid_x <= 1:
+		return
+	var ground := MapState.field.height_at(global_position.x, global_position.z)
+	global_position.y = maxf(global_position.y, ground + WALK_CLEARANCE_M)
 
 
 func _process_map_pan(delta: float) -> void:

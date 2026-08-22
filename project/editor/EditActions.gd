@@ -835,6 +835,12 @@ static func apply_ramp(sculpt: SculptTool, a: Vector3, b: Vector3, log: Callable
 	var dir := Vector2(delta.x, delta.z) / length
 	var steps := int(ceil(length / HeightField.CELL_M)) + 1
 	sculpt.mode = "flatten"
+	# The march is one dab per cell, already the right density. A user's
+	# brush spacing gate would drop most of them and leave a stepped ramp,
+	# so this stroke opts out of the live brush and clears the gate itself.
+	sculpt.follow_tool_state = false
+	sculpt.spacing_frac = 0.0
+	sculpt.spacing_ms = 0
 	sculpt.begin_stroke(MapState.field, a.x, a.z, false)
 	for i in steps:
 		var t := float(i) / float(max(steps - 1, 1))
@@ -842,6 +848,9 @@ static func apply_ramp(sculpt: SculptTool, a: Vector3, b: Vector3, log: Callable
 		var c := a + Vector3(dir.x, 0, dir.y) * (t * length)
 		sculpt.stamp(MapState.field, c.x, c.z)
 	var cmd = sculpt.end_stroke(MapState.field)
+	# The shell reuses one SculptTool for every stroke; the next interactive
+	# one must go back to following the live brush.
+	sculpt.follow_tool_state = true
 	if cmd:
 		UndoStack.push(cmd, true)
 	var line := "ramp %.0f m  slope %.1f°  (30° is the climb limit)" % [

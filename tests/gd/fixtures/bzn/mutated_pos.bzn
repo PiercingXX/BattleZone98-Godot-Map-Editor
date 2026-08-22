@@ -1,0 +1,163 @@
+version [1] =
+2016
+binarySave [1] =
+false
+msn_filename = synthmap.bzn
+seq_count [1] =
+2
+missionSave [1] =
+true
+TerrainName = synthmap
+size [1] =
+2
+[GameObject]
+PrjID [1] =
+player
+seqno [1] =
+0
+pos [1] =
+  x [1] =
+640
+  y [1] =
+10
+  z [1] =
+640
+team [1] =
+1
+label = synthmap0_player
+isUser [1] =
+1
+obj_addr = 00000001
+transform [1] =
+  right_x [1] =
+1
+  right_y [1] =
+0
+  right_z [1] =
+0
+  up_x [1] =
+0
+  up_y [1] =
+1
+  up_z [1] =
+0
+  front_x [1] =
+0
+  front_y [1] =
+0
+  front_z [1] =
+1
+  posit_x [1] =
+640
+  posit_y [1] =
+10
+  posit_z [1] =
+640
+illumination [1] =
+1
+pos [1] =
+  x [1] =
+640
+  y [1] =
+10
+  z [1] =
+640
+euler =
+ mass [1] =
+0
+ mass_inv [1] =
+1e+030
+ v_mag [1] =
+0
+ v_mag_inv [1] =
+1e+030
+ I [1] =
+0
+ k_i [1] =
+1
+ v [1] =
+  x [1] =
+0
+  y [1] =
+0
+  z [1] =
+0
+ omega [1] =
+  x [1] =
+0
+  y [1] =
+0
+  z [1] =
+0
+ Accel [1] =
+  x [1] =
+0
+  y [1] =
+0
+  z [1] =
+0
+seqNo [1] =
+0
+name = 
+[GameObject]
+PrjID [1] =
+eggeizr1
+seqno [1] =
+1
+pos [1] =
+  x [1] =
+333.125
+  y [1] =
+44.5
+  z [1] =
+555.875
+team [1] =
+0
+label = synthmap1_geyser
+isUser [1] =
+0
+obj_addr = 00000002
+transform [1] =
+  right_x [1] =
+1
+  right_y [1] =
+0
+  right_z [1] =
+0
+  up_x [1] =
+0
+  up_y [1] =
+1
+  up_z [1] =
+0
+  front_x [1] =
+0
+  front_y [1] =
+0
+  front_z [1] =
+1
+  posit_x [1] =
+333.125
+  posit_y [1] =
+44.5
+  posit_z [1] =
+555.875
+illumination [1] =
+0
+pos [1] =
+  x [1] =
+333.125
+  y [1] =
+44.5
+  z [1] =
+555.875
+seqNo [1] =
+1
+name = 
+[AiMission]
+[AOIs]
+size [1] =
+0
+[AiPaths]
+count [1] =
+0

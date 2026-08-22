@@ -1,14 +1,9 @@
 extends RefCounted
 class_name MaskStrokeCommand
-## One mask-paint stroke: dirty-rect before/after on a feature's u8 grid.
+## One mask-paint stroke: chunk before/after regions on a feature's u8 grid.
 
 var stem: String = ""
-var x0: int
-var z0: int
-var width: int
-var depth: int
-var before: PackedByteArray
-var after: PackedByteArray
+var regions: Array = []
 
 
 func describe() -> String:
@@ -17,6 +12,7 @@ func describe() -> String:
 	return "mask %s" % stem
 
 
+## Single-rect form, for callers that already hold one dirty rect.
 func setup(
 	p_stem: String,
 	p_x0: int,
@@ -26,22 +22,37 @@ func setup(
 	p_before: PackedByteArray,
 	p_after: PackedByteArray
 ) -> void:
+	setup_regions(p_stem, [RasterChunks.region(p_x0, p_z0, p_w, p_d, p_before, p_after)])
+
+
+func setup_regions(p_stem: String, p_regions: Array) -> void:
 	stem = p_stem
-	x0 = p_x0
-	z0 = p_z0
-	width = p_w
-	depth = p_d
-	before = p_before
-	after = p_after
+	regions = p_regions
 
 
 func cost_bytes() -> int:
-	return before.size() + after.size()
+	var n := 0
+	for r_v in regions:
+		var r: Dictionary = r_v
+		var before: PackedByteArray = r["before"]
+		var after: PackedByteArray = r["after"]
+		n += before.size() + after.size()
+	return n
 
 
 func do() -> void:
-	MapState.write_mask_rect(stem, x0, z0, width, depth, after)
+	_write("after")
 
 
 func undo() -> void:
-	MapState.write_mask_rect(stem, x0, z0, width, depth, before)
+	_write("before")
+
+
+func _write(key: String) -> void:
+	# Unlike heights and materials, mask writes go through MapState: the writer
+	# also adopts a legacy feature's mask and marks features dirty, and its
+	# flush is one byte per cell.
+	for r_v in regions:
+		var r: Dictionary = r_v
+		var values: PackedByteArray = r[key]
+		MapState.write_mask_rect(stem, int(r["x"]), int(r["z"]), int(r["w"]), int(r["d"]), values)

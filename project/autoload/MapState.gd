@@ -43,6 +43,11 @@ var mat_image: Image
 var masks: Dictionary = {}
 var mask_texture: ImageTexture
 var mask_image: Image
+## Painted scatter. One field per session; `scatter_stem` names the plants
+## feature it belongs to and is empty until the map has one, which is what
+## keeps a map that never painted scatter on the legacy mesh path (C6).
+var scatter: ScatterField = ScatterField.new()
+var scatter_stem: String = ""
 ## View-only terrain selection at heightfield resolution (not persisted).
 ## Empty array = no selection = every cell editable (Photoshop semantics).
 var terrain_selection: PackedByteArray = PackedByteArray()
@@ -70,6 +75,15 @@ var _mat_gpu_dirty: bool = false
 var _mask_gpu_dirty: bool = false
 var _mask_gpu_stem: String = ""
 var _selection_gpu_dirty: bool = false
+## Dirty rects for the two per-frame uploads. An empty rect means clean; a
+## caller that cannot name its rect gets the whole grid, as before.
+var _mat_dirty: Rect2i = Rect2i()
+var _mask_dirty: Rect2i = Rect2i()
+## Rect-sized staging reused between flushes so a stroke allocates nothing.
+var _mat_patch: Image
+var _mat_patch_rg: PackedByteArray = PackedByteArray()
+var _mask_patch: Image
+var _mask_patch_r8: PackedByteArray = PackedByteArray()
 
 ## True when the undo-point generation differs from the last open/save.
 ## Assigning `true` bumps a non-undoable dirty; `false` snapshots the save point.
@@ -131,6 +145,9 @@ func load_from_open(result: Dictionary) -> void:
 	masks.clear()
 	mask_texture = null
 	mask_image = null
+	_mask_gpu_stem = ""
+	_mask_dirty = Rect2i()
+	_mat_dirty = Rect2i()
 	_reset_terrain_selection(true)
 	var gx := int(manifest.get("grid_x", 0))
 	var gz := int(manifest.get("grid_z", 0))
@@ -143,6 +160,7 @@ func load_from_open(result: Dictionary) -> void:
 	mat_grid_z = int(manifest.get("mat_grid_z", 0))
 	_load_materials()
 	_load_masks()
+	load_scatter()
 	var variants: Array = manifest.get("variants", [""])
 	active_variant = str(variants[0]) if not variants.is_empty() else ""
 	selected_ids.clear()
@@ -166,6 +184,7 @@ func persist() -> void:
 	# of meta.json, and the install path is machine-local, not map data.
 	if typeof(meta.get("world")) == TYPE_DICTIONARY:
 		(meta["world"] as Dictionary)["palette_source"] = world_palette_path()
+	sync_scatter()
 	field.write_r16(session_dir.path_join("terrain.r16"))
 	_write_materials()
 	_write_json(session_dir.path_join("objects.json"), objects)
@@ -193,6 +212,8 @@ func clear() -> void:
 	masks.clear()
 	mask_texture = null
 	mask_image = null
+	scatter = ScatterField.new()
+	scatter_stem = ""
 	_reset_terrain_selection(true)
 	field = HeightFieldScript.new()
 	materials = PackedInt32Array()
@@ -204,6 +225,8 @@ func clear() -> void:
 	_mat_gpu_dirty = false
 	_mask_gpu_dirty = false
 	_mask_gpu_stem = ""
+	_mat_dirty = Rect2i()
+	_mask_dirty = Rect2i()
 	_selection_gpu_dirty = false
 	session_changed.emit()
 
@@ -498,6 +521,7 @@ func load_features_and_masks() -> void:
 		features = {"water": [], "plants": []}
 	_ensure_feature_groups()
 	_load_masks()
+	load_scatter()
 	features_changed.emit()
 	water_changed.emit(water_level())
 
@@ -531,6 +555,69 @@ func add_plant_feature() -> Dictionary:
 	}
 	insert_feature("plants", rec)
 	return rec
+
+
+## A plants feature that carries painted scatter. Everything the generator
+## needs is the mask plus the seed — no instance list is stored anywhere —
+## so this is add_plant_feature() with a scatter block bolted on.
+func add_scatter_feature() -> Dictionary:
+	var rec := add_plant_feature()
+	var feat_stem := str(rec.get("stem", ""))
+	if feat_stem.is_empty():
+		return rec
+	if scatter == null:
+		scatter = ScatterField.new()
+	if has_heightmap():
+		scatter.resize(field.grid_x, field.grid_z)
+	if scatter.species.is_empty():
+		scatter.add_species(ScatterSpecies.make("plants"))
+	scatter_stem = feat_stem
+	sync_scatter()
+	return find_feature("plants", feat_stem)
+
+
+## Adopt the session's painted scatter. A plants record with no "scatter"
+## block is a legacy count-and-seed field: ScatterField.from_feature returns
+## null for it and it keeps the old mesh path, untouched.
+func load_scatter() -> void:
+	scatter = ScatterField.new()
+	scatter_stem = ""
+	if not has_heightmap():
+		return
+	for rec_v in _feature_array("plants"):
+		if typeof(rec_v) != TYPE_DICTIONARY:
+			continue
+		var rec: Dictionary = rec_v
+		var feat_stem := str(rec.get("stem", ""))
+		if feat_stem.is_empty():
+			continue
+		var loaded := ScatterField.from_feature(rec)
+		if loaded == null:
+			continue
+		loaded.resize(field.grid_x, field.grid_z)
+		var bytes: Variant = masks.get(feat_stem, null)
+		if bytes is PackedByteArray:
+			loaded.mask.adopt(bytes)
+		scatter = loaded
+		scatter_stem = feat_stem
+		return
+
+
+## Push the live field back into its record and mask, so the next session
+## write persists it. A no-op when the map has no scatter feature, which is
+## what keeps such a map saving byte for byte as it did before (C6).
+func sync_scatter() -> void:
+	if scatter == null or scatter_stem.is_empty():
+		return
+	var rec := find_feature("plants", scatter_stem)
+	if rec.is_empty():
+		return
+	rec["scatter"] = scatter.to_dict()
+	rec["seed"] = scatter.seed
+	var n := _mask_cell_count()
+	if n > 0 and scatter.mask.values.size() == n:
+		masks[scatter_stem] = scatter.mask.values.duplicate()
+		_bind_mask_path(scatter_stem)
 
 
 func insert_feature(group: String, rec: Dictionary, mask: PackedByteArray = PackedByteArray()) -> void:
@@ -721,15 +808,30 @@ func write_mask_rect(feat_stem: String, x0: int, z0: int, w: int, d: int, values
 			if x >= 0 and z >= 0 and x < gx and z < gz:
 				mask[z * gx + x] = values[i]
 			i += 1
-	upload_mask(feat_stem)
+	upload_mask(feat_stem, x0, z0, w, d)
 	flush_mask()
 	mark_features_dirty()
 
 
-func upload_mask(feat_stem: String) -> void:
+## Omitting the rect means "somewhere in this mask", which costs a whole-grid
+## upload; callers that know the cells they touched should name them.
+func upload_mask(feat_stem: String, x0: int = 0, z0: int = 0, w: int = 0, d: int = 0) -> void:
 	if not has_heightmap() or feat_stem.is_empty():
 		return
-	_mask_gpu_stem = feat_stem
+	var gx := field.grid_x
+	var gz := field.grid_z
+	if feat_stem != _mask_gpu_stem:
+		# A different feature is a different image; nothing already queued carries over.
+		_mask_dirty = Rect2i()
+		_mask_gpu_stem = feat_stem
+		w = 0
+		d = 0
+	if w < 1 or d < 1:
+		x0 = 0
+		z0 = 0
+		w = gx
+		d = gz
+	_mask_dirty = _union_grid_rect(_mask_dirty, Rect2i(x0, z0, w, d), gx, gz)
 	_mask_gpu_dirty = true
 
 
@@ -746,12 +848,53 @@ func flush_mask() -> int:
 	if mask.size() != n:
 		mask.resize(n)
 		masks[_mask_gpu_stem] = mask
-	mask_image = Image.create_from_data(gx, gz, false, Image.FORMAT_R8, mask)
+	var rect := _mask_dirty
+	_mask_dirty = Rect2i()
+	if not rect.has_area():
+		return 0
+	if mask_image == null or mask_image.get_width() != gx or mask_image.get_height() != gz:
+		mask_image = Image.create_from_data(gx, gz, false, Image.FORMAT_R8, mask)
+		rect = Rect2i(0, 0, gx, gz)
+	elif rect.size.x == gx and rect.size.y == gz:
+		# The mask array is already the exact R8 payload, so a whole-grid upload
+		# hands it over as-is instead of copying it cell by cell.
+		mask_image.set_data(gx, gz, false, Image.FORMAT_R8, mask)
+	else:
+		_blit_mask_rect(mask, gx, rect)
 	if mask_texture == null or mask_texture.get_width() != gx or mask_texture.get_height() != gz:
 		mask_texture = ImageTexture.create_from_image(mask_image)
 	else:
 		mask_texture.update(mask_image)
-	return n
+	return rect.size.x * rect.size.y
+
+
+func _blit_mask_rect(mask: PackedByteArray, gx: int, rect: Rect2i) -> void:
+	var need := rect.size.x * rect.size.y
+	if _mask_patch_r8.size() != need:
+		_mask_patch_r8.resize(need)
+	var i := 0
+	for z in range(rect.position.y, rect.position.y + rect.size.y):
+		var row := z * gx
+		for x in range(rect.position.x, rect.position.x + rect.size.x):
+			_mask_patch_r8[i] = mask[row + x]
+			i += 1
+	if _mask_patch == null:
+		_mask_patch = Image.create_from_data(
+			rect.size.x, rect.size.y, false, Image.FORMAT_R8, _mask_patch_r8
+		)
+	else:
+		_mask_patch.set_data(rect.size.x, rect.size.y, false, Image.FORMAT_R8, _mask_patch_r8)
+	mask_image.blit_rect(_mask_patch, Rect2i(Vector2i.ZERO, rect.size), rect.position)
+
+
+## Union of two grid rects, each clipped to the grid. An empty rect is "clean".
+func _union_grid_rect(acc: Rect2i, add: Rect2i, gx: int, gz: int) -> Rect2i:
+	var clipped := add.intersection(Rect2i(0, 0, gx, gz))
+	if not clipped.has_area():
+		return acc
+	if not acc.has_area():
+		return clipped
+	return acc.merge(clipped)
 
 
 func alloc_feature_stem(prefix: String) -> String:
@@ -1073,8 +1216,6 @@ func material_word_at(x_m: float, z_m: float) -> int:
 	return materials[tz * mat_grid_x + tx] & 0xFFFF
 
 
-## F2 §5: recode a rect (plus a 1-tile halo) as solids / caps / diagonals
-## from each cell's base nibble and its four orthogonal neighbours.
 func rematch_materials_rect(x0: int, z0: int, w: int, d: int) -> void:
 	if mat_grid_x < 1 or mat_grid_z < 1 or materials.is_empty():
 		return
@@ -1105,7 +1246,7 @@ func rematch_materials_rect(x0: int, z0: int, w: int, d: int) -> void:
 			):
 				word = BzMat.encode_entry(self_m, self_m)
 			materials[z * gx + x] = word
-	upload_materials()
+	upload_materials(xa, za, xb - xa + 1, zb - za + 1)
 
 
 func write_materials_rect(x0: int, z0: int, w: int, d: int, values: PackedInt32Array) -> void:
@@ -1115,13 +1256,21 @@ func write_materials_rect(x0: int, z0: int, w: int, d: int, values: PackedInt32A
 			if x >= 0 and z >= 0 and x < mat_grid_x and z < mat_grid_z:
 				materials[z * mat_grid_x + x] = values[i]
 			i += 1
-	upload_materials()
+	upload_materials(x0, z0, w, d)
 	flush_materials()
 
 
-func upload_materials() -> void:
+## Omitting the rect means "somewhere in the grid", which costs a whole-grid
+## upload; callers that know the tiles they touched should name them.
+func upload_materials(x0: int = 0, z0: int = 0, w: int = 0, d: int = 0) -> void:
 	if mat_grid_x < 1 or mat_grid_z < 1:
 		return
+	if w < 1 or d < 1:
+		x0 = 0
+		z0 = 0
+		w = mat_grid_x
+		d = mat_grid_z
+	_mat_dirty = _union_grid_rect(_mat_dirty, Rect2i(x0, z0, w, d), mat_grid_x, mat_grid_z)
 	_mat_gpu_dirty = true
 
 
@@ -1131,10 +1280,33 @@ func flush_materials() -> int:
 	_mat_gpu_dirty = false
 	if mat_grid_x < 1 or mat_grid_z < 1:
 		return 0
-	# Full tile word per cell (F2 §2): R = byte0 (orientation<<4 | variant),
-	# G = byte1 (base<<4 | transition). The shader decodes the word and draws
-	# the same atlas tile the game would.
+	var rect := _mat_dirty
+	_mat_dirty = Rect2i()
+	if not rect.has_area():
+		return 0
+	if (
+		mat_image == null
+		or mat_image.get_width() != mat_grid_x
+		or mat_image.get_height() != mat_grid_z
+	):
+		_rebuild_mat_image()
+		rect = Rect2i(0, 0, mat_grid_x, mat_grid_z)
+	else:
+		_blit_mat_rect(rect)
+	if mat_texture == null or mat_texture.get_width() != mat_grid_x or mat_texture.get_height() != mat_grid_z:
+		mat_texture = ImageTexture.create_from_image(mat_image)
+	else:
+		mat_texture.update(mat_image)
+	return rect.size.x * rect.size.y * 2
+
+
+# Full tile word per cell (F2 §2): R = byte0 (orientation<<4 | variant),
+# G = byte1 (base<<4 | transition). The shader decodes the word and draws
+# the same atlas tile the game would.
+func _rebuild_mat_image() -> void:
 	var n := mat_grid_x * mat_grid_z
+	# bytes is local so the image owns them outright; sharing a member buffer
+	# would make the next rect blit copy-on-write the whole grid.
 	var bytes := PackedByteArray()
 	bytes.resize(n * 2)
 	var count := mini(n, materials.size())
@@ -1142,11 +1314,28 @@ func flush_materials() -> int:
 		bytes[i * 2] = materials[i] & 0xFF
 		bytes[i * 2 + 1] = (materials[i] >> 8) & 0xFF
 	mat_image = Image.create_from_data(mat_grid_x, mat_grid_z, false, Image.FORMAT_RG8, bytes)
-	if mat_texture == null or mat_texture.get_width() != mat_grid_x or mat_texture.get_height() != mat_grid_z:
-		mat_texture = ImageTexture.create_from_image(mat_image)
+
+
+func _blit_mat_rect(rect: Rect2i) -> void:
+	var need := rect.size.x * rect.size.y * 2
+	if _mat_patch_rg.size() != need:
+		_mat_patch_rg.resize(need)
+	var have := materials.size()
+	var i := 0
+	for z in range(rect.position.y, rect.position.y + rect.size.y):
+		var row := z * mat_grid_x
+		for x in range(rect.position.x, rect.position.x + rect.size.x):
+			var word: int = materials[row + x] if row + x < have else 0
+			_mat_patch_rg[i] = word & 0xFF
+			_mat_patch_rg[i + 1] = (word >> 8) & 0xFF
+			i += 2
+	if _mat_patch == null:
+		_mat_patch = Image.create_from_data(
+			rect.size.x, rect.size.y, false, Image.FORMAT_RG8, _mat_patch_rg
+		)
 	else:
-		mat_texture.update(mat_image)
-	return n * 2
+		_mat_patch.set_data(rect.size.x, rect.size.y, false, Image.FORMAT_RG8, _mat_patch_rg)
+	mat_image.blit_rect(_mat_patch, Rect2i(Vector2i.ZERO, rect.size), rect.position)
 
 
 func material_at(x_m: float, z_m: float) -> int:

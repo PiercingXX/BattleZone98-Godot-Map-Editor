@@ -12,10 +12,15 @@ round-trips are a test requirement, not an aspiration.**
 
 The format toolchain was originally the bundled Python package
 `backend/bzmap`, invoked as a subprocess per `docs/02-bzmap-bridge.md`. It
-was ported to GDScript in full (minus the map generator) on 2026-08-17, and
-`backend/` was deleted — see git history (`af28863^`) for the Python
-reference. Where the port and a spec in `docs/formats/` disagree, the ported
-(Python-derived) behavior wins; each such case is flagged in a code comment.
+was ported to GDScript in full on 2026-08-17 and `backend/` was deleted — see
+git history (`af28863^`) for the Python reference. Where the port and a spec
+in `docs/formats/` disagree, the ported (Python-derived) behavior wins; each
+such case is flagged in a code comment.
+
+The map generator is the one part that is not a port. `project/generate/` is
+native work — fBm, landform shapes, thermal and droplet erosion — and it
+writes nothing itself: `generate()` returns a height array and the caller
+wraps it in an undoable whole-field command (C16).
 
 The Python toolchain round-trips all 128 corpus BZNs and all 36 corpus HG2s
 byte-identically. The port inherits that bar: open→save with no edits must be
@@ -43,9 +48,7 @@ pass-through) is unchanged — only the process boundary is gone.
    meshes, textures, ODFs, atlases, or corpus BZN blocks. The editor reads
    those from the user's own install at runtime.
 
-4. **Tunnels are out of scope, entirely.** Do not reference them, build for
-   them, or leave hooks for them.
-
+4. 
 5. **The corpus is the authority on object blocks, and cloning is the only safe
    construction.** Do not assemble or re-type a `[GameObject]` block. Placement
    must clone a verified same-class block.
@@ -97,6 +100,9 @@ Working editor, not a smoke shell:
   runtime `BuildObject` for the rest, singular undeletable player.
 - Map data, findings panel (click-to-fly), thumbnail, install-to-test-mod,
   pack assembly.
+- Procedural generation (`project/generate/`): fBm, landforms, remap curve,
+  thermal and droplet erosion, deterministic in its parameters, applied as
+  one undoable whole-field edit.
 
 ## Still open
 

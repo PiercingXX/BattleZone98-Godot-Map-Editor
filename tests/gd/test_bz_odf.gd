@@ -19,7 +19,7 @@ func run(t) -> void:
 
 	var cfg: BzTrn.TerrainConfig = BzTrn.read_trn(path)
 	t.ok(cfg.section("SBPMapSettings") != null, "legacy section name preserved")
-	t.eq(cfg.get("ScrapImpactZone", "SIZ_IncludeSpawnPoints"), "1")
+	t.eq(cfg.get_value("ScrapImpactZone", "SIZ_IncludeSpawnPoints"), "1")
 
 	# empty list is falsy in Python — same bare file
 	BzOdf.write_odf(path, [])
@@ -42,17 +42,17 @@ func run(t) -> void:
 	)
 	_eq_bytes(t, path, cps_want, "write_odf CPs match odf.py")
 	var cps: BzTrn.TerrainConfig = BzTrn.read_trn(path)
-	t.eq(cps.get("SBPMapSettings", "CP1Name"), "alpha")
-	t.eq(cps.get("SBPMapSettings", "CP1X"), "10")
-	t.eq(cps.get("SBPMapSettings", "CP1Z"), "20.5")
-	t.eq(cps.get("SBPMapSettings", "CP2Name"), "beta")
-	t.eq(cps.get("ScrapImpactZone", "SIZ_IncludeSpawnPoints"), "0")
+	t.eq(cps.get_value("SBPMapSettings", "CP1Name"), "alpha")
+	t.eq(cps.get_value("SBPMapSettings", "CP1X"), "10")
+	t.eq(cps.get_value("SBPMapSettings", "CP1Z"), "20.5")
+	t.eq(cps.get_value("SBPMapSettings", "CP2Name"), "beta")
+	t.eq(cps.get_value("ScrapImpactZone", "SIZ_IncludeSpawnPoints"), "0")
 
 	# write → parse float 10.0 must be Python "10.0"
 	BzOdf.write_odf(path, [["pad", 10.0, 1.5]], true)
 	var pad: BzTrn.TerrainConfig = BzTrn.read_trn(path)
-	t.eq(pad.get("SBPMapSettings", "CP1X"), "10.0", "float str() matches Python")
-	t.eq(pad.get("SBPMapSettings", "CP1Z"), "1.5")
+	t.eq(pad.get_value("SBPMapSettings", "CP1X"), "10.0", "float str() matches Python")
+	t.eq(pad.get_value("SBPMapSettings", "CP1Z"), "1.5")
 
 	# --- KNOWN_SCRAP_PRJIDS (F8 classLabel=scrap expansion) ---
 	t.eq(BzOdf.KNOWN_SCRAP_PRJIDS, ["npscr1", "npscr2", "npscr3", "sscr_1", "blc-pell"])

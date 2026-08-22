@@ -1,0 +1,42 @@
+[gd_scene load_steps=4 format=3 uid="uid://c8bzminimap001"]
+
+[ext_resource type="Script" path="res://project/ui/minimap/MinimapPanel.gd" id="1_script"]
+[ext_resource type="Script" path="res://project/ui/minimap/MinimapView.gd" id="2_view"]
+[ext_resource type="Texture2D" path="res://project/ui/icons/frame.svg" id="3_frame"]
+
+[node name="MinimapPanel" type="PanelContainer"]
+script = ExtResource("1_script")
+
+[node name="Box" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Head" type="HBoxContainer" parent="Box"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="TitleIcon" type="TextureRect" parent="Box/Head"]
+custom_minimum_size = Vector2(16, 16)
+layout_mode = 2
+mouse_filter = 2
+texture = ExtResource("3_frame")
+expand_mode = 0
+stretch_mode = 5
+
+[node name="Title" type="Label" parent="Box/Head"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Minimap"
+
+[node name="Mode" type="Label" parent="Box/Head"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Relief"
+
+[node name="View" type="Control" parent="Box"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 140)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("2_view")

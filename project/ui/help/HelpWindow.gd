@@ -15,6 +15,11 @@ func refresh() -> void:
 		text = text.substr(0, text.length() - 7) + extra + "[/code]"
 	else:
 		text += extra
+	# Per-tool help is generated from the ToolDoc each tool declares, so a
+	# new tool documents itself here instead of editing the string above.
+	var tools := ToolDocs.to_bbcode("")
+	if not tools.is_empty():
+		text += "\n" + tools
 	%Body.text = text
 	title = "Hotkeys  (%s)" % Keymap.scheme_label()
 

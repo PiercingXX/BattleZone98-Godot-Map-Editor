@@ -8,6 +8,9 @@ const RECENT_MAX := 8
 const UI_SCALE_MIN := 0.75
 const UI_SCALE_MAX := 2.0
 const UI_SCALE_DEFAULT := 1.0
+const UI_FONT_SIZE_MIN := 10
+const UI_FONT_SIZE_MAX := 24
+const UI_FONT_SIZE_DEFAULT := 13
 const CAM_SPEED_MIN := 0.25
 const CAM_SPEED_MAX := 4.0
 const CAM_SPEED_DEFAULT := 1.0
@@ -19,6 +22,11 @@ const LAYOUT_SPLIT_RIGHT_DEFAULT := 180
 const LAYOUT_SPLIT_UPPER_DEFAULT := 150
 const LAYOUT_SPLIT_LOWER_DEFAULT := 260
 const LAYOUT_SAVE_IDLE_S := 1.0
+const BRUSH_RADIUS_MIN := 5.0
+const BRUSH_RADIUS_MAX := 400.0
+const BRUSH_RADIUS_DEFAULT := 40.0
+const BRUSH_STRENGTH_DEFAULT := 0.45
+const BRUSH_FALLOFF_DEFAULT := 0.65
 
 var game_root: String = ""
 var last_map_dir: String = ""
@@ -67,8 +75,44 @@ var view_fog: bool = false
 ## Object snap. 0 = off. Allowed grids 1/5/10/20 m; angles 15/45/90°.
 var snap_grid_m: float = 0.0
 var snap_angle: float = 0.0
+## Sculpt brush, persisted so the editor reopens with the brush you left set.
+## ToolState owns the live copies and debounce-writes them here on idle.
+var brush_radius_m: float = BRUSH_RADIUS_DEFAULT
+var brush_strength: float = BRUSH_STRENGTH_DEFAULT
+var brush_falloff: float = BRUSH_FALLOFF_DEFAULT
+var brush_shape: String = "circle"
+var brush_symmetry: String = "off"
+## Generated tip id, or "" for the analytic circle/square.
+var brush_mask: String = ""
+var brush_rotation_deg: float = 0.0
+var brush_random_rotation: bool = false
+var brush_spacing: float = 0.0
+var brush_spacing_ms: int = 0
+var brush_pressure_size: float = 0.0
+var brush_pressure_opacity: float = 0.0
+var limit_slope: bool = false
+var slope_min_deg: float = 0.0
+var slope_max_deg: float = 90.0
+var slope_feather_deg: float = 5.0
+var limit_height: bool = false
+var height_min_m: float = 0.0
+var height_max_m: float = 409.5
+var height_feather_m: float = 2.0
+var noise_frequency: float = 0.02
+var noise_octaves: int = 3
+var noise_amplitude_m: float = 6.0
+## Seeds the noise field and the random-rotation stream (C6).
+var brush_seed: int = 1
+var erode_radius_m: float = 10.0
+var erode_slack_m: float = 3.0
+var set_height_m: float = 25.0
+var angle_deg: float = 15.0
+var angle_dir_deg: float = 0.0
 ## Root window content_scale_factor. Clamped 0.75–2.0. Default 1.0.
 var ui_scale: float = UI_SCALE_DEFAULT
+## Theme default_font_size. Separate from ui_scale on purpose: scale grows the
+## whole chrome, this grows only the type, so small text is fixable on its own.
+var ui_font_size: int = UI_FONT_SIZE_DEFAULT
 ## Split offsets, console, focus mode, panel collapse. Restored at boot.
 var layout_split_body: int = LAYOUT_SPLIT_BODY_DEFAULT
 var layout_split_mid: int = LAYOUT_SPLIT_MID_DEFAULT
@@ -127,9 +171,13 @@ func _load() -> void:
 	view_slope = bool(_cfg.get_value("view", "slope", false))
 	view_labels = bool(_cfg.get_value("view", "labels", false))
 	view_fog = bool(_cfg.get_value("view", "fog", false))
+	_load_brush()
 	snap_grid_m = coerce_snap_grid(_cfg.get_value("snap", "grid_m", 0.0))
 	snap_angle = coerce_snap_angle(_cfg.get_value("snap", "angle", 0.0))
 	ui_scale = coerce_ui_scale(_cfg.get_value("ui", "ui_scale", UI_SCALE_DEFAULT))
+	ui_font_size = coerce_ui_font_size(
+		_cfg.get_value("ui", "font_size", UI_FONT_SIZE_DEFAULT)
+	)
 	layout_split_body = coerce_split(
 		_cfg.get_value("layout", "split_body", LAYOUT_SPLIT_BODY_DEFAULT),
 		LAYOUT_SPLIT_BODY_DEFAULT,
@@ -214,12 +262,15 @@ func save() -> void:
 	_cfg.set_value("view", "slope", view_slope)
 	_cfg.set_value("view", "labels", view_labels)
 	_cfg.set_value("view", "fog", view_fog)
+	_save_brush()
 	snap_grid_m = coerce_snap_grid(snap_grid_m)
 	snap_angle = coerce_snap_angle(snap_angle)
 	_cfg.set_value("snap", "grid_m", snap_grid_m)
 	_cfg.set_value("snap", "angle", snap_angle)
 	ui_scale = coerce_ui_scale(ui_scale)
 	_cfg.set_value("ui", "ui_scale", ui_scale)
+	ui_font_size = coerce_ui_font_size(ui_font_size)
+	_cfg.set_value("ui", "font_size", ui_font_size)
 	layout_split_body = coerce_split(layout_split_body, LAYOUT_SPLIT_BODY_DEFAULT)
 	layout_split_mid = coerce_split(layout_split_mid, LAYOUT_SPLIT_MID_DEFAULT)
 	layout_split_right = coerce_split(layout_split_right, LAYOUT_SPLIT_RIGHT_DEFAULT)
@@ -242,6 +293,101 @@ func save() -> void:
 		ever_had_recents = true
 	_cfg.set_value("paths", "ever_had_recents", ever_had_recents)
 	_cfg.save(PATH)
+
+
+## Brush prefs are read and written as a block: the section is wide, and a
+## coerce per field keeps a hand-edited settings.cfg from arming a brush that
+## paints the whole map or divides by zero.
+func _load_brush() -> void:
+	brush_radius_m = clampf(
+		_cfg_float("brush", "radius_m", BRUSH_RADIUS_DEFAULT),
+		BRUSH_RADIUS_MIN, BRUSH_RADIUS_MAX
+	)
+	brush_strength = clampf(_cfg_float("brush", "strength", BRUSH_STRENGTH_DEFAULT), 0.0, 1.0)
+	brush_falloff = clampf(_cfg_float("brush", "falloff", BRUSH_FALLOFF_DEFAULT), 0.0, 1.0)
+	var shp := str(_cfg.get_value("brush", "shape", "circle"))
+	brush_shape = "square" if shp == "square" else "circle"
+	brush_symmetry = _coerce_symmetry(str(_cfg.get_value("brush", "symmetry", "off")))
+	var mask := str(_cfg.get_value("brush", "mask", ""))
+	brush_mask = mask if BrushMaskLibrary.has(mask) else ""
+	brush_rotation_deg = fposmod(_cfg_float("brush", "rotation_deg", 0.0), 360.0)
+	brush_random_rotation = bool(_cfg.get_value("brush", "random_rotation", false))
+	brush_spacing = clampf(_cfg_float("brush", "spacing", 0.0), 0.0, 4.0)
+	brush_spacing_ms = clampi(int(_cfg_float("brush", "spacing_ms", 0.0)), 0, 2000)
+	brush_pressure_size = clampf(_cfg_float("brush", "pressure_size", 0.0), 0.0, 1.0)
+	brush_pressure_opacity = clampf(_cfg_float("brush", "pressure_opacity", 0.0), 0.0, 1.0)
+	limit_slope = bool(_cfg.get_value("brush", "limit_slope", false))
+	slope_min_deg = clampf(_cfg_float("brush", "slope_min_deg", 0.0), 0.0, 90.0)
+	slope_max_deg = clampf(_cfg_float("brush", "slope_max_deg", 90.0), 0.0, 90.0)
+	slope_feather_deg = clampf(_cfg_float("brush", "slope_feather_deg", 5.0), 0.0, 45.0)
+	limit_height = bool(_cfg.get_value("brush", "limit_height", false))
+	height_min_m = _cfg_float("brush", "height_min_m", 0.0)
+	height_max_m = _cfg_float("brush", "height_max_m", 409.5)
+	height_feather_m = maxf(_cfg_float("brush", "height_feather_m", 2.0), 0.0)
+	noise_frequency = clampf(_cfg_float("brush", "noise_frequency", 0.02), 0.00001, 1.0)
+	noise_octaves = clampi(int(_cfg_float("brush", "noise_octaves", 3.0)), 1, 8)
+	noise_amplitude_m = maxf(_cfg_float("brush", "noise_amplitude_m", 6.0), 0.0)
+	brush_seed = int(_cfg_float("brush", "seed", 1.0))
+	erode_radius_m = clampf(_cfg_float("brush", "erode_radius_m", 10.0), 5.0, 20.0)
+	erode_slack_m = maxf(_cfg_float("brush", "erode_slack_m", 3.0), 0.0)
+	set_height_m = _cfg_float("brush", "set_height_m", 25.0)
+	angle_deg = clampf(_cfg_float("brush", "angle_deg", 15.0), -89.0, 89.0)
+	angle_dir_deg = fposmod(_cfg_float("brush", "angle_dir_deg", 0.0), 360.0)
+
+
+func _save_brush() -> void:
+	_cfg.set_value("brush", "radius_m", brush_radius_m)
+	_cfg.set_value("brush", "strength", brush_strength)
+	_cfg.set_value("brush", "falloff", brush_falloff)
+	_cfg.set_value("brush", "shape", brush_shape)
+	_cfg.set_value("brush", "symmetry", brush_symmetry)
+	_cfg.set_value("brush", "mask", brush_mask)
+	_cfg.set_value("brush", "rotation_deg", brush_rotation_deg)
+	_cfg.set_value("brush", "random_rotation", brush_random_rotation)
+	_cfg.set_value("brush", "spacing", brush_spacing)
+	_cfg.set_value("brush", "spacing_ms", brush_spacing_ms)
+	_cfg.set_value("brush", "pressure_size", brush_pressure_size)
+	_cfg.set_value("brush", "pressure_opacity", brush_pressure_opacity)
+	_cfg.set_value("brush", "limit_slope", limit_slope)
+	_cfg.set_value("brush", "slope_min_deg", slope_min_deg)
+	_cfg.set_value("brush", "slope_max_deg", slope_max_deg)
+	_cfg.set_value("brush", "slope_feather_deg", slope_feather_deg)
+	_cfg.set_value("brush", "limit_height", limit_height)
+	_cfg.set_value("brush", "height_min_m", height_min_m)
+	_cfg.set_value("brush", "height_max_m", height_max_m)
+	_cfg.set_value("brush", "height_feather_m", height_feather_m)
+	_cfg.set_value("brush", "noise_frequency", noise_frequency)
+	_cfg.set_value("brush", "noise_octaves", noise_octaves)
+	_cfg.set_value("brush", "noise_amplitude_m", noise_amplitude_m)
+	_cfg.set_value("brush", "seed", brush_seed)
+	_cfg.set_value("brush", "erode_radius_m", erode_radius_m)
+	_cfg.set_value("brush", "erode_slack_m", erode_slack_m)
+	_cfg.set_value("brush", "set_height_m", set_height_m)
+	_cfg.set_value("brush", "angle_deg", angle_deg)
+	_cfg.set_value("brush", "angle_dir_deg", angle_dir_deg)
+
+
+## Duplicated rather than delegated to ToolState.normalize_symmetry: Settings
+## is the first autoload, so ToolState does not exist yet when this runs.
+func _coerce_symmetry(raw: String) -> String:
+	match raw:
+		"mirror_x", "mirror_z", "rot180", "quad":
+			return raw
+		_:
+			return "off"
+
+
+func _cfg_float(section: String, key: String, default: float) -> float:
+	var raw: Variant = _cfg.get_value(section, key, default)
+	match typeof(raw):
+		TYPE_FLOAT, TYPE_INT, TYPE_BOOL:
+			var v := float(raw)
+			return v if is_finite(v) else default
+		TYPE_STRING:
+			var t := str(raw).strip_edges()
+			return float(t) if t.is_valid_float() else default
+		_:
+			return default
 
 
 func apply_runtime_view() -> void:
@@ -401,6 +547,28 @@ func coerce_ui_scale(raw: Variant) -> float:
 	if not is_finite(v):
 		return UI_SCALE_DEFAULT
 	return clampf(v, UI_SCALE_MIN, UI_SCALE_MAX)
+
+
+func coerce_ui_font_size(raw: Variant) -> int:
+	var v := UI_FONT_SIZE_DEFAULT
+	match typeof(raw):
+		TYPE_INT:
+			v = int(raw)
+		TYPE_FLOAT:
+			if not is_finite(float(raw)):
+				return UI_FONT_SIZE_DEFAULT
+			v = int(round(float(raw)))
+		TYPE_STRING:
+			var s := str(raw).strip_edges()
+			if s.is_valid_int():
+				v = int(s)
+			elif s.is_valid_float():
+				v = int(round(float(s)))
+			else:
+				return UI_FONT_SIZE_DEFAULT
+		_:
+			return UI_FONT_SIZE_DEFAULT
+	return clampi(v, UI_FONT_SIZE_MIN, UI_FONT_SIZE_MAX)
 
 
 func view_flag(key: String) -> bool:

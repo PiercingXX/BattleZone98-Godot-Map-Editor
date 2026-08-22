@@ -49,6 +49,13 @@ func run(t) -> void:
 	aip.kind = AiPathCommand.Kind.MOVE_POINT
 	t.eq(aip.describe(), "move AI path point")
 	t.eq(HeightmapImportCommand.new().describe(), "import heightmap")
+	# The generator writes the field through the same command, and the
+	# history has to say so rather than claim a file was imported.
+	var gen := HeightmapImportCommand.new()
+	gen.label = "generate terrain"
+	t.eq(gen.describe(), "generate terrain")
+	gen.label = ""
+	t.eq(gen.describe(), "import heightmap", "an unset label falls back")
 
 	var place := ObjectCommand.new()
 	place.kind = ObjectCommand.Kind.ADD

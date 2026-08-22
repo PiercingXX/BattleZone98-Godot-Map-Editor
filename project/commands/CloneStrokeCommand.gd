@@ -1,15 +1,9 @@
 extends RefCounted
 class_name CloneStrokeCommand
-## One clone-stamp stroke: height deltas plus optional material words.
+## One clone-stamp stroke: height regions plus optional material regions.
 
 var height_cmd: HeightStrokeCommand
-var has_materials: bool = false
-var mx0: int = 0
-var mz0: int = 0
-var mw: int = 0
-var md: int = 0
-var m_before: PackedInt32Array = PackedInt32Array()
-var m_after: PackedInt32Array = PackedInt32Array()
+var material_cmd: MaterialStrokeCommand
 
 
 func describe() -> String:
@@ -20,42 +14,37 @@ func setup_height(cmd: HeightStrokeCommand) -> void:
 	height_cmd = cmd
 
 
+## Single-rect form, for callers that already hold one dirty rect.
 func setup_materials(
-	p_x0: int,
-	p_z0: int,
-	p_w: int,
-	p_d: int,
-	p_before: PackedInt32Array,
-	p_after: PackedInt32Array
+	p_x0: int, p_z0: int, p_w: int, p_d: int, p_before: PackedInt32Array, p_after: PackedInt32Array
 ) -> void:
-	has_materials = true
-	mx0 = p_x0
-	mz0 = p_z0
-	mw = p_w
-	md = p_d
-	m_before = p_before
-	m_after = p_after
+	setup_material_regions([RasterChunks.region(p_x0, p_z0, p_w, p_d, p_before, p_after)])
+
+
+func setup_material_regions(p_regions: Array) -> void:
+	material_cmd = MaterialStrokeCommand.new()
+	material_cmd.tool = "clone"
+	material_cmd.setup_regions(p_regions)
 
 
 func cost_bytes() -> int:
 	var n := 0
-	if height_cmd != null and height_cmd.has_method("cost_bytes"):
-		n += int(height_cmd.cost_bytes())
-	n += (m_before.size() + m_after.size()) * 4
+	if height_cmd != null:
+		n += height_cmd.cost_bytes()
+	if material_cmd != null:
+		n += material_cmd.cost_bytes()
 	return maxi(n, 1024)
 
 
 func do() -> void:
-	if height_cmd != null and height_cmd.has_method("do"):
+	if height_cmd != null:
 		height_cmd.do()
-	if has_materials:
-		MapState.write_materials_rect(mx0, mz0, mw, md, m_after)
-		MapState.mark_materials_dirty()
+	if material_cmd != null:
+		material_cmd.do()
 
 
 func undo() -> void:
-	if has_materials:
-		MapState.write_materials_rect(mx0, mz0, mw, md, m_before)
-		MapState.mark_materials_dirty()
-	if height_cmd != null and height_cmd.has_method("undo"):
+	if material_cmd != null:
+		material_cmd.undo()
+	if height_cmd != null:
 		height_cmd.undo()

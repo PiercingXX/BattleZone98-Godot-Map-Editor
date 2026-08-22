@@ -78,6 +78,67 @@ static func ensure_converted_mesh(prjid: String, game_root: String, cache_dir: S
 	return _convert_class(stem, search_roots, glb)
 
 
+## Where rendered 3D thumbnails live. Derived from the user's install, so it
+## sits beside the proxy icons in the cache dir and never in the repo (C14).
+static func thumbnail_dir(cache_dir: String) -> String:
+	if cache_dir.is_empty():
+		return ""
+	return cache_dir.path_join("thumbs")
+
+
+## Path of an already-converted `.glb`, or "". Never triggers a conversion —
+## this is the cheap question "can this class be drawn for real yet?".
+static func cached_mesh_path(prjid: String, cache_dir: String) -> String:
+	var stem := prjid.to_lower()
+	if stem.is_empty() or cache_dir.is_empty():
+		return ""
+	var glb := cache_dir.path_join("meshes").path_join("%s.glb" % stem)
+	return glb if FileAccess.file_exists(glb) else ""
+
+
+## Classes that can get a real rendered thumbnail right now: those whose mesh
+## is already on the `hd` rung. Everything else keeps its proxy icon, which
+## is the whole point of the proxy rung — it is never regressed by this.
+static func thumbnail_candidates(index: Dictionary, cache_dir: String = "") -> Array:
+	var out: Array = []
+	var classes: Variant = index.get("classes", [])
+	if typeof(classes) != TYPE_ARRAY:
+		return out
+	for rec in classes:
+		if typeof(rec) != TYPE_DICTIONARY:
+			continue
+		var prjid := str((rec as Dictionary).get("prjid", ""))
+		if prjid.is_empty():
+			continue
+		var mesh := str((rec as Dictionary).get("mesh", ""))
+		if mesh.is_empty() or not FileAccess.file_exists(mesh):
+			mesh = cached_mesh_path(prjid, cache_dir)
+		if mesh.is_empty():
+			continue
+		out.append({
+			"prjid": prjid,
+			"mesh": mesh,
+			"icon": str((rec as Dictionary).get("icon", "")),
+		})
+	return out
+
+
+## `{hd, proxy, total}` over an index. "fidelity mostly proxy" is only true
+## before a convert pass; after one the shell can say which way it went.
+static func fidelity_counts(index: Dictionary) -> Dictionary:
+	var out := {"hd": 0, "proxy": 0, "total": 0}
+	var classes: Variant = index.get("classes", [])
+	if typeof(classes) != TYPE_ARRAY:
+		return out
+	for rec in classes:
+		if typeof(rec) != TYPE_DICTIONARY:
+			continue
+		out["total"] = int(out["total"]) + 1
+		var key := "hd" if str((rec as Dictionary).get("mesh_fidelity", "")) == "hd" else "proxy"
+		out[key] = int(out[key]) + 1
+	return out
+
+
 static func build_assets(
 	game_root: String,
 	cache_dir: String,

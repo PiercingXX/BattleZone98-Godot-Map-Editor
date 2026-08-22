@@ -34,6 +34,7 @@ func _go() -> void:
 
 	var passed := 0
 	var failed_tests := 0
+	var skipped_tests := 0
 	for name in names:
 		var script: GDScript = load("res://tests/gd/%s" % name) as GDScript
 		if script == null:
@@ -62,11 +63,20 @@ func _go() -> void:
 		if t.failed > 0:
 			print("FAIL %s (%d assertion(s))" % [name, t.failed])
 			failed_tests += 1
+		elif t.skipped:
+			print("SKIP %s (%d check(s) ran; %s)" % [name, t.checks, t.skip_reason])
+			skipped_tests += 1
 		else:
 			print("PASS %s" % name)
 			passed += 1
-	print("%d passed, %d failed" % [passed, failed_tests])
-	quit(1 if failed_tests > 0 else 0)
+	print("%d passed, %d failed, %d skipped" % [passed, failed_tests, skipped_tests])
+	# 3 = something was skipped and nothing failed. scripts/test-editor.sh maps
+	# that to SKIP, so an absent precondition reads as neither a pass nor a
+	# regression. Any real assertion failure still exits 1.
+	if failed_tests > 0:
+		quit(1)
+		return
+	quit(3 if skipped_tests > 0 else 0)
 
 
 class _Assert:
@@ -74,21 +84,51 @@ class _Assert:
 	var name: String = ""
 	var failed: int = 0
 	var tree: SceneTree
+	## Set by skip()/require_files(). A skipped file is neither a pass nor a
+	## failure: the machine could not satisfy a precondition.
+	var skipped: bool = false
+	var skip_reason: String = ""
+	## Assertions attempted. A skipped file still reports this so a partial
+	## run ("everything but the fixture cases") is visible, not silent.
+	var checks: int = 0
+
+	## Record that some or all of this file could not run. Use it only for
+	## preconditions the checkout genuinely cannot supply — chiefly the
+	## corpus/synthetic *.bzn fixtures, which .gitignore excludes under
+	## AGENTS.md rule 3 and which no CI runner will ever have.
+	func skip(reason: String) -> void:
+		skipped = true
+		if skip_reason.is_empty():
+			skip_reason = reason
+
+	## Guard for a fixture-dependent block. Returns false (and marks the file
+	## skipped) when any path is absent, so the caller can `return` instead of
+	## asserting against data it does not have.
+	func require_files(paths: Array, why: String) -> bool:
+		for p in paths:
+			if not FileAccess.file_exists(str(p)):
+				skip("%s (missing %s)" % [why, p])
+				return false
+		return true
 
 	func eq(got: Variant, want: Variant, msg: String = "") -> void:
+		checks += 1
 		if _same(got, want):
 			return
 		fail("%s  got=%s want=%s" % [msg, got, want])
 
 	func ne(got: Variant, want: Variant, msg: String = "") -> void:
+		checks += 1
 		if _same(got, want):
 			fail("%s  both=%s" % [msg, got])
 
 	func ok(cond: bool, msg: String = "") -> void:
+		checks += 1
 		if not cond:
 			fail(msg if not msg.is_empty() else "expected true")
 
 	func near(got: float, want: float, eps: float = 0.0001, msg: String = "") -> void:
+		checks += 1
 		if absf(got - want) > eps:
 			fail("%s  got=%s want=%s ±%s" % [msg, got, want, eps])
 

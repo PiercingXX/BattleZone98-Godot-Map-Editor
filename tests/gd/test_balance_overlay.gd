@@ -171,42 +171,49 @@ func _empty(t) -> void:
 	t.eq(BalanceOverlay.compute(["not-a-dict"])["circles"].size(), 0)
 
 
+## Balance moved off the top bar's View menu and into the ViewPanel checkbox
+## grid, same as AI paths. This asked TopBar for a "View" MenuButton, got
+## null, and aborted the file part-way without failing an assertion.
 func _view_menu(t) -> void:
 	BalanceOverlay.enabled = false
 	var saved_session := MapState.has_session
+	var saved_flag := Settings.view_balance
 	MapState.has_session = false
-	var bar: Node = load("res://project/ui/top_bar/TopBar.tscn").instantiate()
-	t.tree.root.add_child(bar)
+	var panel: Node = load("res://project/ui/view/ViewPanel.tscn").instantiate()
+	t.tree.root.add_child(panel)
 	await t.tree.process_frame
-	var view: MenuButton = bar.find_child("View", true, false)
-	var pop: PopupMenu = view.get_popup()
-	var idx := pop.get_item_index(bar.VIEW_BALANCE)
-	t.ok(idx >= 0, "View menu lists Balance")
-	t.eq(pop.get_item_text(idx), "Balance")
-	t.ok(pop.is_item_disabled(idx), "Balance disabled with no map")
-	t.eq(pop.get_item_tooltip(idx), "Open a map first")
+
+	var check: CheckBox = panel.find_child("ViewBalance", true, false)
+	t.ok(check != null, "the view panel carries a Balance checkbox")
+	if check == null:
+		panel.queue_free()
+		MapState.has_session = saved_session
+		return
+	t.eq(check.text, "Balance")
+	t.ok(check.disabled, "Balance disabled with no map")
+	t.eq(check.tooltip_text, "Open a map first")
 	var was := BalanceOverlay.enabled
-	pop.id_pressed.emit(bar.VIEW_BALANCE)
+	panel._on_toggled(true, "balance")
 	t.eq(BalanceOverlay.enabled, was, "disabled Balance does not flip")
 
 	MapState.has_session = true
-	bar._refresh_view_menu()
-	idx = pop.get_item_index(bar.VIEW_BALANCE)
-	t.ok(not pop.is_item_disabled(idx), "Balance enabled with a session")
+	panel.refresh()
+	t.ok(not check.disabled, "Balance enabled with a session")
 	var saw := [0]
-	bar.view_changed.connect(func(): saw[0] += 1)
-	pop.id_pressed.emit(bar.VIEW_BALANCE)
-	t.ok(BalanceOverlay.enabled, "View → Balance turns on")
+	panel.view_changed.connect(func(): saw[0] += 1)
+	check.button_pressed = true
+	t.ok(BalanceOverlay.enabled, "view panel → Balance turns on")
 	t.eq(saw[0], 1)
-	t.ok(pop.is_item_checked(pop.get_item_index(bar.VIEW_BALANCE)))
-	pop.id_pressed.emit(bar.VIEW_BALANCE)
+	t.ok(check.button_pressed, "and the box stays ticked")
+	check.button_pressed = false
 	t.ok(not BalanceOverlay.enabled, "second click turns it off")
 	t.eq(saw[0], 2)
 
-	bar.queue_free()
+	panel.queue_free()
 	await t.tree.process_frame
 	MapState.has_session = saved_session
 	BalanceOverlay.enabled = false
+	Settings.view_balance = saved_flag
 
 
 func _by_id(rows: Array) -> Dictionary:

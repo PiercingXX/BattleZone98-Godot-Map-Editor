@@ -18,15 +18,15 @@ func run(t) -> void:
 		"Size", "NormalView", "Atlases", "World", "Sky",
 		"TextureType0", "TextureType1", "Color",
 	], "section order + TextureType trailing text")
-	t.eq(cfg.get("Size", "MinX"), "100", "first duplicate MinX wins")
-	t.eq(cfg.get("Size", "Width"), "2560")
-	t.eq(cfg.get("Size", "Depth"), "3840")
-	t.eq(cfg.get("Size", "Height"), "20")
-	t.eq(cfg.get("Sky", "SkyHeight"), "210", "SkyHeight is not [Size] Height")
-	t.eq(cfg.get("Atlases", "MaterialName"), "syn_detail_atlas")
-	t.eq(cfg.get("TextureType0", "FlatColor"), "201")
-	t.eq(cfg.get("TextureType1", "FlatColor"), "10")
-	t.eq(cfg.get("Size", "width", "MISSING"), "MISSING", "keys are case-sensitive (trn.py)")
+	t.eq(cfg.get_value("Size", "MinX"), "100", "first duplicate MinX wins")
+	t.eq(cfg.get_value("Size", "Width"), "2560")
+	t.eq(cfg.get_value("Size", "Depth"), "3840")
+	t.eq(cfg.get_value("Size", "Height"), "20")
+	t.eq(cfg.get_value("Sky", "SkyHeight"), "210", "SkyHeight is not [Size] Height")
+	t.eq(cfg.get_value("Atlases", "MaterialName"), "syn_detail_atlas")
+	t.eq(cfg.get_value("TextureType0", "FlatColor"), "201")
+	t.eq(cfg.get_value("TextureType1", "FlatColor"), "10")
+	t.eq(cfg.get_value("Size", "width", "MISSING"), "MISSING", "keys are case-sensitive (trn.py)")
 	t.eq(cfg.section("Nope"), null)
 	t.eq((cfg.section("Nope", false) as Array).size(), 0)
 	t.eq(cfg.section("Size").keys(), ["MinX", "MinX", "MinZ", "Width", "Depth", "Height"])
@@ -45,8 +45,8 @@ func run(t) -> void:
 		_eq_bytes(t, out_fix, FileAccess.get_file_as_bytes(fixture).get_string_from_utf8(), "fixture round-trip")
 
 	# --- surgical mutation: only the Width line is rewritten ---
-	cfg.set("Size", "Width", "5120")
-	t.eq(cfg.get("Size", "Width"), "5120")
+	cfg.set_value("Size", "Width", "5120")
+	t.eq(cfg.get_value("Size", "Width"), "5120")
 	var mutated := work.path_join("mutated.trn")
 	BzTrn.write_trn(mutated, cfg)
 	var got_lines := _split_crlf(FileAccess.get_file_as_bytes(mutated).get_string_from_utf8())
@@ -63,9 +63,9 @@ func run(t) -> void:
 
 	# write → parse after mutation
 	var reparsed: BzTrn.TerrainConfig = BzTrn.read_trn(mutated)
-	t.eq(reparsed.get("Size", "Width"), "5120")
-	t.eq(reparsed.get("Size", "MinX"), "100")
-	t.eq(reparsed.get("Atlases", "MaterialName"), "syn_detail_atlas")
+	t.eq(reparsed.get_value("Size", "Width"), "5120")
+	t.eq(reparsed.get_value("Size", "MinX"), "100")
+	t.eq(reparsed.get_value("Atlases", "MaterialName"), "syn_detail_atlas")
 
 	# --- BOM is stripped on read ---
 	var bom_path := work.path_join("bom.trn")
@@ -76,25 +76,26 @@ func run(t) -> void:
 	bom.append_array(src_text.to_utf8_buffer())
 	var bf := FileAccess.open(bom_path, FileAccess.WRITE)
 	bf.store_buffer(bom)
+	bf.close()  # read_trn reopens the path; an unflushed handle reads as empty
 	var cfg_bom: BzTrn.TerrainConfig = BzTrn.read_trn(bom_path)
-	t.eq(cfg_bom.get("Size", "Width"), "2560", "utf-8-sig BOM")
+	t.eq(cfg_bom.get_value("Size", "Width"), "2560", "utf-8-sig BOM")
 	t.eq(cfg_bom.sections[0].name, "Size")
 
 	# --- pending key on a populated section ---
 	var extra: BzTrn.TerrainConfig = BzTrn.read_trn(src_path)
-	extra.set("Size", "NewKey", "yes")
-	t.eq(extra.get("Size", "NewKey"), "yes")
+	extra.set_value("Size", "NewKey", "yes")
+	t.eq(extra.get_value("Size", "NewKey"), "yes")
 	var extra_path := work.path_join("extra.trn")
 	BzTrn.write_trn(extra_path, extra)
 	var extra_cfg: BzTrn.TerrainConfig = BzTrn.read_trn(extra_path)
-	t.eq(extra_cfg.get("Size", "NewKey"), "yes")
+	t.eq(extra_cfg.get_value("Size", "NewKey"), "yes")
 
 	# --- empty section: pending keys append at EOF (trn.py) ---
 	var empty_src := "[Empty]\r\n[Size]\r\nWidth=1\r\n"
 	var empty_path := work.path_join("empty_sec.trn")
 	_write(empty_path, empty_src)
 	var empty_cfg: BzTrn.TerrainConfig = BzTrn.read_trn(empty_path)
-	empty_cfg.set("Empty", "Foo", "bar")
+	empty_cfg.set_value("Empty", "Foo", "bar")
 	var empty_out := work.path_join("empty_sec_out.trn")
 	BzTrn.write_trn(empty_out, empty_cfg)
 	_eq_bytes(t, empty_out, "[Empty]\r\n[Size]\r\nWidth=1\r\nFoo = bar\r\n", "empty-section pending at EOF")
@@ -112,21 +113,21 @@ func run(t) -> void:
 		"write_complete_trn Size rewrite"
 	)
 	var done: BzTrn.TerrainConfig = BzTrn.read_trn(complete)
-	t.eq(done.get("Size", "Width"), "2560")
-	t.eq(done.get("Size", "Depth"), "3840")
-	t.eq(done.get("Size", "MinX"), "0")
-	t.eq(done.get("Size", "Height"), "0.000000")
-	t.eq(done.get("Atlases", "MaterialName"), "syn_detail_atlas")
+	t.eq(done.get_value("Size", "Width"), "2560")
+	t.eq(done.get_value("Size", "Depth"), "3840")
+	t.eq(done.get_value("Size", "MinX"), "0")
+	t.eq(done.get_value("Size", "Height"), "0.000000")
+	t.eq(done.get_value("Atlases", "MaterialName"), "syn_detail_atlas")
 
 	# --- duplicate sections: first_only ---
 	var dup_path := work.path_join("dupsec.trn")
 	_write(dup_path, "[A]\r\nK=1\r\n[A]\r\nK=2\r\n")
 	var dup: BzTrn.TerrainConfig = BzTrn.read_trn(dup_path)
-	t.eq(dup.get("A", "K"), "1", "first section wins")
+	t.eq(dup.get_value("A", "K"), "1", "first section wins")
 	var all_a: Array = dup.section("A", false)
 	t.eq(all_a.size(), 2)
-	t.eq(all_a[0].get("K"), "1")
-	t.eq(all_a[1].get("K"), "2")
+	t.eq(all_a[0].get_value("K"), "1")
+	t.eq(all_a[1].get_value("K"), "2")
 
 	# --- LF source is re-emitted as CRLF (not byte-identical; matches trn.py) ---
 	var lf_path := work.path_join("lf.trn")
@@ -140,7 +141,7 @@ func run(t) -> void:
 	var dmin := work.path_join("dupmin.trn")
 	_write(dmin, "[Size]\r\nMinX=100\r\nMinX=999\r\nWidth=1\r\n")
 	var dcfg: BzTrn.TerrainConfig = BzTrn.read_trn(dmin)
-	dcfg.set("Size", "MinX", "0")
+	dcfg.set_value("Size", "MinX", "0")
 	var dout := work.path_join("dupmin_out.trn")
 	BzTrn.write_trn(dout, dcfg)
 	_eq_bytes(t, dout, "[Size]\r\nMinX = 0\r\nMinX=999\r\nWidth=1\r\n", "set first MinX only")

@@ -207,9 +207,15 @@ static func generate_features(
 		elif kind == "plants":
 			var density: int = int(round(float(entry.get("density", 260))))
 			var seed: int = int(entry.get("seed", 0))
+			# A painted scatter entry supplies its own instances; density is
+			# then meaningless and must be 0, so an entry whose mask is blank
+			# emits nothing rather than falling back to random placement.
+			var placed: Array = _scatter_instances(session_dir, entry, heightmap, mask)
+			if entry.has("scatter"):
+				density = 0
 			built = build_plant_field(
 				out_dir, stem, heightmap, seed, density, "plants",
-				0.0, 12.0, [], 140.0, 4.0, 2.2, water_level, mask
+				0.0, 12.0, [], 140.0, 4.0, 2.2, water_level, mask, placed
 			)
 		else:
 			continue
@@ -231,6 +237,61 @@ static func generate_features(
 		"files": files,
 		"warnings": warnings,
 	}
+
+
+static func _scatter_instances(
+	session_dir: String,
+	entry: Dictionary,
+	heightmap: BzHg2.HeightMap,
+	mask: PackedByteArray
+) -> Array:
+	## Resolve a painted plants entry into billboard placements. Empty for a
+	## legacy count-and-seed entry, which keeps the old path exactly.
+	var field: ScatterField = ScatterField.from_feature(entry)
+	if field == null:
+		return []
+	field.resize(heightmap.grid_x, heightmap.grid_z)
+	if not field.mask.adopt(mask):
+		return []
+	var terrain: ScatterField.Terrain = ScatterField.Terrain.from_heightmap(heightmap)
+	var mats: Dictionary = _session_materials(session_dir, heightmap)
+	if not mats.is_empty():
+		terrain.set_materials(
+			mats["materials"], int(mats["grid_x"]), int(mats["grid_z"])
+		)
+	return field.instances(terrain)
+
+
+static func _session_materials(session_dir: String, heightmap: BzHg2.HeightMap) -> Dictionary:
+	## materials.u16 from the session, for slot exclusion. Absent or the wrong
+	## size means "no material rules", never a failed save.
+	var path: String = session_dir.path_join("materials.u16")
+	if session_dir.is_empty() or not FileAccess.file_exists(path):
+		return {}
+	# The material grid is the 20 m tile grid: four 5 m height cells per tile.
+	var gx: int = int(heightmap.grid_x / 4)
+	var gz: int = int(heightmap.grid_z / 4)
+	var manifest: Dictionary = _read_json(session_dir.path_join("manifest.json"))
+	if manifest.has("mat_grid_x") and manifest.has("mat_grid_z"):
+		gx = int(manifest["mat_grid_x"])
+		gz = int(manifest["mat_grid_z"])
+	if gx < 1 or gz < 1:
+		return {}
+	var raw: PackedByteArray = FileAccess.get_file_as_bytes(path)
+	if raw.size() != gx * gz * 2:
+		return {}
+	var words := PackedInt32Array()
+	words.resize(gx * gz)
+	for i in words.size():
+		words[i] = raw.decode_u16(i * 2)
+	return {"materials": words, "grid_x": gx, "grid_z": gz}
+
+
+static func _read_json(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
+		return {}
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	return parsed if typeof(parsed) == TYPE_DICTIONARY else {}
 
 
 static func build_water_surface(
@@ -315,12 +376,20 @@ static func build_plant_field(
 	blade_h_m: float = 4.0,
 	blade_w_m: float = 2.2,
 	water_level_m: Variant = null,
-	region_mask: PackedByteArray = PackedByteArray()
+	region_mask: PackedByteArray = PackedByteArray(),
+	instances: Array = []
 ) -> Dictionary:
 	## ``count`` crossed alpha billboards on gentle dry ground (deterministic in ``seed``).
+	##
+	## ``instances`` overrides the built-in rejection sampling: each entry is
+	## ``{x, z, yaw, h, w}`` in world metres and is emitted verbatim, rooted to
+	## THIS heightmap. That is how painted scatter (project/scatter) reaches the
+	## mesh — the placement rules ran when the instance list was generated, so
+	## none of the slope/water/avoid filtering below applies to it. An empty
+	## list leaves the legacy seed-and-count path untouched, byte for byte.
 	if heightmap == null:
 		return BzErrors.err("value_error", "build_plant_field: no heightmap")
-	if count <= 0:
+	if count <= 0 and instances.is_empty():
 		return {"ok": true, "written": false, "stem": ""}
 	var gx: int = heightmap.grid_x
 	var gz: int = heightmap.grid_z
@@ -330,17 +399,27 @@ static func build_plant_field(
 	if BzErrors.is_err(mask_err):
 		return mask_err
 	var heights: PackedFloat64Array = _heights_m(heightmap)
+	var verts: Array = []
+	var norms: Array = []
+	var uvs: Array = []
+	var tris: Array = []
+	if not instances.is_empty():
+		_emit_instances(instances, heights, gx, gz, verts, norms, uvs, tris)
+		if tris.is_empty():
+			return {"ok": true, "written": false, "stem": ""}
+		return _emit_mesh_set(
+			out_dir, stem, material, "%s plants" % stem, _PLANT_MATERIAL,
+			verts, norms, uvs, tris
+		)
 	var slope_deg: PackedFloat64Array = _slope_deg(heightmap)
 	var domain: Dictionary = _sample_domain(gx, gz, region_mask)
 	if not bool(domain.get("ok", false)):
 		return {"ok": true, "written": false, "stem": ""}
 
+	# Reset per build: the same seed must give the same field every time, or
+	# saving a map twice writes two different files (C6).
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
-	var verts: Array = []
-	var norms: Array = []
-	var uvs: Array = []
-	var tris: Array = []
 	var placed: int = 0
 	var attempts: int = 0
 	var max_attempts: int = count * 40
@@ -394,28 +473,7 @@ static func build_plant_field(
 		var yaw: float = rng.randf_range(0.0, PI)
 		var hh: float = blade_h_m * rng.randf_range(0.7, 1.3)
 		var hw: float = blade_w_m * 0.5 * rng.randf_range(0.7, 1.3)
-		for a_off in [0.0, PI * 0.5]:
-			var a: float = yaw + a_off
-			var bdx: float = cos(a) * hw
-			var bdz: float = sin(a) * hw
-			var base: int = verts.size()
-			# (x, y, z, u, v) — two-triangle cross-billboard.
-			var quad: Array = [
-				[wx - bdx, h, wz - bdz, 0.0, 1.0],
-				[wx + bdx, h, wz + bdz, 1.0, 1.0],
-				[wx - bdx, h + hh, wz - bdz, 0.0, 0.0],
-				[wx + bdx, h + hh, wz + bdz, 1.0, 0.0],
-			]
-			for q in quad:
-				verts.append([float(q[0]), float(q[1]), float(q[2])])
-				norms.append([0.0, 0.0, 1.0])
-				uvs.append([float(q[3]), float(q[4])])
-			tris.append(base)
-			tris.append(base + 2)
-			tris.append(base + 1)
-			tris.append(base + 1)
-			tris.append(base + 2)
-			tris.append(base + 3)
+		_emit_blade(wx, h, wz, yaw, hh, hw, verts, norms, uvs, tris)
 		if verts.size() > 64000:
 			break
 
@@ -424,6 +482,76 @@ static func build_plant_field(
 	return _emit_mesh_set(
 		out_dir, stem, material, "%s plants" % stem, _PLANT_MATERIAL, verts, norms, uvs, tris
 	)
+
+
+static func _emit_blade(
+	wx: float,
+	h: float,
+	wz: float,
+	yaw: float,
+	hh: float,
+	hw: float,
+	verts: Array,
+	norms: Array,
+	uvs: Array,
+	tris: Array
+) -> void:
+	## One crossed alpha billboard: two quads at right angles, base at ``h``.
+	for a_off in [0.0, PI * 0.5]:
+		var a: float = yaw + a_off
+		var bdx: float = cos(a) * hw
+		var bdz: float = sin(a) * hw
+		var base: int = verts.size()
+		# (x, y, z, u, v) — two-triangle cross-billboard.
+		var quad: Array = [
+			[wx - bdx, h, wz - bdz, 0.0, 1.0],
+			[wx + bdx, h, wz + bdz, 1.0, 1.0],
+			[wx - bdx, h + hh, wz - bdz, 0.0, 0.0],
+			[wx + bdx, h + hh, wz + bdz, 1.0, 0.0],
+		]
+		for q in quad:
+			verts.append([float(q[0]), float(q[1]), float(q[2])])
+			norms.append([0.0, 0.0, 1.0])
+			uvs.append([float(q[3]), float(q[4])])
+		tris.append(base)
+		tris.append(base + 2)
+		tris.append(base + 1)
+		tris.append(base + 1)
+		tris.append(base + 2)
+		tris.append(base + 3)
+
+
+static func _emit_instances(
+	instances: Array,
+	heights: PackedFloat64Array,
+	gx: int,
+	gz: int,
+	verts: Array,
+	norms: Array,
+	uvs: Array,
+	tris: Array
+) -> void:
+	## Painted scatter. The caller's y is ignored on purpose: the mesh roots
+	## to the heightmap it is generated against, so the same instance list
+	## re-sunk onto edited terrain still sits on the ground.
+	for inst_v in instances:
+		if typeof(inst_v) != TYPE_DICTIONARY:
+			continue
+		var inst: Dictionary = inst_v
+		var wx: float = float(inst.get("x", 0.0))
+		var wz: float = float(inst.get("z", 0.0))
+		var fx: float = clampf(wx, 0.0, float(gx - 1) * CELL_M)
+		var fz: float = clampf(wz, 0.0, float(gz - 1) * CELL_M)
+		var h: float = _bilinear_h(fx, fz, heights, gx, gz) - 2.5
+		_emit_blade(
+			wx, h, wz,
+			float(inst.get("yaw", 0.0)),
+			float(inst.get("h", 4.0)),
+			float(inst.get("w", 2.2)) * 0.5,
+			verts, norms, uvs, tris
+		)
+		if verts.size() > 64000:
+			return
 
 
 static func _emit_mesh_set(
@@ -577,14 +705,13 @@ static func _water_vert(
 	return v
 
 
-static func _sample_h(
+static func _bilinear_h(
 	wx: float,
 	wz: float,
 	heights: PackedFloat64Array,
-	slope_deg: PackedFloat64Array,
 	gx: int,
 	gz: int
-) -> Dictionary:
+) -> float:
 	# Bilinear height — nearest-cell sampling floated billboards over the
 	# engine's smoothly-interpolated terrain (Python meshgen).
 	var fx: float = wx / CELL_M
@@ -599,9 +726,23 @@ static func _sample_h(
 	var tz: float = fz - float(int(fz))
 	var h0: float = heights[iz * gx + ix] * (1.0 - tx) + heights[iz * gx + ix1] * tx
 	var h1: float = heights[iz1 * gx + ix] * (1.0 - tx) + heights[iz1 * gx + ix1] * tx
-	var h: float = h0 * (1.0 - tz) + h1 * tz
-	var si: int = mini(iz, gz - 1) * gx + mini(ix, gx - 1)
-	return {"h": h, "s": slope_deg[si]}
+	return h0 * (1.0 - tz) + h1 * tz
+
+
+static func _sample_h(
+	wx: float,
+	wz: float,
+	heights: PackedFloat64Array,
+	slope_deg: PackedFloat64Array,
+	gx: int,
+	gz: int
+) -> Dictionary:
+	var ix: int = clampi(int(wx / CELL_M), 0, gx - 1)
+	var iz: int = clampi(int(wz / CELL_M), 0, gz - 1)
+	return {
+		"h": _bilinear_h(wx, wz, heights, gx, gz),
+		"s": slope_deg[iz * gx + ix],
+	}
 
 
 static func _sample_domain(gx: int, gz: int, region_mask: PackedByteArray) -> Dictionary:

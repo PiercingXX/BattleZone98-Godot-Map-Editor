@@ -5,6 +5,11 @@ extends RefCounted
 
 const FIX_BZN := "res://tests/gd/fixtures/bzn/untouched.bzn"
 
+## Synthetic .bzn fixtures are caught by .gitignore's blanket *.bzn ban
+## (AGENTS.md rule 3), so a fresh checkout — and every CI runner — has none.
+## The cases that need one report SKIP instead of asserting against nothing.
+const NEEDS_BZN_FIXTURE := "no local .bzn fixture (gitignored; see fixtures/bzn/README.txt)"
+
 
 func run(t) -> void:
 	var tmp: String = OS.get_temp_dir().path_join("bz_open_%d" % Time.get_ticks_usec())
@@ -74,8 +79,9 @@ func _test_is_binary_bzn(t, tmp: String) -> void:
 	_write_text(late, "\n".join(late_lines) + "\n")
 	t.eq(BzOpen.is_binary_bzn(late), false, "binarySave after first 20 lines ignored")
 
-	var fixture: String = ProjectSettings.globalize_path(FIX_BZN)
-	t.eq(BzOpen.is_binary_bzn(fixture), false, "synthetic ASCII fixture")
+	if t.require_files([FIX_BZN], NEEDS_BZN_FIXTURE):
+		var fixture: String = ProjectSettings.globalize_path(FIX_BZN)
+		t.eq(BzOpen.is_binary_bzn(fixture), false, "synthetic ASCII fixture")
 
 
 func _test_error_paths(t, tmp: String) -> void:
@@ -122,6 +128,8 @@ func _test_error_paths(t, tmp: String) -> void:
 
 
 func _test_open_success(t, tmp: String) -> void:
+	if not t.require_files([FIX_BZN], NEEDS_BZN_FIXTURE):
+		return
 	var src: String = tmp.path_join("synmap_src")
 	DirAccess.make_dir_recursive_absolute(src)
 	var hm := _flat_hm(1, 1, 1000)
@@ -375,6 +383,8 @@ func _test_pack_context(t, tmp: String) -> void:
 
 
 func _test_open_save_if_present(t, tmp: String) -> void:
+	if not t.require_files([FIX_BZN], NEEDS_BZN_FIXTURE):
+		return
 	# BzSave is another agent's file. Do not name that class here: a parse
 	# error in their script would make this test fail to load. Residue
 	# verbatim copies (above) are the open half of the open→save guarantee.

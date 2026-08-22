@@ -7,6 +7,11 @@ const OUT_RT: String = "user://test_bz_bzn_roundtrip.bzn"
 const OUT_MUT: String = "user://test_bz_bzn_mutated.bzn"
 const OUT_WP: String = "user://test_bz_bzn_writeparse.bzn"
 
+## Synthetic .bzn fixtures are caught by .gitignore's blanket *.bzn ban
+## (AGENTS.md rule 3), so a fresh checkout — and every CI runner — has none.
+## The cases that need one report SKIP instead of asserting against nothing.
+const NEEDS_BZN_FIXTURE := "no local .bzn fixture (gitignored; see fixtures/bzn/README.txt)"
+
 
 func run(t) -> void:
 	_test_fmt_float(t)
@@ -84,6 +89,8 @@ func _test_fmt_float(t) -> void:
 
 
 func _test_parse(t) -> void:
+	if not t.require_files(["%s/untouched.bzn" % FIX], NEEDS_BZN_FIXTURE):
+		return
 	var bzn = _open(t, "%s/untouched.bzn" % FIX)
 	if bzn == null:
 		return
@@ -129,6 +136,8 @@ func _test_parse(t) -> void:
 
 
 func _test_byte_identical_roundtrip(t) -> void:
+	if not t.require_files(["%s/untouched.bzn" % FIX], NEEDS_BZN_FIXTURE):
+		return
 	var src := "%s/untouched.bzn" % FIX
 	var want: PackedByteArray = _read_bytes(src)
 	t.ok(want.size() > 0, "fixture readable")
@@ -152,6 +161,8 @@ func _test_byte_identical_roundtrip(t) -> void:
 
 
 func _test_write_parse_roundtrip(t) -> void:
+	if not t.require_files(["%s/untouched.bzn" % FIX], NEEDS_BZN_FIXTURE):
+		return
 	var bzn = _open(t, "%s/untouched.bzn" % FIX)
 	if bzn == null:
 		return
@@ -174,6 +185,8 @@ func _test_write_parse_roundtrip(t) -> void:
 
 
 func _test_mutation_set_position(t) -> void:
+	if not t.require_files(["%s/untouched.bzn" % FIX, "%s/mutated_pos.bzn" % FIX], NEEDS_BZN_FIXTURE):
+		return
 	var src := "%s/untouched.bzn" % FIX
 	var gold := "%s/mutated_pos.bzn" % FIX
 	var bzn = _open(t, src)
@@ -244,6 +257,8 @@ func _test_clone(t) -> void:
 
 
 func _test_validate(t) -> void:
+	if not t.require_files(["%s/untouched.bzn" % FIX], NEEDS_BZN_FIXTURE):
+		return
 	var ok = _open(t, "%s/untouched.bzn" % FIX)
 	if ok == null:
 		return
@@ -314,6 +329,8 @@ func _test_validate(t) -> void:
 
 
 func _test_header_and_identity(t) -> void:
+	if not t.require_files(["%s/untouched.bzn" % FIX], NEEDS_BZN_FIXTURE):
+		return
 	var bzn = _open(t, "%s/untouched.bzn" % FIX)
 	if bzn == null:
 		return

@@ -20,6 +20,10 @@ class_name Keymap
 ##   Rectangle Select          R          tool.rsel         object-select still eats R to rotate
 ##   Fuzzy Select              U          tool.wand
 ##   Clone                     C          tool.clone
+##   (erode analog)            E          tool.erode        no GIMP equivalent; same chord in both schemes
+##   (dilate analog)           Shift+E    tool.dilate
+##   (set-height analog)       T          tool.setheight
+##   (set-angle analog)        Shift+T    tool.setangle
 ##   Select All                Ctrl+A     select.all
 ##   Select None               Ctrl+D     select.none
 ##   Invert Selection          Ctrl+Shift+I  select.invert
@@ -45,6 +49,10 @@ const ACTION_QSEL := "tool.qsel"
 const ACTION_RSEL := "tool.rsel"
 const ACTION_WAND := "tool.wand"
 const ACTION_CLONE := "tool.clone"
+const ACTION_ERODE := "tool.erode"
+const ACTION_DILATE := "tool.dilate"
+const ACTION_SET_HEIGHT := "tool.setheight"
+const ACTION_SET_ANGLE := "tool.setangle"
 const ACTION_SELECT_ALL := "select.all"
 const ACTION_DESELECT := "select.none"
 const ACTION_INVERT := "select.invert"
@@ -82,6 +90,7 @@ const TOOL_ACTIONS: PackedStringArray = [
 	ACTION_FLY, ACTION_RAISE, ACTION_LOWER, ACTION_FLATTEN, ACTION_SMOOTH,
 	ACTION_RAMP, ACTION_PAINT, ACTION_PLACE, ACTION_SELECT, ACTION_NOISE,
 	ACTION_QSEL, ACTION_RSEL, ACTION_WAND, ACTION_CLONE,
+	ACTION_ERODE, ACTION_DILATE, ACTION_SET_HEIGHT, ACTION_SET_ANGLE,
 ]
 
 const TEAM_ACTIONS: PackedStringArray = [
@@ -111,10 +120,13 @@ const NON_TOOL_ACTIONS: PackedStringArray = [
 	ACTION_BOOKMARK_RECALL_4, ACTION_BOOKMARK_RECALL_5,
 ]
 
+## The shipped set, kept for call sites that name it. KeymapRegistry.ids() is
+## authoritative: an action registered at load time appears only there.
 const ALL_ACTIONS: PackedStringArray = [
 	ACTION_FLY, ACTION_RAISE, ACTION_LOWER, ACTION_FLATTEN, ACTION_SMOOTH,
 	ACTION_RAMP, ACTION_PAINT, ACTION_PLACE, ACTION_SELECT, ACTION_NOISE,
 	ACTION_QSEL, ACTION_RSEL, ACTION_WAND, ACTION_CLONE,
+	ACTION_ERODE, ACTION_DILATE, ACTION_SET_HEIGHT, ACTION_SET_ANGLE,
 	ACTION_FRAME, ACTION_TOP_DOWN, ACTION_MAP_MODE, ACTION_SLOPE, ACTION_GRID, ACTION_WALK,
 	ACTION_HELP, ACTION_FOCUS, ACTION_UNDO, ACTION_REDO, ACTION_SAVE,
 	ACTION_SELECT_ALL, ACTION_DESELECT, ACTION_INVERT,
@@ -126,7 +138,16 @@ const ALL_ACTIONS: PackedStringArray = [
 	ACTION_BOOKMARK_RECALL_4, ACTION_BOOKMARK_RECALL_5,
 ]
 
+## Warn about a broken shipped scheme once per process, not once per keystroke.
 static var _warned: bool = false
+## scheme id → {action id → chord}. Loaded lazily from KeymapStore.
+static var _overrides: Dictionary = {}
+static var _overrides_loaded: bool = false
+static var _override_rev: int = 0
+## Merged table cache, keyed by registry + override revision so a rebind or a
+## late-registered action invalidates it without anyone calling a reset.
+static var _merged: Dictionary = {}
+static var _merged_key: String = ""
 
 
 static func normalize_scheme(name: String) -> String:
@@ -150,12 +171,10 @@ static func other_scheme(scheme: String = "") -> String:
 	return SCHEME_GODOT if id == SCHEME_GIMP else SCHEME_GIMP
 
 
+## Shipped defaults for the scheme with the user's overrides merged over them.
 static func bindings_for(scheme: String = "") -> Dictionary:
 	_warn_conflicts_once()
-	var id := normalize_scheme(scheme if not scheme.is_empty() else active_scheme())
-	if id == SCHEME_GIMP:
-		return _gimp_bindings()
-	return _godot_bindings()
+	return merged_bindings(scheme).duplicate(true)
 
 
 static func binding_for(action: String, scheme: String = "") -> Dictionary:
@@ -169,7 +188,8 @@ static func resolve(event: InputEvent, scheme: String = "") -> String:
 	if not (event is InputEventKey):
 		return ""
 	var k := event as InputEventKey
-	var table := bindings_for(scheme)
+	_warn_conflicts_once()
+	var table := merged_bindings(scheme)
 	for raw_action in table.keys():
 		var action := str(raw_action)
 		var bind: Dictionary = table[action]
@@ -186,15 +206,7 @@ static func format_action(action: String, scheme: String = "") -> String:
 
 
 static func format_binding(bind: Dictionary) -> String:
-	var parts: PackedStringArray = PackedStringArray()
-	if bool(bind.get("ctrl", false)):
-		parts.append("Ctrl")
-	if bool(bind.get("shift", false)):
-		parts.append("Shift")
-	if bool(bind.get("alt", false)):
-		parts.append("Alt")
-	parts.append(_key_label(int(bind.get("keycode", 0))))
-	return "+".join(parts)
+	return KeyAction.format_chord(bind)
 
 
 ## Empty when the scheme has no duplicate chords (tool vs tool, or tool vs non-tool).
@@ -208,6 +220,9 @@ static func find_conflicts_in(bindings: Dictionary) -> Array:
 	for raw_action in bindings.keys():
 		var action := str(raw_action)
 		var bind: Dictionary = bindings[action]
+		# A cleared binding owns no chord, so two of them are not a clash.
+		if not KeyAction.is_bound(bind):
+			continue
 		var chord := _chord_id(bind)
 		if not by_chord.has(chord):
 			by_chord[chord] = PackedStringArray()
@@ -251,11 +266,13 @@ WASD fly     Q/E up down     Shift fast     Ctrl slow
 %s smooth  %s ramp    %s paint   %s place
 %s select  %s noise   %s qsel    %s rsel
 %s wand    %s clone
+%s erode   %s dilate  %s set height   %s set angle
 [ ] radius     Shift+[ ] strength     Esc cancel / fly
 LMB sculpt / select; place stays armed (Esc stops placing)
 Place: Shift+click deletes the object under the cursor
 Alt+LMB eyedropper (paint): samples the tile word — solid, cap, or corner
-Clone: Ctrl+click sets the source; paint copies height deltas.[/code]
+Clone: Ctrl+click sets the source; paint copies height deltas.
+Set angle: Ctrl+click anchors the plane; otherwise it starts where you do.[/code]
 
 [b]Objects[/b][code]
 arrows nudge 1 m (Shift 5 m)    R rotate +15° (Shift+R +90°)
@@ -288,6 +305,8 @@ Autosave every 30s by default while unsaved (Preferences… sets
 		L.call(ACTION_FLATTEN), L.call(ACTION_SMOOTH), L.call(ACTION_RAMP),
 		L.call(ACTION_PAINT), L.call(ACTION_PLACE), L.call(ACTION_SELECT), L.call(ACTION_NOISE),
 		L.call(ACTION_QSEL), L.call(ACTION_RSEL), L.call(ACTION_WAND), L.call(ACTION_CLONE),
+		L.call(ACTION_ERODE), L.call(ACTION_DILATE),
+		L.call(ACTION_SET_HEIGHT), L.call(ACTION_SET_ANGLE),
 		L.call(ACTION_SELECT_ALL), L.call(ACTION_DESELECT), L.call(ACTION_INVERT),
 		L.call(ACTION_UNDO), L.call(ACTION_REDO), L.call(ACTION_SAVE), L.call(ACTION_FOCUS),
 		L.call(ACTION_HELP),
@@ -320,143 +339,231 @@ static func is_bookmark_recall(action: String) -> bool:
 
 
 static func make_binding(keycode: int, ctrl: bool = false, shift: bool = false, alt: bool = false) -> Dictionary:
-	return {
-		"keycode": keycode,
-		"ctrl": ctrl,
-		"shift": shift,
-		"alt": alt,
-	}
+	return KeyAction.chord(keycode, ctrl, shift, alt)
 
 
-static func _godot_bindings() -> Dictionary:
-	# Exact pre-Keymap shell: 1–8 tools, 9 select, 0 noise, F / Space / H / G / V,
-	# F1, Ctrl+Z, Ctrl+Shift+Z, Ctrl+S.
-	return {
-		ACTION_FLY: make_binding(KEY_1),
-		ACTION_RAISE: make_binding(KEY_2),
-		ACTION_LOWER: make_binding(KEY_3),
-		ACTION_FLATTEN: make_binding(KEY_4),
-		ACTION_SMOOTH: make_binding(KEY_5),
-		ACTION_RAMP: make_binding(KEY_6),
-		ACTION_PAINT: make_binding(KEY_7),
-		ACTION_PLACE: make_binding(KEY_8),
-		ACTION_SELECT: make_binding(KEY_9),
-		ACTION_NOISE: make_binding(KEY_0),
-		ACTION_QSEL: make_binding(KEY_B),
-		ACTION_RSEL: make_binding(KEY_R),
-		ACTION_WAND: make_binding(KEY_U),
-		ACTION_CLONE: make_binding(KEY_C),
-		ACTION_SELECT_ALL: make_binding(KEY_A, true),
-		ACTION_DESELECT: make_binding(KEY_D, true),
-		ACTION_INVERT: make_binding(KEY_I, true, true),
-		ACTION_FRAME: make_binding(KEY_F),
-		ACTION_TOP_DOWN: make_binding(KEY_SPACE),
-		ACTION_MAP_MODE: make_binding(KEY_KP_7),
-		ACTION_SLOPE: make_binding(KEY_H),
-		ACTION_GRID: make_binding(KEY_G),
-		ACTION_WALK: make_binding(KEY_V),
-		ACTION_HELP: make_binding(KEY_F1),
-		ACTION_FOCUS: make_binding(KEY_TAB),
-		ACTION_UNDO: make_binding(KEY_Z, true),
-		ACTION_REDO: make_binding(KEY_Z, true, true),
-		ACTION_SAVE: make_binding(KEY_S, true),
-		ACTION_TEAM_0: make_binding(KEY_0, false, true),
-		ACTION_TEAM_1: make_binding(KEY_1, false, true),
-		ACTION_TEAM_2: make_binding(KEY_2, false, true),
-		ACTION_TEAM_3: make_binding(KEY_3, false, true),
-		ACTION_TEAM_4: make_binding(KEY_4, false, true),
-		ACTION_TEAM_5: make_binding(KEY_5, false, true),
-		ACTION_TEAM_6: make_binding(KEY_6, false, true),
-		ACTION_TEAM_7: make_binding(KEY_7, false, true),
-		ACTION_BOOKMARK_STORE_1: make_binding(KEY_1, true, false, true),
-		ACTION_BOOKMARK_STORE_2: make_binding(KEY_2, true, false, true),
-		ACTION_BOOKMARK_STORE_3: make_binding(KEY_3, true, false, true),
-		ACTION_BOOKMARK_STORE_4: make_binding(KEY_4, true, false, true),
-		ACTION_BOOKMARK_STORE_5: make_binding(KEY_5, true, false, true),
-		ACTION_BOOKMARK_RECALL_1: make_binding(KEY_1, false, false, true),
-		ACTION_BOOKMARK_RECALL_2: make_binding(KEY_2, false, false, true),
-		ACTION_BOOKMARK_RECALL_3: make_binding(KEY_3, false, false, true),
-		ACTION_BOOKMARK_RECALL_4: make_binding(KEY_4, false, false, true),
-		ACTION_BOOKMARK_RECALL_5: make_binding(KEY_5, false, false, true),
-	}
+## Every bindable action, including any a feature registered at load time.
+## Prefer this over the ALL_ACTIONS constant, which is only the shipped set.
+static func all_actions() -> PackedStringArray:
+	return KeymapRegistry.ids()
 
 
-static func _gimp_bindings() -> Dictionary:
-	var table := _godot_bindings()
-	table[ACTION_FLY] = make_binding(KEY_ESCAPE)
-	table[ACTION_RAISE] = make_binding(KEY_W)
-	table[ACTION_LOWER] = make_binding(KEY_W, false, true)
-	table[ACTION_FLATTEN] = make_binding(KEY_F, false, true)
-	table[ACTION_SMOOTH] = make_binding(KEY_U, false, true)
-	table[ACTION_RAMP] = make_binding(KEY_K)
-	table[ACTION_PAINT] = make_binding(KEY_P)
-	table[ACTION_PLACE] = make_binding(KEY_I)
-	table[ACTION_SELECT] = make_binding(KEY_M)
-	table[ACTION_NOISE] = make_binding(KEY_N)
-	table[ACTION_QSEL] = make_binding(KEY_Q)
-	table[ACTION_RSEL] = make_binding(KEY_R)
-	table[ACTION_WAND] = make_binding(KEY_U)
-	table[ACTION_CLONE] = make_binding(KEY_C)
-	return table
+static func categories() -> PackedStringArray:
+	return KeymapRegistry.categories()
 
 
-static func _chord_matches(k: InputEventKey, bind: Dictionary) -> bool:
-	if k.keycode != int(bind.get("keycode", 0)):
+static func actions_in(category: String) -> PackedStringArray:
+	return KeymapRegistry.ids_in(category)
+
+
+static func action_label(action: String) -> String:
+	var entry := KeymapRegistry.get_action(action)
+	return entry.display_label() if entry != null else action
+
+
+static func action_tooltip(action: String) -> String:
+	var entry := KeymapRegistry.get_action(action)
+	return entry.tooltip if entry != null else ""
+
+
+static func action_category(action: String) -> String:
+	var entry := KeymapRegistry.get_action(action)
+	return entry.category if entry != null else ""
+
+
+## Shipped chord for an action, ignoring whatever the user has bound.
+static func default_binding(action: String, scheme: String = "") -> Dictionary:
+	var entry := KeymapRegistry.get_action(action)
+	if entry == null:
+		return {}
+	return entry.default_for(_scheme_id(scheme))
+
+
+static func is_default(action: String, scheme: String = "") -> bool:
+	return not has_override(action, scheme)
+
+
+## The user's customisations for a scheme: action id → chord. A copy.
+static func overrides_for(scheme: String = "") -> Dictionary:
+	_ensure_overrides()
+	var table: Dictionary = _overrides.get(_scheme_id(scheme), {})
+	return table.duplicate(true)
+
+
+static func has_override(action: String, scheme: String = "") -> bool:
+	_ensure_overrides()
+	var table: Dictionary = _overrides.get(_scheme_id(scheme), {})
+	return table.has(action)
+
+
+## Rebind an action for one scheme and persist it. Rejects unknown actions and
+## malformed chords; a clash is the caller's to resolve, not ours to veto.
+static func set_binding(action: String, bind: Dictionary, scheme: String = "") -> bool:
+	if not KeymapRegistry.has_action(action):
 		return false
-	if k.ctrl_pressed != bool(bind.get("ctrl", false)):
+	var chord := KeyAction.coerce_chord(bind)
+	if chord.is_empty():
 		return false
-	if k.shift_pressed != bool(bind.get("shift", false)):
-		return false
-	if k.alt_pressed != bool(bind.get("alt", false)):
-		return false
+	_ensure_overrides()
+	var id := _scheme_id(scheme)
+	var shipped := default_binding(action, id)
+	var table: Dictionary = _overrides.get(id, {})
+	if not shipped.is_empty() and KeyAction.same_chord(shipped, chord):
+		# Back at the shipped chord: drop the override instead of pinning it,
+		# so a later change to the shipped scheme still reaches this user.
+		table.erase(action)
+	else:
+		table[action] = chord
+	_overrides[id] = table
+	_write_overrides()
 	return true
 
 
+## Clear an action's chord. It keeps its row in Preferences and resolves to
+## nothing until it is rebound or reset.
+static func unbind(action: String, scheme: String = "") -> bool:
+	return set_binding(action, KeyAction.chord(KeyAction.UNBOUND), scheme)
+
+
+static func reset_binding(action: String, scheme: String = "") -> void:
+	_ensure_overrides()
+	var id := _scheme_id(scheme)
+	var table: Dictionary = _overrides.get(id, {})
+	if not table.has(action):
+		return
+	table.erase(action)
+	_overrides[id] = table
+	_write_overrides()
+
+
+## Drop every override for one scheme; the other scheme keeps its own.
+static func reset_all(scheme: String = "") -> void:
+	_ensure_overrides()
+	var id := _scheme_id(scheme)
+	if not _overrides.has(id):
+		return
+	_overrides.erase(id)
+	_write_overrides()
+
+
+static func reset_every_scheme() -> void:
+	_ensure_overrides()
+	_overrides.clear()
+	_write_overrides()
+
+
+## Re-read the file. For tests and for a config edited underneath us.
+static func reload_overrides() -> void:
+	_overrides_loaded = false
+	_override_rev += 1
+	_ensure_overrides()
+
+
+## Actions that already own `bind` in `scheme`, excluding `action` itself.
+## The editor's modifiers are dense enough that silently letting the newest
+## binding win would lose a key the user still needs.
+static func conflicts_with(action: String, bind: Dictionary, scheme: String = "") -> PackedStringArray:
+	var out := PackedStringArray()
+	if not KeyAction.is_bound(bind):
+		return out
+	var wanted := _chord_id(bind)
+	var table := merged_bindings(scheme)
+	for raw_other in table.keys():
+		var other := str(raw_other)
+		if other == action:
+			continue
+		if _chord_id(table[other]) == wanted:
+			out.append(other)
+	out.sort()
+	return out
+
+
+## One line naming what a proposed chord would steal, or "" when it is free.
+static func conflict_text(action: String, bind: Dictionary, scheme: String = "") -> String:
+	var clashes := conflicts_with(action, bind, scheme)
+	if clashes.is_empty():
+		return ""
+	var named := PackedStringArray()
+	for other in clashes:
+		var cat := action_category(str(other))
+		if cat.is_empty():
+			named.append(action_label(str(other)))
+		else:
+			named.append("%s (%s)" % [action_label(str(other)), cat])
+	return "%s is already %s" % [format_binding(bind), ", ".join(named)]
+
+
+## Live table for a scheme. Shared, not copied — callers must not mutate it.
+static func merged_bindings(scheme: String = "") -> Dictionary:
+	var id := _scheme_id(scheme)
+	_ensure_overrides()
+	var key := "%d:%d" % [KeymapRegistry.revision(), _override_rev]
+	if _merged_key != key:
+		_merged_key = key
+		_merged = {}
+	if _merged.has(id):
+		return _merged[id]
+	var table := KeymapRegistry.defaults_for(id)
+	var custom: Dictionary = _overrides.get(id, {})
+	for raw_action in custom.keys():
+		var action := str(raw_action)
+		if table.has(action):
+			table[action] = custom[action]
+	_merged[id] = table
+	return table
+
+
+static func _scheme_id(scheme: String) -> String:
+	return normalize_scheme(scheme if not scheme.is_empty() else active_scheme())
+
+
+static func _ensure_overrides() -> void:
+	if _overrides_loaded:
+		return
+	_overrides_loaded = true
+	_overrides = KeymapStore.load_overrides()
+
+
+static func _write_overrides() -> void:
+	_override_rev += 1
+	KeymapStore.save_overrides(_overrides)
+
+
+static func _chord_matches(k: InputEventKey, bind: Dictionary) -> bool:
+	return KeyAction.matches(k, bind)
+
+
 static func _chord_id(bind: Dictionary) -> String:
-	return "%d:%d:%d:%d" % [
-		int(bind.get("keycode", 0)),
-		1 if bool(bind.get("ctrl", false)) else 0,
-		1 if bool(bind.get("shift", false)) else 0,
-		1 if bool(bind.get("alt", false)) else 0,
-	]
+	return KeyAction.chord_id(bind)
 
 
 static func _key_label(keycode: int) -> String:
-	match keycode:
-		KEY_ESCAPE:
-			return "Esc"
-		KEY_QUOTELEFT:
-			return "`"
-		KEY_SPACE:
-			return "Space"
-		KEY_TAB:
-			return "Tab"
-		KEY_KP_7:
-			return "KP 7"
-		_:
-			var named := OS.get_keycode_string(keycode)
-			return named if not named.is_empty() else "?"
+	return KeyAction.key_label(keycode)
 
 
 static func _warn_conflicts_once() -> void:
 	if _warned:
 		return
 	_warned = true
+	# Shipped schemes only: a user override is allowed to clash (Preferences
+	# says so out loud), but a scheme we ship must not.
 	for scheme in [SCHEME_GODOT, SCHEME_GIMP]:
-		var table: Dictionary = _godot_bindings() if scheme == SCHEME_GODOT else _gimp_bindings()
+		var table := KeymapRegistry.defaults_for(scheme)
 		for clash in find_conflicts_in(table):
 			var actions: PackedStringArray = clash.get("actions", PackedStringArray())
 			push_warning("Keymap scheme '%s' chord clash: %s" % [scheme, ", ".join(actions)])
-		for action in ALL_ACTIONS:
+		for raw_action in KeymapRegistry.ids():
+			var action := str(raw_action)
 			if not table.has(action):
 				push_warning("Keymap scheme '%s' missing action %s" % [scheme, action])
-			elif str(action).begins_with("tool."):
+			elif action.begins_with("tool."):
 				# Tool chords must not collide with non-tool keys in the same scheme.
 				var tool_id := _chord_id(table[action])
-				for non_tool in NON_TOOL_ACTIONS:
-					if not table.has(non_tool):
+				for raw_other in table.keys():
+					var other := str(raw_other)
+					if other.begins_with("tool.") or other == action:
 						continue
-					if _chord_id(table[non_tool]) == tool_id:
+					if _chord_id(table[other]) == tool_id:
 						push_warning("Keymap scheme '%s' tool %s clashes with %s" % [
-							scheme, action, non_tool,
+							scheme, action, other,
 						])

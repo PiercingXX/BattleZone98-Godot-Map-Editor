@@ -1,4 +1,4 @@
-[gd_scene load_steps=27 format=3 uid="uid://c8bzmapmain0001"]
+[gd_scene load_steps=28 format=3 uid="uid://c8bzmapmain0001"]
 
 [ext_resource type="Script" path="res://scenes/main.gd" id="1_main"]
 [ext_resource type="Script" path="res://project/camera/FlyCamera.gd" id="2_cam"]
@@ -9,6 +9,7 @@
 [ext_resource type="PackedScene" path="res://project/ui/tool_rail/ToolRail.tscn" id="20_rail"]
 [ext_resource type="PackedScene" path="res://project/ui/view/ViewPanel.tscn" id="21_viewp"]
 [ext_resource type="PackedScene" path="res://project/ui/world/WorldPanel.tscn" id="22_world"]
+[ext_resource type="PackedScene" path="res://project/ui/minimap/MinimapPanel.tscn" id="23_minimap"]
 [ext_resource type="PackedScene" path="res://project/ui/palette/PalettePanel.tscn" id="6_pal"]
 [ext_resource type="PackedScene" path="res://project/ui/inspector/InspectorPanel.tscn" id="7_insp"]
 [ext_resource type="PackedScene" path="res://project/ui/findings/FindingsPanel.tscn" id="8_find"]
@@ -220,6 +221,10 @@ unique_name_in_owner = true
 layout_mode = 2
 
 [node name="WorldPanel" parent="Root/Body/Mid/Right/SplitB/Dock2" instance=ExtResource("22_world")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="MinimapPanel" parent="Root/Body/Mid/Right/SplitB/Dock2" instance=ExtResource("23_minimap")]
 unique_name_in_owner = true
 layout_mode = 2
 

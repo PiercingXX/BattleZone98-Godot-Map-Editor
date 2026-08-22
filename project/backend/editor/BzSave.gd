@@ -8,6 +8,11 @@ class_name BzSave
 
 const _EOL := "\r\n"
 
+## Verdicts from comparing the session heightfield against the residue one.
+## UNKNOWN is not "same": it means no comparison could be made (no header, no
+## residue .hg2, unreadable), and the caller must fall back to dirty.json.
+enum { TERRAIN_UNKNOWN, TERRAIN_SAME, TERRAIN_DIFFERS }
+
 
 static func save_session(session_dir: String, out_dir: String, stem: String = "") -> Dictionary:
 	## Write the session to ``out_dir``. Returns the docs/02 §3 save payload.
@@ -74,23 +79,40 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 	# the else-branch below copies the residue .hg2 byte for byte, so an edit
 	# the flag missed leaves a correct-looking thumbnail sitting on top of
 	# pre-edit terrain — no error, no warning, every expected file present, and
-	# on a map created flat the shipped heightmap is flat everywhere. The buffer
-	# is the truth, so when the flag says clean, check it before believing it.
+	# on a map created flat the shipped heightmap is flat everywhere.
+	#
+	# The buffer is the truth in BOTH directions. A flag that says clean gets
+	# checked before it is believed; so does a flag that says dirty, because
+	# undo takes an edit back without clearing it. Believing a stale dirty flag
+	# re-encodes a heightmap that did not change and — worse — deletes the
+	# .lgt below for a lighting bake the geometry never needed.
+	#
+	# Only an inconclusive comparison leaves the flag in charge.
 	var terrain_dirty: bool = _truthy(dirty.get("terrain"))
 	var terrain_flag_missed: bool = false
-	if not terrain_dirty and _terrain_differs_from_residue(paths, source_dir, source_stem):
-		terrain_dirty = true
-		terrain_flag_missed = true
+	var compared: Dictionary = _compare_terrain_to_residue(paths, source_dir, source_stem)
+	match int(compared.get("verdict", TERRAIN_UNKNOWN)):
+		TERRAIN_DIFFERS:
+			if not terrain_dirty:
+				terrain_dirty = true
+				terrain_flag_missed = true
+		TERRAIN_SAME:
+			terrain_dirty = false
 	if terrain_dirty:
-		var header_v: Variant = BzSession.read_json(str(paths["hg2_header"]))
-		if BzErrors.is_err(header_v):
-			return header_v
-		if typeof(header_v) != TYPE_DICTIONARY:
-			return BzErrors.err("invalid_json", "hg2_header.json is not an object", "", str(paths["hg2_header"]))
-		var heightmap_v: Variant = BzSession.reconstruct_heightmap(paths, header_v)
-		if BzErrors.is_err(heightmap_v):
-			return heightmap_v
-		var heightmap: BzHg2.HeightMap = heightmap_v as BzHg2.HeightMap
+		# The comparison above already reconstructed the session heightmap
+		# unless it could not look at all; reuse it rather than paying for a
+		# second pass over a million samples.
+		var heightmap: BzHg2.HeightMap = compared.get("session") as BzHg2.HeightMap
+		if heightmap == null:
+			var header_v: Variant = BzSession.read_json(str(paths["hg2_header"]))
+			if BzErrors.is_err(header_v):
+				return header_v
+			if typeof(header_v) != TYPE_DICTIONARY:
+				return BzErrors.err("invalid_json", "hg2_header.json is not an object", "", str(paths["hg2_header"]))
+			var heightmap_v: Variant = BzSession.reconstruct_heightmap(paths, header_v)
+			if BzErrors.is_err(heightmap_v):
+				return heightmap_v
+			heightmap = heightmap_v as BzHg2.HeightMap
 		if heightmap == null:
 			return BzErrors.err("value_error", "reconstruct_heightmap did not return a HeightMap")
 		var dest_hg2: String = _dest_path(out_dir, "%s.hg2" % out_stem)
@@ -567,34 +589,53 @@ static func _copy_source(src: String, dest: String) -> Dictionary:
 	return {"ok": true}
 
 
-## True when the session heightfield no longer matches the .hg2 we opened.
+## Compare the session heightfield against the .hg2 we opened, and say which of
+## the three answers it is.
 ##
-## Only consulted when dirty.json claims terrain is clean, so the cost lands on
-## the save that would otherwise ship stale terrain, not on every save. A
-## session we cannot reconstruct or a residue we cannot read answers false:
-## this is a safety net over the flag, and the flag already says clean.
-static func _terrain_differs_from_residue(
+## Every failure to look — a session we cannot reconstruct, a residue we cannot
+## read — is TERRAIN_UNKNOWN, never TERRAIN_SAME. "I could not check" must not
+## read as "nothing changed", or an unreadable residue would silently suppress
+## the re-encode that ships the user's edit.
+##
+## Consulted on every save now, not only when dirty.json claims clean: the flag
+## can be wrong in either direction, and a stale dirty flag costs a needless
+## re-encode and the .lgt. The cost is one heightmap reconstruction and one
+## .hg2 read per save.
+## Returns {"verdict": int, "session": HeightMap or null}. The heightmap is the
+## reconstruction the comparison had to build anyway; the caller re-encodes from
+## it instead of building a second one. It is null exactly when the verdict is
+## TERRAIN_UNKNOWN and there was nothing to build.
+static func _compare_terrain_to_residue(
 	paths: Dictionary, source_dir: String, source_stem: String
-) -> bool:
+) -> Dictionary:
+	var unknown := {"verdict": TERRAIN_UNKNOWN, "session": null}
 	var header_path: String = str(paths.get("hg2_header", ""))
 	if not FileAccess.file_exists(header_path):
-		return false
+		return unknown
 	var header_v: Variant = BzSession.read_json(header_path)
 	if BzErrors.is_err(header_v) or typeof(header_v) != TYPE_DICTIONARY:
-		return false
+		return unknown
 	var session_v: Variant = BzSession.reconstruct_heightmap(paths, header_v)
 	if not (session_v is BzHg2.HeightMap):
-		return false
+		return unknown
+	var session_hm := session_v as BzHg2.HeightMap
 	var residue_path: String = BzSession.find_source_file(source_dir, source_stem, ".hg2")
 	if residue_path.is_empty():
-		return false
+		return {"verdict": TERRAIN_UNKNOWN, "session": session_hm}
 	var residue_v: Dictionary = BzHg2.read_hg2(residue_path)
 	if not bool(residue_v.get("ok", false)):
-		return false
+		return {"verdict": TERRAIN_UNKNOWN, "session": session_hm}
 	var residue_hm: BzHg2.HeightMap = residue_v.get("heightmap") as BzHg2.HeightMap
 	if residue_hm == null:
-		return false
-	return (session_v as BzHg2.HeightMap).data != residue_hm.data
+		return {"verdict": TERRAIN_UNKNOWN, "session": session_hm}
+	# Geometry only. The zone counts come along because a resize changes the
+	# sample count, and unknownA/unknownB are carried from the residue header
+	# on re-encode either way.
+	if session_hm.data != residue_hm.data:
+		return {"verdict": TERRAIN_DIFFERS, "session": session_hm}
+	if session_hm.zonesX != residue_hm.zonesX or session_hm.zonesZ != residue_hm.zonesZ:
+		return {"verdict": TERRAIN_DIFFERS, "session": session_hm}
+	return {"verdict": TERRAIN_SAME, "session": session_hm}
 
 
 ## Point a renamed map's internal references at its own name.
@@ -883,9 +924,9 @@ static func _set_trn(cfg, section_name: String, key: String, value: String) -> v
 		var needle: String = key.to_lower()
 		for existing in (sec as BzTrn.Section).keys():
 			if str(existing).to_lower() == needle:
-				cfg.set(section_name, str(existing), value)
+				cfg.set_value(section_name, str(existing), value)
 				return
-	cfg.set(section_name, key, value)
+	cfg.set_value(section_name, key, value)
 
 
 static func _out_name(src_path: String, source_stem: String, out_stem: String) -> String:

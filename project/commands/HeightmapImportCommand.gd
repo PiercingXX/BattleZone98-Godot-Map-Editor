@@ -6,10 +6,13 @@ var before: PackedInt32Array = PackedInt32Array()
 var after: PackedInt32Array = PackedInt32Array()
 var snaps_before: Array = []
 var snaps_after: Array = []
+## Overrides the history entry. A generated field runs through this same
+## command, and "import heightmap" is the wrong story for it.
+var label: String = ""
 
 
 func describe() -> String:
-	return "import heightmap"
+	return label if not label.is_empty() else "import heightmap"
 
 
 func setup(p_before: PackedInt32Array, p_after: PackedInt32Array) -> void:

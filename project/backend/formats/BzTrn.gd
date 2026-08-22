@@ -56,9 +56,9 @@ static func write_complete_trn(
 		push_error("trn template has no [Size] section: %s" % template)
 		return ""
 	for pair in _STANDALONE_SIZE:
-		cfg.set("Size", pair[0], pair[1])
-	cfg.set("Size", "Width", str(int(width_m)))
-	cfg.set("Size", "Depth", str(int(depth_m)))
+		cfg.set_value("Size", pair[0], pair[1])
+	cfg.set_value("Size", "Width", str(int(width_m)))
+	cfg.set_value("Size", "Depth", str(int(depth_m)))
 	cfg.write(path)
 	return path
 
@@ -191,15 +191,18 @@ class TerrainConfig:
 			return found[0] if not found.is_empty() else null
 		return found
 
-	@warning_ignore("native_method_override")
-	func get(section: Variant, key: Variant = null, default: Variant = null) -> Variant:
+	func get_value(section: Variant, key: Variant, default: Variant = null) -> Variant:
 		## Value of ``key`` in ``section``, or ``default``.
 		##
+		## Named get_value, not get: Object.get takes one argument, and Godot
+		## 4.7 rejects the call at runtime when an override changes the arity —
+		## silently, because a script error is not catchable and aborts the
+		## caller. This was named get until then, which made it unusable and
+		## left every consumer with a private reimplementation.
+		##
 		## Python-vs-spec: F3 says keys are matched case-insensitively.
-		## TerrainConfig.get/set use ``==`` (case-sensitive), matching trn.py.
+		## get_value/set_value use ``==`` (case-sensitive), matching trn.py.
 		## First occurrence wins — that part matches F3's duplicate-key rule.
-		if key == null:
-			return super.get(StringName(str(section)))
 		var sec: Section = null
 		if section is Section:
 			sec = section
@@ -209,15 +212,12 @@ class TerrainConfig:
 				sec = got
 		if sec == null:
 			return default
-		var found: Variant = sec.get(StringName(str(key)))
+		var found: Variant = sec.get_value(StringName(str(key)))
 		return default if found == null else found
 
-	@warning_ignore("native_method_override")
-	func set(section: Variant, key: Variant = null, value: Variant = null) -> void:
+	func set_value(section: Variant, key: Variant, value: Variant) -> void:
 		## Set ``key`` in ``section``. Marks the config dirty.
-		if value == null:
-			super.set(StringName(str(section)), key)
-			return
+		## Named set_value for the same reason as get_value above.
 		var sec: Section = null
 		if section is Section:
 			sec = section
@@ -269,10 +269,13 @@ class Section:
 				return
 		_pending.append([key, value])
 
-	@warning_ignore("native_method_override")
-	func get(key: StringName) -> Variant:
-		## INI-key lookup. Signature matches Object.get so Godot 4.7 will
-		## compile this inner class; missing keys return null (Python default).
+	func get_value(key: StringName) -> Variant:
+		## INI-key lookup; missing keys return null (Python default).
+		##
+		## Named get_value, not get. Matching Object.get's arity made the
+		## override *compile*, but Godot dispatches the native method, so every
+		## lookup silently returned null instead of the INI value. Silent is
+		## the operative word — the arity clash on TerrainConfig at least threw.
 		var needle := String(key)
 		for raw_item in _items:
 			var item: Dictionary = raw_item

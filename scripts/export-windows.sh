@@ -9,6 +9,11 @@
 # signing paths), so this script writes the preset when it is absent. Edit the
 # generated file for signing or icons; the script never overwrites an existing
 # one.
+#
+# The generated preset excludes tests/, scripts/ and docs/ from the .pck: they
+# are dev-only, nothing under project/ or scenes/ loads them, and C10 says the
+# shipped build carries no test-time baggage. If you hand-edit the preset,
+# keep exclude_filter.
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -50,7 +55,7 @@ dedicated_server=false
 custom_features=""
 export_filter="all_resources"
 include_filter="templates/**"
-exclude_filter=""
+exclude_filter="tests/*,scripts/*,docs/*"
 export_path="build/win/bz98-map-editor.exe"
 patches=PackedStringArray()
 encryption_include_filters=""

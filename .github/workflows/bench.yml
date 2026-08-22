@@ -1,0 +1,56 @@
+name: Benchmarks
+
+# Manual only, and deliberately not part of the blocking Tests workflow.
+# Shared runners are noisy and unpinned; a perf threshold enforced on one
+# fails builds for reasons that have nothing to do with the diff, which trains
+# people to ignore it. Run this when a change is expected to move the numbers,
+# and compare a run against another run from the same runner image.
+on:
+  workflow_dispatch:
+    inputs:
+      os:
+        description: Runner to benchmark on
+        type: choice
+        default: ubuntu-latest
+        options: [ubuntu-latest, windows-latest]
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: "4.7.0"
+  GODOT: godot
+
+jobs:
+  bench:
+    name: bench (${{ inputs.os }})
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Godot
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          use-dotnet: false
+          include-templates: false
+
+      - name: Warm the import cache
+        shell: bash
+        continue-on-error: true
+        run: godot --headless --path . --import
+
+      - name: Run the microbenchmarks
+        shell: bash
+        run: scripts/bench.sh bench-results.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ inputs.os }}-${{ github.sha }}
+          path: bench-results.json
+          if-no-files-found: error

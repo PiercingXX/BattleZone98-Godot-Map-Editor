@@ -10,8 +10,9 @@ uniform bool use_tile_lut = false;
 uniform vec4 mat_uvs[16];
 uniform vec2 map_cells = vec2(256.0, 256.0);
 uniform float cell_m = 5.0;
-uniform vec2 uv_origin = vec2(0.0);
-uniform vec2 uv_scale = vec2(1.0);
+uniform vec2 lod_center = vec2(0.0);
+uniform float lod_span_quads = 65.0;
+uniform vec2 lod_morph = vec2(0.72, 0.92);
 uniform bool show_slope = false;
 uniform bool show_materials = true;
 uniform bool show_grid = false;
@@ -34,18 +35,50 @@ uniform bool show_selection = false;
 varying vec2 v_uv;
 varying vec3 v_world;
 
+vec2 world_to_uv(vec2 world_xz) {
+	return world_xz / (map_cells * cell_m);
+}
+
+float height_at(vec2 world_xz) {
+	return texture(height_tex, world_to_uv(world_xz)).r;
+}
+
 void vertex() {
-	v_uv = uv_origin + UV * uv_scale;
-	float h = texture(height_tex, v_uv).r;
+	// Clipmap meshes carry flat XZ in *quad units*; the instance transform
+	// supplies the ring's quad size. Reading it back out of the model matrix
+	// is what lets every ring share one material.
+	vec2 p = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
+	float quad_m = length(MODEL_MATRIX[0].xyz);
+	float h = height_at(p);
+	// Geomorph (GPU Gems 2, 2.4.1): blend towards the height the next-coarser
+	// ring would give this vertex, reaching 1.0 before the ring's outer edge.
+	// A vertex the coarse ring does not have then lands exactly on the coarse
+	// edge, so the LOD join has nothing to crack open and nothing to pop.
+	float coarse_m = quad_m * 2.0;
+	vec2 base = floor(p / coarse_m) * coarse_m;
+	vec2 f = (p - base) / coarse_m;
+	float h00 = height_at(base);
+	float h10 = height_at(base + vec2(coarse_m, 0.0));
+	float h01 = height_at(base + vec2(0.0, coarse_m));
+	float h11 = height_at(base + vec2(coarse_m, coarse_m));
+	float h_coarse = mix(mix(h00, h10, f.x), mix(h01, h11, f.x), f.y);
+	vec2 d = abs(p - lod_center);
+	float edge = max(d.x, d.y) / (lod_span_quads * quad_m);
+	h = mix(h, h_coarse, smoothstep(lod_morph.x, lod_morph.y, edge));
 	VERTEX.y = h;
-	// True world position (chunks share one local-space mesh and are
-	// placed by node transform). Everything planar-projected off this —
-	// brush ring, grid lines, hatch — stays seamless across chunk
+	v_uv = world_to_uv(p);
+	// True world position. Everything planar-projected off this — brush ring,
+	// grid lines, hatch, atlas tile local UV — stays seamless across ring
 	// boundaries instead of restarting at each seam.
-	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	v_world = vec3(p.x, h, p.y);
 }
 
 void fragment() {
+	// Outer rings reach far past the map; the terrain still ends where the
+	// heightfield does rather than smearing its clamped edge outward.
+	if (v_uv.x < 0.0 || v_uv.y < 0.0 || v_uv.x > 1.0 || v_uv.y > 1.0) {
+		discard;
+	}
 	vec2 texel = 1.0 / map_cells;
 	float h_l = texture(height_tex, v_uv + vec2(-texel.x, 0.0)).r;
 	float h_r = texture(height_tex, v_uv + vec2(texel.x, 0.0)).r;

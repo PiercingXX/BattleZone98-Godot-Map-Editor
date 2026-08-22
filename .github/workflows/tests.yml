@@ -1,0 +1,112 @@
+name: Tests
+
+# Both platforms are first-class (AGENTS.md, Environment). Path discovery and
+# separator handling are exactly the class of bug a Linux-only job misses, so
+# the suite runs on Windows too and neither leg is allowed to fail.
+on:
+  # GitHub Actions does not expand YAML anchors, so the two path lists are
+  # written out twice on purpose. Keep them identical.
+  push:
+    branches: [main]
+    paths:
+      - "project/**"
+      - "scenes/**"
+      - "tests/**"
+      - "scripts/**"
+      - "templates/**"
+      - "project.godot"
+      - ".github/workflows/tests.yml"
+  pull_request:
+    paths:
+      - "project/**"
+      - "scenes/**"
+      - "tests/**"
+      - "scripts/**"
+      - "templates/**"
+      - "project.godot"
+      - ".github/workflows/tests.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # AGENTS.md pins Godot 4.7 stable. setup-godot wants major.minor.patch, and
+  # 4.7 stable reports major 4 / minor 7 / patch 0.
+  GODOT_VERSION: "4.7.0"
+  # setup-godot also exports a GODOT pointing at the installed binary. On
+  # Windows that is a backslash path, which bash cannot test with -x, so pin
+  # the suite to the PATH entry the action guarantees on both platforms.
+  GODOT: godot
+  # Budgets, checked by scripts/test-editor.sh. Ratchets: each number should
+  # only ever go down (MIN_PASS up), never quietly the other way.
+  #
+  # MIN_PASS  a test file that stops being discovered is a silent hole, not a
+  #           green build. Raise this when tests are added.
+  # MAX_SKIP  zero. The five files that used to skip needed
+  #           tests/gd/fixtures/bzn/*.bzn, which the blanket *.bzn ignore was
+  #           hiding from every clone. Those fixtures are synthetic — no game
+  #           content, so no tension with AGENTS.md rule 3 — and are committed
+  #           now, with a targeted .gitignore exception and a generator in
+  #           tests/gd/fixtures/bzn/make_fixtures.gd. Every file must run.
+  # MAX_WARN  zero, and STRICT makes a runtime error a failure outright. The
+  #           three files that aborted run() part-way (test_aipaths,
+  #           test_balance_overlay, test_ui_shell) were calling into UI that
+  #           had moved — the View menu became project/ui/view/ViewPanel.tscn,
+  #           and main.gd's _right_split became _right_col — and were rewritten
+  #           against it. A GDScript runtime error raises no assertion, so
+  #           without these two the runner scores a file that quietly stopped
+  #           testing as a pass.
+  GODOT_TEST_MIN_PASS: "130"
+  GODOT_TEST_MAX_SKIP: "0"
+  GODOT_TEST_MAX_WARN: "0"
+  GODOT_TEST_STRICT: "1"
+
+jobs:
+  suite:
+    name: suite (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Godot
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          # GDScript only, and the suite is headless — no .NET runtime and no
+          # export templates. Both downloads are large and neither is used.
+          use-dotnet: false
+          include-templates: false
+
+      - name: Godot version
+        shell: bash
+        run: godot --version
+
+      # A cold checkout has no .godot/ import cache, and class_name resolution
+      # in `-s` script mode depends on it. test-editor.sh does this too; doing
+      # it here as well separates "import blew up" from "a test failed" in the
+      # log. Import can report non-zero for reasons unrelated to the diff, so
+      # it warms the cache without gating the job.
+      - name: Warm the import cache
+        shell: bash
+        continue-on-error: true
+        run: godot --headless --path . --import
+
+      # One runner for both platforms. GitHub's windows-latest ships Git for
+      # Windows, so `shell: bash` runs scripts/test-editor.sh as-is: no second
+      # PowerShell implementation to keep in step with this one, and the thing
+      # under test is the same script developers actually run. The script
+      # handles the two real Windows differences itself — cygpath for native
+      # paths, and %APPDATA% instead of XDG_* for user://.
+      - name: Run the headless suite
+        shell: bash
+        run: scripts/test-editor.sh

@@ -36,6 +36,7 @@ var _aipaths: AiPathOverlay
 @onready var _inspector = %InspectorPanel
 @onready var _features = %FeaturesPanel
 @onready var _findings = %FindingsPanel
+@onready var _minimap = %MinimapPanel
 @onready var _history = %HistoryPanel
 @onready var _status = %StatusBar
 @onready var _start = %StartScreen
@@ -116,6 +117,7 @@ var _gizmo_pivot: Vector3 = Vector3.ZERO
 var _gizmo_dx: float = 0.0
 var _gizmo_dz: float = 0.0
 var _gizmo_dyaw: float = 0.0
+var _palette_window: CommandPalette
 
 
 func _ready() -> void:
@@ -228,6 +230,7 @@ func _wire() -> void:
 	_findings.finding_selected.connect(_on_finding_select)
 	_findings.finding_activated.connect(_on_finding_fly)
 	_findings.validate_requested.connect(_io.validate)
+	_wire_minimap()
 	_rail.log_toggled.connect(_on_console_toggled)
 	_wire_panel_collapse()
 	_probe.install_chosen.connect(_io.choose_install)
@@ -263,6 +266,7 @@ func _wire() -> void:
 	MapState.dirty_changed.connect(func():
 		if MapState.findings_stale and not MapState.findings.is_empty():
 			_findings.set_findings(MapState.findings, true)
+			_minimap.set_findings(MapState.findings)
 	)
 	UndoStack.changed.connect(_refresh_map_label)
 	ToolState.tool_changed.connect(_on_tool_state)
@@ -295,6 +299,7 @@ func _wire() -> void:
 	_apply_view_settings()
 	_refresh_aipath_bar()
 	_install_selection_gizmo()
+	_install_command_palette()
 
 
 func _process(_delta: float) -> void:
@@ -306,9 +311,11 @@ func _process(_delta: float) -> void:
 	var ui_tick := _ui_tick_acc >= 0.1
 	if ui_tick:
 		_ui_tick_acc = 0.0
-		_status.set_debug("%d fps  chunks %d  up %d B" % [
+		# "rings", not "chunks": the terrain is a geometry clipmap, so this
+		# counts the ring instances it keeps live, not fixed mesh tiles.
+		_status.set_debug("%d fps  rings %d  up %d B" % [
 			int(Engine.get_frames_per_second()),
-			_terrain.get_child_count() if _terrain else 0,
+			_terrain.instance_count() if _terrain else 0,
 			_sculpt.last_uploaded,
 		])
 	if _gizmo_dragging and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
@@ -354,7 +361,7 @@ func _process(_delta: float) -> void:
 		_status.set_cursor("xz %.1f, %.1f  h %.1f m  mat %d  %s   ·  %s" % [
 			p.x, p.z, p.y, MapState.material_at(p.x, p.z), ToolState.tool, nav,
 		])
-		var sculpting := ToolState.is_mask_painting() or ToolState.tool in ["raise", "lower", "flatten", "smooth", "ramp", "noise", "paint", "qsel", "clone"]
+		var sculpting := ToolState.is_mask_painting() or ToolState.is_brush_tool(ToolState.tool)
 		if sculpting:
 			_terrain.set_brush(true, Vector2(p.x, p.z), ToolState.radius_m, ToolState.falloff, ToolState.shape == "square")
 		elif ToolState.tool == "place" and ToolState.effective_symmetry() != ToolState.SYMMETRY_OFF:
@@ -373,7 +380,7 @@ func _process(_delta: float) -> void:
 		# March along the drag segment at even spacing: a fast drag used
 		# to land one dab per frame, leaving gaps that made strokes feel
 		# jerky. Density per metre is now constant at any mouse speed.
-		var spacing := maxf(HeightField.CELL_M, ToolState.radius_m * 0.15)
+		var spacing := ToolState.stroke_spacing_m()
 		# Never bridge a jump the mouse cannot have made continuously. At a
 		# grazing camera angle one pixel of travel can move the terrain hit
 		# hundreds of metres, and bridging that painted a streak from the
@@ -423,6 +430,12 @@ func _input(event: InputEvent) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	# The palette answers "what can this editor even do?", so it opens from
+	# a text field too — it is the way out of not knowing, not an edit verb.
+	if _palette_window != null and CommandPalette.is_open_chord(event):
+		_palette_window.open_palette()
+		get_viewport().set_input_as_handled()
 		return
 	var k := event as InputEventKey
 	var handled := true
@@ -617,6 +630,9 @@ func _on_view_gui_input(event: InputEvent) -> void:
 					_on_lmb_down(hit["position"], hit, mb.shift_pressed, mb.alt_pressed, mb.ctrl_pressed)
 			accept_event()
 	elif event is InputEventMouseMotion:
+		# The dabs are marched in _process, so the tablet's pressure has to be
+		# banked here — the motion event is the only place it is reported.
+		_sculpt.set_pressure((event as InputEventMouseMotion).pressure)
 		if _camera.map_mode and _camera.panning:
 			_camera.handle_event(event)
 			accept_event()
@@ -671,6 +687,10 @@ func _on_lmb_down(p: Vector3, hit: Dictionary, shift: bool, alt: bool = false, c
 		ToolState.set_clone_source(p.x, p.z)
 		_log.call("clone source %.1f, %.1f" % [p.x, p.z])
 		return
+	if ToolState.tool == "setangle" and ctrl:
+		ToolState.set_angle_origin(p.x, p.z)
+		_log.call("angle origin %.1f, %.1f  h %.1f m" % [p.x, p.z, p.y])
+		return
 	if ToolState.tool == "qsel":
 		_begin_selection_stroke(p, alt)
 		return
@@ -692,7 +712,7 @@ func _on_lmb_down(p: Vector3, hit: Dictionary, shift: bool, alt: bool = false, c
 		_stroking = true
 		_last_stamp = p
 		return
-	if ToolState.tool in ["raise", "lower", "flatten", "smooth", "noise", "paint"]:
+	if ToolState.is_height_brush(ToolState.tool) or ToolState.tool == "paint":
 		_sync_sculpt()
 		_sculpt.begin_stroke(MapState.field, p.x, p.z, ToolState.tool == "paint")
 		_stroking = true
@@ -942,12 +962,7 @@ func _apply_world_lighting() -> void:
 
 
 func _sync_sculpt() -> void:
-	_sculpt.radius_m = ToolState.radius_m
-	_sculpt.strength = ToolState.strength
-	_sculpt.falloff = ToolState.falloff
-	_sculpt.shape = ToolState.shape
-	_sculpt.paint_material = ToolState.paint_material
-	_sculpt.mode = ToolState.tool
+	_sculpt.sync_from_tool_state()
 
 
 func _apply_grid() -> void:
@@ -1056,6 +1071,7 @@ func _on_call_finished(verb: String, result: Dictionary) -> void:
 			MapState.findings = result.get("findings", [])
 			MapState.findings_stale = false
 			_findings.set_findings(MapState.findings, false)
+			_minimap.set_findings(MapState.findings)
 			_log.call("%d findings (not an in-game verdict)" % MapState.findings.size())
 		"assets":
 			MapState.asset_index = result
@@ -1220,6 +1236,43 @@ func _install_selection_gizmo() -> void:
 	_gizmo = SelectionGizmoScript.new()
 	_gizmo.name = "SelectionGizmo"
 	world.add_child(_gizmo)
+
+
+## Hand the minimap what it cannot reach on its own: the camera pose it
+## draws, the terrain's range map (a mip lookup instead of a rescan), and
+## the click-to-fly handler the findings list already uses. Every one is
+## optional on its side, so a partial shell still boots (C15).
+func _wire_minimap() -> void:
+	if _minimap == null:
+		return
+	_minimap.fly_requested.connect(camera_hover)
+	_minimap.set_camera(_camera)
+	if _terrain != null and "ranges" in _terrain:
+		_minimap.set_range_source(_terrain.ranges)
+	_minimap.set_findings(MapState.findings)
+
+
+## The palette is a Window built in code, so the shell owns its lifetime.
+## Commands never reach into this file; they go through the hooks below.
+func _install_command_palette() -> void:
+	if _palette_window != null:
+		return
+	var ctx := CommandContext.new()
+	ctx.bind(CommandContext.HOOK_LOG, _log)
+	ctx.bind(CommandContext.HOOK_ACTION, _apply_keymap_action)
+	ctx.bind(CommandContext.HOOK_VALIDATE, _io.validate)
+	ctx.bind(CommandContext.HOOK_REFRESH_VIEW, func() -> void:
+		_apply_view_settings()
+		if _viewp != null:
+			_viewp.refresh()
+	)
+	var reg := CommandRegistry.new()
+	reg.scan()
+	_palette_window = CommandPalette.new()
+	_palette_window.name = "CommandPalette"
+	_palette_window.context = ctx
+	add_child(_palette_window)
+	_palette_window.set_registry(reg)
 
 
 func _selection_records() -> Array:
@@ -1635,6 +1688,7 @@ func _on_session_changed() -> void:
 	_fill_palette()
 	_inspector.set_water(MapState.water_level())
 	_findings.set_findings(MapState.findings, MapState.findings_stale)
+	_minimap.set_findings(MapState.findings)
 	_refresh_mask_overlay()
 	_refresh_selection_overlay()
 	_apply_view_settings()

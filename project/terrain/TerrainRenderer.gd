@@ -1,12 +1,31 @@
 extends Node3D
 class_name TerrainRenderer
-## Chunked GPU-displaced planes. Shared mesh; per-chunk UV offset.
+## Geometry-clipmap terrain. Rings of flat XZ meshes built once and re-snapped
+## to the camera every frame; height, materials and every overlay come out of
+## textures in project/shaders/terrain.gdshader.
+##
+## One ShaderMaterial for the whole terrain and RenderingServer instances
+## rather than MeshInstance3D nodes — roughly ninety instances, all sharing
+## five meshes, is not worth ninety nodes of scene-tree overhead.
 
-const CHUNK_CELLS := 128
+## Camera distance is Chebyshev, not radial: the rings are squares, and a
+## radial band would morph the corners of a ring before its edges.
+const MORPH_BAND := Vector2(0.72, 0.92)
+## One ring beyond the ring that first covers the map, so a camera flown off
+## the edge still has the far corner in geometry.
+const SPARE_RINGS := 1
 
 var field: HeightField
-var _chunk_mesh: ArrayMesh
+## Chunked min/max over the heightfield. Sizes render AABBs; also the
+## rejection structure a chunked raycast wants (see HeightRangeMap).
+var ranges := HeightRangeMap.new()
+
+var _clipmap := TerrainClipmap.new()
+var _material: ShaderMaterial
 var _shader: Shader
+var _map_w: float = 0.0
+var _map_d: float = 0.0
+var _center: Vector2 = Vector2(INF, INF)
 var _show_slope: bool = false
 var _show_water: bool = true
 var _mask_on: bool = false
@@ -28,6 +47,60 @@ var _brush_count: int = 0
 func _ready() -> void:
 	_shader = load("res://project/shaders/terrain.gdshader") as Shader
 	MapState.water_changed.connect(set_water_level)
+	set_process(true)
+
+
+func _exit_tree() -> void:
+	_clipmap.clear()
+	_material = null
+
+
+func _process(_delta: float) -> void:
+	if field == null or _clipmap.instance_count() == 0:
+		return
+	var center := _view_center()
+	if center.is_equal_approx(_center):
+		return
+	_center = center
+	_material.set_shader_parameter("lod_center", center)
+	_clipmap.update(center, ranges, _map_w, _map_d)
+
+
+## Where the rings are centred. The camera's own XZ in both projections —
+## in 2D map mode the orthographic camera sits directly over what it frames,
+## so the same rule keeps the fine ring under the view centre.
+func _view_center() -> Vector2:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null:
+		return Vector2(_map_w * 0.5, _map_d * 0.5)
+	var p := cam.global_position
+	return Vector2(p.x, p.z)
+
+
+func instance_count() -> int:
+	return _clipmap.instance_count()
+
+
+func triangle_count() -> int:
+	return _clipmap.triangle_count()
+
+
+## Heights changed over an inclusive cell rect. Keeps the range map — and so
+## the render AABBs — honest without a full rescan.
+func note_height_rect(x0: int, z0: int, x1: int, z1: int) -> void:
+	if field == null:
+		return
+	ranges.update_rect(field, x0, z0, x1, z1)
+	_clipmap.invalidate()
+	_center = Vector2(INF, INF)
+
+
+func note_height_rebuilt() -> void:
+	if field == null:
+		return
+	ranges.rebuild(field)
+	_clipmap.invalidate()
+	_center = Vector2(INF, INF)
 
 
 func set_slope_overlay(on: bool) -> void:
@@ -55,24 +128,39 @@ func set_brush(on: bool, center: Vector2, radius: float, falloff: float, square:
 		and count == _brush_count
 	):
 		return
+	if on and _brush_on and radius > 0.0 and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		# A live stroke rewrites the height texture directly; refresh the range
+		# map under the brush so the AABBs do not lag the terrain they bound.
+		# Hovering does not, so the scan is gated on the button being down.
+		_refresh_brush_range(pts, radius)
 	_brush_on = on
 	_brush_center = center
 	_brush_radius = radius
 	_brush_falloff = falloff
 	_brush_square = square
 	_brush_count = count
-	for child in get_children():
-		if child is MeshInstance3D:
-			var mat := (child as MeshInstance3D).material_override as ShaderMaterial
-			if mat == null:
-				continue
-			mat.set_shader_parameter("brush_on", on)
-			mat.set_shader_parameter("brush_center", center)
-			mat.set_shader_parameter("brush_centers", packed)
-			mat.set_shader_parameter("brush_count", count)
-			mat.set_shader_parameter("brush_radius", radius)
-			mat.set_shader_parameter("brush_falloff", falloff)
-			mat.set_shader_parameter("brush_shape", 1 if square else 0)
+	if _material == null:
+		return
+	_material.set_shader_parameter("brush_on", on)
+	_material.set_shader_parameter("brush_center", center)
+	_material.set_shader_parameter("brush_centers", packed)
+	_material.set_shader_parameter("brush_count", count)
+	_material.set_shader_parameter("brush_radius", radius)
+	_material.set_shader_parameter("brush_falloff", falloff)
+	_material.set_shader_parameter("brush_shape", 1 if square else 0)
+
+
+func _refresh_brush_range(pts: Array[Vector2], radius: float) -> void:
+	if field == null or not ranges.valid():
+		return
+	var cell := HeightField.CELL_M
+	for p in pts:
+		var pad := radius + cell
+		ranges.update_rect(
+			field,
+			int(floor((p.x - pad) / cell)), int(floor((p.y - pad) / cell)),
+			int(ceil((p.x + pad) / cell)), int(ceil((p.y + pad) / cell))
+		)
 
 
 func set_water_level(level: float) -> void:
@@ -109,30 +197,27 @@ func set_show_grid(on: bool) -> void:
 
 
 func refresh_materials() -> void:
+	if _material == null:
+		return
 	var colors := MaterialPalette.colors()
 	var atlas := _load_atlas()
 	var uvs := MaterialPalette.atlas_uvs()
 	var lut := _build_tile_lut()
-	for child in get_children():
-		if child is MeshInstance3D:
-			var mat := (child as MeshInstance3D).material_override as ShaderMaterial
-			if mat == null:
-				continue
-			if MapState.mat_texture:
-				mat.set_shader_parameter("mat_tex", MapState.mat_texture)
-			mat.set_shader_parameter("mat_colors", colors)
-			mat.set_shader_parameter("show_materials", MapState.mat_grid_x > 0)
-			if atlas:
-				mat.set_shader_parameter("atlas_tex", atlas)
-				mat.set_shader_parameter("use_atlas", true)
-				mat.set_shader_parameter("mat_uvs", uvs)
-			else:
-				mat.set_shader_parameter("use_atlas", false)
-			if atlas != null and lut != null:
-				mat.set_shader_parameter("tile_lut", lut)
-				mat.set_shader_parameter("use_tile_lut", true)
-			else:
-				mat.set_shader_parameter("use_tile_lut", false)
+	if MapState.mat_texture:
+		_material.set_shader_parameter("mat_tex", MapState.mat_texture)
+	_material.set_shader_parameter("mat_colors", colors)
+	_material.set_shader_parameter("show_materials", MapState.mat_grid_x > 0)
+	if atlas:
+		_material.set_shader_parameter("atlas_tex", atlas)
+		_material.set_shader_parameter("use_atlas", true)
+		_material.set_shader_parameter("mat_uvs", uvs)
+	else:
+		_material.set_shader_parameter("use_atlas", false)
+	if atlas != null and lut != null:
+		_material.set_shader_parameter("tile_lut", lut)
+		_material.set_shader_parameter("use_tile_lut", true)
+	else:
+		_material.set_shader_parameter("use_tile_lut", false)
 
 
 const _LUT_VARIANTS := 11  # variant nibble 0..10 → 'A'..'K' (F2 §2)
@@ -214,31 +299,49 @@ func _load_atlas() -> Texture2D:
 
 
 func _set_all(name: String, value: Variant) -> void:
-	for child in get_children():
-		if child is MeshInstance3D:
-			var mat := (child as MeshInstance3D).material_override as ShaderMaterial
-			if mat:
-				mat.set_shader_parameter(name, value)
+	if _material != null:
+		_material.set_shader_parameter(name, value)
 
 
 func rebuild(p_field: HeightField) -> void:
+	if field != null and field != p_field:
+		if field.rect_dirty.is_connected(note_height_rect):
+			field.rect_dirty.disconnect(note_height_rect)
+		if field.rebuilt.is_connected(note_height_rebuilt):
+			field.rebuilt.disconnect(note_height_rebuilt)
 	field = p_field
 	_lut_tex = null
 	_lut_world = ""
 	_brush_on = false
 	_brush_center = Vector2.INF
+	_center = Vector2(INF, INF)
+	_clipmap.clear()
 	for child in get_children():
 		child.queue_free()
-	if field == null or field.grid_x < 2:
+	if field == null or field.grid_x < 2 or not is_inside_tree():
 		return
 	if _shader == null:
 		_shader = load("res://project/shaders/terrain.gdshader") as Shader
-	_chunk_mesh = _make_chunk_mesh(CHUNK_CELLS, HeightField.CELL_M)
-	var chunks_x := int(ceil(float(field.grid_x) / float(CHUNK_CELLS)))
-	var chunks_z := int(ceil(float(field.grid_z) / float(CHUNK_CELLS)))
-	for cz in chunks_z:
-		for cx in chunks_x:
-			_add_chunk(cx, cz)
+	_map_w = float(field.grid_x) * HeightField.CELL_M
+	_map_d = float(field.grid_z) * HeightField.CELL_M
+	# HeightField owns the truth about which cells moved. Without these the
+	# range map only refreshes under a live brush, and goes stale on undo,
+	# redo and heightmap import.
+	if not field.rect_dirty.is_connected(note_height_rect):
+		field.rect_dirty.connect(note_height_rect)
+	if not field.rebuilt.is_connected(note_height_rebuilt):
+		field.rebuilt.connect(note_height_rebuilt)
+	ranges.rebuild(field)
+	_material = ShaderMaterial.new()
+	_material.shader = _shader
+	_material.set_shader_parameter("height_tex", field.texture)
+	_material.set_shader_parameter("map_cells", Vector2(field.grid_x, field.grid_z))
+	_material.set_shader_parameter("cell_m", HeightField.CELL_M)
+	_material.set_shader_parameter("lod_span_quads", float(TerrainClipmap.HALF_SPAN))
+	_material.set_shader_parameter("lod_morph", MORPH_BAND)
+	_material.set_shader_parameter("lod_center", Vector2.ZERO)
+	_material.set_shader_parameter("show_slope", _show_slope)
+	_clipmap.setup(get_world_3d().scenario, _material.get_rid(), _ring_count())
 	refresh_materials()
 	set_water_level(MapState.water_level() if _show_water else -1.0)
 	if _mask_on and MapState.mask_texture:
@@ -249,75 +352,16 @@ func rebuild(p_field: HeightField) -> void:
 		set_selection_mask(true, MapState.selection_texture)
 	else:
 		set_selection_mask(false)
+	_process(0.0)
 
 
-func _add_chunk(cx: int, cz: int) -> void:
-	var inst := MeshInstance3D.new()
-	inst.mesh = _chunk_mesh
-	inst.position = Vector3(
-		float(cx * CHUNK_CELLS) * HeightField.CELL_M,
-		0.0,
-		float(cz * CHUNK_CELLS) * HeightField.CELL_M
-	)
-	var mat := ShaderMaterial.new()
-	mat.shader = _shader
-	mat.set_shader_parameter("height_tex", field.texture)
-	mat.set_shader_parameter("map_cells", Vector2(field.grid_x, field.grid_z))
-	mat.set_shader_parameter("cell_m", HeightField.CELL_M)
-	mat.set_shader_parameter("uv_origin", Vector2(
-		float(cx * CHUNK_CELLS) / float(field.grid_x),
-		float(cz * CHUNK_CELLS) / float(field.grid_z)
-	))
-	mat.set_shader_parameter("uv_scale", Vector2(
-		float(CHUNK_CELLS) / float(field.grid_x),
-		float(CHUNK_CELLS) / float(field.grid_z)
-	))
-	mat.set_shader_parameter("show_slope", _show_slope)
-	if MapState.mat_texture:
-		mat.set_shader_parameter("mat_tex", MapState.mat_texture)
-	mat.set_shader_parameter("mat_colors", MaterialPalette.colors())
-	mat.set_shader_parameter("show_materials", MapState.mat_grid_x > 0)
-	mat.set_shader_parameter("water_level", MapState.water_level() if _show_water else -1.0)
-	mat.set_shader_parameter("show_mask", _mask_on)
-	if MapState.mask_texture:
-		mat.set_shader_parameter("mask_tex", MapState.mask_texture)
-	mat.set_shader_parameter("mask_tint", Vector3(_mask_tint.r, _mask_tint.g, _mask_tint.b))
-	mat.set_shader_parameter("mask_water_level", _mask_water_level)
-	mat.set_shader_parameter("show_selection", _sel_on)
-	if MapState.selection_texture:
-		mat.set_shader_parameter("selection_tex", MapState.selection_texture)
-	inst.material_override = mat
-	# The chunk mesh is a flat plane until the vertex shader displaces it, and
-	# the shadow pass runs that same vertex shader — so the caster follows the
-	# sculpted surface, and hills shade their own valleys.
-	inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-	add_child(inst)
-
-
-func _make_chunk_mesh(cells: int, cell_m: float) -> ArrayMesh:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var verts := cells + 1
-	for z in verts:
-		for x in verts:
-			var u := float(x) / float(cells)
-			var v := float(z) / float(cells)
-			st.set_uv(Vector2(u, v))
-			st.set_normal(Vector3.UP)
-			st.add_vertex(Vector3(float(x) * cell_m, 0.0, float(z) * cell_m))
-	for z in cells:
-		for x in cells:
-			var i0 := z * verts + x
-			var i1 := i0 + 1
-			var i2 := i0 + verts
-			var i3 := i2 + 1
-			# Godot front faces wind clockwise; seen from +Y this order keeps
-			# the top surface front-facing (the reversed order culled the
-			# entire terrain from above).
-			st.add_index(i0)
-			st.add_index(i1)
-			st.add_index(i2)
-			st.add_index(i1)
-			st.add_index(i3)
-			st.add_index(i2)
-	return st.commit()
+## Enough rings that the outermost one reaches across the whole map from any
+## point on it — each ring doubles its predecessor's reach.
+func _ring_count() -> int:
+	var reach := float(TerrainClipmap.HALF_SPAN) * HeightField.CELL_M
+	var need := maxf(_map_w, _map_d)
+	var n := 1
+	while reach < need and n < 12:
+		reach *= 2.0
+		n += 1
+	return n + SPARE_RINGS

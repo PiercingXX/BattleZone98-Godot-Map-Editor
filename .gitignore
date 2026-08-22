@@ -54,6 +54,12 @@ bzp-snapshot/
 !templates/
 !templates/**
 
+# Synthetic test fixtures — hand-authored in
+# tests/gd/fixtures/bzn/make_fixtures.gd, no game content. The blanket *.bzn
+# ban above is aimed at corpus and workshop maps; it was also hiding these,
+# which left five test files skipping on every fresh clone and in CI.
+!tests/gd/fixtures/bzn/*.bzn
+
 # The clean-room wall. Format truth lives in docs/formats/; the third-party
 # reference addons it was derived from were deleted on purpose and must not
 # come back. See AGENTS.md rule 8 and docs/formats/README.md.

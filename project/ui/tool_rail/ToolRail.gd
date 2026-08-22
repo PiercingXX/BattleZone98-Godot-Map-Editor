@@ -9,6 +9,9 @@ const CAPTIONS := {
 	"Flatten": "Flat",
 	"Qsel": "QSel",
 	"Rsel": "RSel",
+	"Dilate": "Grow",
+	"Setheight": "Set H",
+	"Setangle": "Set °",
 }
 const ACTIONS := {
 	"Fly": Keymap.ACTION_FLY,
@@ -25,10 +28,15 @@ const ACTIONS := {
 	"Rsel": Keymap.ACTION_RSEL,
 	"Wand": Keymap.ACTION_WAND,
 	"Clone": Keymap.ACTION_CLONE,
+	"Erode": Keymap.ACTION_ERODE,
+	"Dilate": Keymap.ACTION_DILATE,
+	"Setheight": Keymap.ACTION_SET_HEIGHT,
+	"Setangle": Keymap.ACTION_SET_ANGLE,
 }
 ## Rail order mirrors the workflow: navigate, sculpt, paint, place, select.
 const ORDER: PackedStringArray = [
 	"Fly", "Raise", "Lower", "Flatten", "Smooth", "Ramp", "Noise",
+	"Erode", "Dilate", "Setheight", "Setangle",
 	"Paint", "Clone", "Place", "Select", "Qsel", "Rsel", "Wand",
 ]
 
