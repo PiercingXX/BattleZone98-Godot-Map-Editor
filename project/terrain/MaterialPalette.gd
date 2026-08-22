@@ -156,8 +156,8 @@ static func _current_world() -> Dictionary:
 
 
 static func material_thumbnails(size: int = 28) -> Array:
-	## 16 slots: solid-tile crop from the world atlas, or null to use flat_color.
-	## Prefer the TRN SolidA0 name (Elysium type 4 is EL04SA0, not EL44SA0).
+	## 16 slots: atlas crop for that material, or null to use flat_color.
+	## Prefer TRN SolidA0, then `{i}{i}S*`, then any S/C/D tile that names idx.
 	## Dummy origin UVs are never used — those impersonate material 0.
 	var out: Array = []
 	out.resize(16)
@@ -174,7 +174,7 @@ static func material_thumbnails(size: int = 28) -> Array:
 	if atlas == null or atlas.get_width() < 2 or atlas.get_height() < 2:
 		return out
 	for i in 16:
-		var uv := _solid_tile_uv(world, i)
+		var uv := _icon_tile_uv(world, i)
 		if uv.z <= 0.0 or uv.w <= 0.0:
 			continue
 		var tex := _crop_tile(atlas, uv, size)
@@ -194,8 +194,8 @@ static func _load_atlas_png(path: String) -> Image:
 	return img
 
 
-static func _solid_tile_uv(world: Dictionary, idx: int) -> Vector4:
-	## Fill tile for material idx, or (0,0,0,0) if the atlas has none.
+static func _icon_tile_uv(world: Dictionary, idx: int) -> Vector4:
+	## Best atlas rect for a swatch of material idx, or (0,0,0,0) if none.
 	var tiles: Dictionary = world.get("atlas_tiles", {})
 	if tiles.is_empty() or idx < 0 or idx > 15:
 		return Vector4()
@@ -208,44 +208,47 @@ static func _solid_tile_uv(world: Dictionary, idx: int) -> Vector4:
 		if named.z > 0.0:
 			return named
 		break
-	return _scan_solid_uv(tiles, idx)
+	return _scan_icon_uv(tiles, idx)
 
 
-static func _scan_solid_uv(tiles: Dictionary, idx: int) -> Vector4:
-	## Prefer `{i}{i}S*` (true solid). Elysium type 4 only has EL04SA0, which
-	## encodes as base 0 / trans 4 / solid — catch that as trans==idx next.
-	var exact := Vector4()
-	var to_idx := Vector4()
-	var from_idx := Vector4()
-	var exact_var := 99
-	var to_var := 99
-	var from_var := 99
+static func _scan_icon_uv(tiles: Dictionary, idx: int) -> Vector4:
+	## Rank: exact solid `{i}{i}S*`, other S naming idx, then C, then D.
+	## Many types never ship an S tile — only a cap or corner that names them.
+	var best := Vector4()
+	var best_score := 1000
 	for key in tiles.keys():
 		var parsed := _parse_tile_name(str(key))
-		if parsed.is_empty() or int(parsed.get("kind", -1)) != 0:
+		if parsed.is_empty():
 			continue
+		var kind := int(parsed.get("kind", -1))
 		var variant := int(parsed.get("variant", 99))
+		var base := int(parsed.get("base", -1))
+		var trans := int(parsed.get("trans", -1))
+		var rank := -1
+		if kind == 0 and base == idx and trans == idx:
+			rank = 0
+		elif kind == 0 and trans == idx:
+			rank = 1
+		elif kind == 0 and base == idx:
+			rank = 2
+		elif kind == 1 and base == idx:
+			rank = 3
+		elif kind == 1 and trans == idx:
+			rank = 4
+		elif kind == 2 and base == idx:
+			rank = 5
+		elif kind == 2 and trans == idx:
+			rank = 6
+		if rank < 0:
+			continue
 		var uv := _rect_of(tiles, str(key))
 		if uv.z <= 0.0:
 			continue
-		var base := int(parsed.get("base", -1))
-		var trans := int(parsed.get("trans", -1))
-		if base == idx and trans == idx and variant < exact_var:
-			exact = uv
-			exact_var = variant
-		elif trans == idx and variant < to_var:
-			to_idx = uv
-			to_var = variant
-		elif base == idx and variant < from_var:
-			from_idx = uv
-			from_var = variant
-	if exact.z > 0.0:
-		return exact
-	if to_idx.z > 0.0:
-		return to_idx
-	if from_idx.z > 0.0:
-		return from_idx
-	return Vector4()
+		var score := rank * 20 + variant
+		if score < best_score:
+			best_score = score
+			best = uv
+	return best
 
 
 static func _parse_tile_name(key: String) -> Dictionary:

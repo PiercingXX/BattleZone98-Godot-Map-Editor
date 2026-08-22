@@ -16,6 +16,7 @@ func run(t) -> void:
 	_test_hex_index(t, png)
 	_test_elysium_type4(t, png)
 	_test_solid_tile_field(t, png)
+	_test_cap_fallback_icon(t, png)
 	_test_transition_catalog(t, png)
 	await _test_panel_fills_swatch(t, png)
 
@@ -115,6 +116,22 @@ func _test_solid_tile_field(t, png: String) -> void:
 	_assert_near(t, _center(thumbs[4]), Color(1, 1, 0), "SolidA0 crop is the yellow tile")
 
 
+func _test_cap_fallback_icon(t, png: String) -> void:
+	# Material 1 often has no `{i}{i}SA0` — only a cap that names it (MA01CA0).
+	_set_world(png, {
+		"MA00SA0.MAP": [0.0, 0.0, 0.125, 0.125],
+		"MA01CA0.MAP": [0.125, 0.0, 0.125, 0.125],
+		"MA04DA0.MAP": [0.375, 0.0, 0.125, 0.125],
+	})
+	var thumbs: Array = MaterialPalette.material_thumbnails(16)
+	t.ok(thumbs[0] is ImageTexture, "mat 0 still uses the solid")
+	t.ok(thumbs[1] is ImageTexture, "mat 1 uses the 0→1 cap")
+	_assert_near(t, _center(thumbs[1]), Color(0, 1, 0), "cap crop is the green tile")
+	t.ok(thumbs[4] is ImageTexture, "mat 4 uses the 0→4 diagonal")
+	_assert_near(t, _center(thumbs[4]), Color(1, 1, 0), "diag crop is the yellow tile")
+	t.eq(thumbs[2], null, "mat 2 still has no atlas tile")
+
+
 func _test_hex_index(t, png: String) -> void:
 	_set_world(png, {
 		"MAAASA0.MAP": [0.25, 0.25, 0.125, 0.125],
@@ -146,7 +163,7 @@ func _test_panel_fills_swatch(t, png: String) -> void:
 	t.ok(thumb0.texture is Texture2D)
 	var sb0 := b0.get_theme_stylebox("normal") as StyleBoxFlat
 	t.ok(sb0 != null and sb0.bg_color.a == 0.0, "atlas swatch stylebox is a ring")
-	t.eq(b0.custom_minimum_size, Vector2(28, 28))
+	t.eq(b0.custom_minimum_size, Vector2(35, 35))
 	var b2: Button = swatches.get_child(2)
 	var thumb2 := b2.get_node_or_null("Thumb") as TextureRect
 	t.ok(thumb2 != null and not thumb2.visible, "unused slot stays a colour chip")
