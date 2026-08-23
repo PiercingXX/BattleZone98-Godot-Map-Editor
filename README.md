@@ -60,9 +60,7 @@ The internal boundary between the two halves is
 
 | Doc | What it covers |
 |---|---|
-| [`AGENTS.md`](AGENTS.md) | Operating rules for this repo. |
 | [`docs/02-bzmap-bridge.md`](docs/02-bzmap-bridge.md) | The session model and verb contract between the UI and the format layer. |
-| [`docs/formats/`](docs/formats/README.md) | Clean-room functional specs for every game file format (`F1`–`F8`). |
 
 ## Run it
 
