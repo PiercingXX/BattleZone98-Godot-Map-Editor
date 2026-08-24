@@ -14,6 +14,7 @@ extends PanelContainer
 signal fly_requested(world: Vector3)
 signal overlay_changed(mode: int)
 signal collapsed_changed(collapsed: bool)
+signal hover_changed(on: bool)
 
 const MENU_FINDINGS := 100
 ## Longest a coalesced repaint may be deferred. A brush stroke emits
@@ -45,10 +46,15 @@ var _since_repaint: float = 0.0
 
 
 func _ready() -> void:
+	custom_minimum_size = Vector2(200, 200)
 	_install_collapse()
 	_build_menu()
 	_view.fly_requested.connect(_on_fly)
 	_view.context_menu_requested.connect(_on_context_menu)
+	_view.hover_changed.connect(func(on: bool) -> void: hover_changed.emit(on))
+	var head := find_child("Head", true, false) as CanvasItem
+	if head:
+		head.visible = false
 	var icon := find_child("TitleIcon", true, false)
 	if icon is TextureRect and (icon as TextureRect).texture == null:
 		(icon as TextureRect).texture = EditorIcons.texture("frame")

@@ -54,6 +54,10 @@ var grow_cells: int = 1
 ## Clone-stamp source in world XZ. Non-finite = unset.
 var clone_source_m: Vector2 = Vector2.INF
 var clone_materials: bool = false
+## When true, clone stamps the sampled absolute height. When false, relative delta.
+var clone_match_height: bool = true
+## Last Place-tool yaw in degrees, reused until the user drag-aims again.
+var place_yaw_deg: float = 0.0
 ## World-XZ grid snap in metres. 0 = off. Allowed: 0 / 1 / 5 / 10 / 20.
 var snap_grid_m: float = 0.0
 ## Yaw snap in degrees. 0 = off. Allowed: 0 / 15 / 45 / 90.
@@ -84,6 +88,8 @@ var height_feather_m: float = 2.0
 var noise_frequency: float = 0.02
 var noise_octaves: int = 3
 var noise_amplitude_m: float = 6.0
+var noise_scale: float = 10.0
+var noise_contrast: float = 1.0
 ## Seeds the noise field and the random-rotation stream. Fixed = reproducible.
 var brush_seed: int = 1
 ## Morphological erode / dilate disc, and its height slack per excess cell.
@@ -149,6 +155,8 @@ func load_brush_settings() -> void:
 	noise_frequency = Settings.noise_frequency
 	noise_octaves = Settings.noise_octaves
 	noise_amplitude_m = Settings.noise_amplitude_m
+	noise_scale = Settings.noise_scale
+	noise_contrast = Settings.noise_contrast
 	brush_seed = Settings.brush_seed
 	erode_radius_m = Settings.erode_radius_m
 	erode_slack_m = Settings.erode_slack_m
@@ -183,6 +191,8 @@ func save_brush_settings() -> void:
 	Settings.noise_frequency = noise_frequency
 	Settings.noise_octaves = noise_octaves
 	Settings.noise_amplitude_m = noise_amplitude_m
+	Settings.noise_scale = noise_scale
+	Settings.noise_contrast = noise_contrast
 	Settings.brush_seed = brush_seed
 	Settings.erode_radius_m = erode_radius_m
 	Settings.erode_slack_m = erode_slack_m
@@ -300,6 +310,20 @@ func set_noise_params(freq: float, octaves: int, amplitude_m: float, p_seed: int
 	noise_amplitude_m = maxf(amplitude_m, 0.0)
 	brush_seed = p_seed
 	_brush_dirty()
+
+
+func set_noise_scale(scale: float) -> void:
+	noise_scale = Settings.coerce_noise_param(scale, Settings.NOISE_SCALE_DEFAULT)
+	_brush_dirty()
+
+
+func set_noise_contrast(contrast: float) -> void:
+	noise_contrast = Settings.coerce_noise_param(contrast, Settings.NOISE_CONTRAST_DEFAULT)
+	_brush_dirty()
+
+
+func set_clone_match_height(on: bool) -> void:
+	clone_match_height = on
 
 
 func set_erode_params(radius: float, slack_m: float) -> void:

@@ -12,6 +12,9 @@ func run(t) -> void:
 	var saved_mat := ToolState.paint_material
 	var saved_kind := ToolState.paint_kind
 	var saved_sym := ToolState.symmetry
+	var saved_nscale := ToolState.noise_scale
+	var saved_ncontrast := ToolState.noise_contrast
+	var saved_match := ToolState.clone_match_height
 	var saved_armed: Dictionary = ToolState.armed.duplicate(true)
 	var saved_sel: Array[String] = MapState.selected_ids.duplicate()
 	var saved_w: int = MapState.width_m
@@ -30,11 +33,15 @@ func run(t) -> void:
 	t.ok(list.item_count >= 1, "empty placeholder present")
 	t.ok(list.is_item_disabled(0), "placeholder disabled")
 	t.ok(pal.has_method("set_collapsed"))
+	var collapse: Button = pal.find_child("Collapse", true, false)
+	t.ok(collapse != null and "Tool" in collapse.text, "collapse title is Tool")
 	pal.set_collapsed(true)
 	t.ok(not (pal.find_child("FlyHint", true, false) as Control).is_visible_in_tree())
-	t.ok((pal.find_child("Collapse", true, false) as Button).is_visible_in_tree())
+	t.ok(collapse.is_visible_in_tree())
+	t.ok("Tool" in collapse.text)
 	pal.set_collapsed(false)
 	t.ok((pal.find_child("FlyHint", true, false) as Control).is_visible_in_tree())
+	t.ok("Tool" in collapse.text)
 
 	var index := {
 		"classes": [
@@ -202,6 +209,9 @@ func run(t) -> void:
 	ToolState.set_paint_material(saved_mat)
 	ToolState.set_paint_kind(saved_kind)
 	ToolState.set_symmetry(saved_sym)
+	ToolState.set_noise_scale(saved_nscale)
+	ToolState.set_noise_contrast(saved_ncontrast)
+	ToolState.set_clone_match_height(saved_match)
 	MapState.width_m = saved_w
 	MapState.depth_m = saved_d
 	if saved_armed.is_empty():
@@ -326,8 +336,35 @@ func _visibility_matrix(t, pal: Node) -> void:
 	t.ok("no selection" in (pal.find_child("FeatherApply", true, false) as Button).tooltip_text.to_lower())
 	MapState.field = saved_field
 	pal.refresh_context()
+	_apply_tool(pal, "noise")
+	var nscale: HSlider = pal.find_child("NoiseScale", true, false)
+	var ncontrast: HSlider = pal.find_child("NoiseContrast", true, false)
+	t.ok(nscale != null and nscale.is_visible_in_tree(), "noise shows Scale")
+	t.ok(ncontrast != null and ncontrast.is_visible_in_tree(), "noise shows Contrast")
+	t.near(nscale.min_value, 0.1, 0.001)
+	t.near(nscale.max_value, 100.0, 0.001)
+	t.near(ncontrast.min_value, 0.1, 0.001)
+	t.near(ncontrast.max_value, 100.0, 0.001)
+	nscale.value = 12.5
+	t.near(ToolState.noise_scale, 12.5, 0.001)
+	t.eq((pal.find_child("NoiseScaleVal", true, false) as Label).text, "12.5")
+	ncontrast.value = 3.0
+	t.near(ToolState.noise_contrast, 3.0, 0.001)
+	t.eq((pal.find_child("NoiseContrastVal", true, false) as Label).text, "3.0")
+	_apply_tool(pal, "raise")
+	t.ok(not nscale.is_visible_in_tree(), "noise scale hidden off the noise tool")
+	t.ok(not ncontrast.is_visible_in_tree())
 	_apply_tool(pal, "clone")
 	t.ok((pal.find_child("CloneMaterials", true, false) as Control).is_visible_in_tree())
+	var match_h: CheckBox = pal.find_child("MatchHeight", true, false)
+	t.ok(match_h != null and match_h.is_visible_in_tree(), "clone shows Match height")
+	t.ok(match_h.button_pressed, "Match height defaults on")
+	match_h.button_pressed = false
+	t.ok(not ToolState.clone_match_height)
+	match_h.button_pressed = true
+	t.ok(ToolState.clone_match_height)
+	var hint_n := pal.find_child("CloneHint", true, false)
+	t.ok(hint_n == null or not (hint_n as CanvasItem).visible, "CloneHint usage text is gone")
 
 	# Switching a tool twice is idempotent (raise → paint → raise, and raise ×2).
 	_apply_tool(pal, "raise")

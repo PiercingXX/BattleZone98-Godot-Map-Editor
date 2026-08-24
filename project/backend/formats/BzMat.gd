@@ -405,15 +405,27 @@ static func _autotile_cap(self_m: int, other: int, side: int) -> int:
 		_:
 			c[0] = other
 			c[3] = other
-	return autotile_quad(c)
+	var word: int = autotile_quad(c)
+	# rot+2 turns the cap graphic around (N↔S, E↔W) without dropping the flip bit.
+	var cap: int = (word >> 7) & 1
+	var flip: int = (word >> 6) & 1
+	var rot: int = ((word >> 4) + 2) & 0x3
+	var variant: int = word & 0x3
+	return encode_entry(
+		(word >> 12) & MATERIAL_MASK,
+		(word >> 8) & MATERIAL_MASK,
+		cap, flip, rot, variant
+	)
 
 
-## Atlas `*D*` tiles face left. `corner`: 0=NW (identity / left), 1=NE, 2=SE, 3=SW.
-## Packs F2 orientation 14, 13, 12, 15 (unmirrored quartet).
+## Atlas `*D*` tiles face left. `corner`: 0=NW, 1=NE, 2=SE, 3=SW.
+## NE/SE stay on the unmirrored quartet (orient 13, 12). NW/SW toggle flip so
+## those corners are mirrored from identity / 15.
 static func encode_diag(self_m: int, other: int, corner: int, variant: int = 0) -> int:
 	var packed_rot: PackedInt32Array = PackedInt32Array([2, 1, 0, 3])
-	var rot: int = packed_rot[clampi(corner, 0, 3)]
-	return encode_entry(self_m, other, 1, 1, rot, variant)
+	var i: int = clampi(corner, 0, 3)
+	var flip: int = 0 if i == 0 or i == 3 else 1
+	return encode_entry(self_m, other, 1, flip, packed_rot[i], variant)
 
 
 static func auto_paint(heightmap: Variant, rules: Array) -> Variant:

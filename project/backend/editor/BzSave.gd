@@ -4,7 +4,9 @@ class_name BzSave
 ##
 ## Port of ``backend/bzmap/editor/save.py``. Untouched inputs are copied from
 ## ``residue/source/`` byte for byte. Only domains marked in ``dirty.json``
-## are re-encoded. Open→save with no edits is byte-identical by construction.
+## are re-encoded. Open→save with no edits is byte-identical for those files.
+## `{stem}.act` is always written from the fog-recolored template when a `.trn`
+## is present.
 
 const _EOL := "\r\n"
 
@@ -185,7 +187,7 @@ static func save_session(session_dir: String, out_dir: String, stem: String = ""
 
 	# World: sun clock, fog distances, fog-colour palette.
 	var world_applied: Dictionary = _apply_world(
-		paths, source_dir, out_dir, out_stem, dirty, manifest, written, regenerated, warnings
+		paths, out_dir, out_stem, dirty, written, regenerated, warnings
 	)
 	if BzErrors.is_err(world_applied):
 		return world_applied
@@ -734,67 +736,70 @@ static func _restem_ini(path: String, source_stem: String, out_stem: String) -> 
 	return true
 
 
-## Write the map's sun clock and fog into its own `.trn`, and — when the fog
-## colour has been changed — ship the map a `.act` and point `[Color] Palette`
-## at it. Redux has no `FogColor` key; the colour is a palette entry (F6 §3).
-##
-## No-op unless dirty.json flags `trn`, so open→save with no edits stays
-## byte-identical: this function must not touch a file it was not asked to.
+## Write the map's sun clock and fog into its own `.trn`. Fog colour is the
+## 256-entry `.act` named by `[Color] Palette` (F6 §3) — there is no `FogColor`
+## key. `{stem}.act` is always a recolored copy of the shipped template when a
+## `.trn` is present. `[Color] Palette` is retargeted at that file on every
+## save. Sun/fog distance keys still wait on dirty.trn.
 static func _apply_world(
 	paths: Dictionary,
-	source_dir: String,
 	out_dir: String,
 	out_stem: String,
 	dirty: Dictionary,
-	manifest: Dictionary,
 	written: Array,
 	regenerated: Array,
 	warnings: Array
 ) -> Dictionary:
-	if not _truthy(dirty.get("trn")):
-		return {"ok": true}
-	var meta_path: String = str(paths.get("meta", ""))
-	if meta_path.is_empty() or not FileAccess.file_exists(meta_path):
-		return {"ok": true}
-	var meta_v: Variant = BzSession.read_json(meta_path)
-	if BzErrors.is_err(meta_v):
-		return meta_v
-	if typeof(meta_v) != TYPE_DICTIONARY:
-		return {"ok": true}
-	var world_v: Variant = (meta_v as Dictionary).get("world")
-	if typeof(world_v) != TYPE_DICTIONARY or (world_v as Dictionary).is_empty():
-		return {"ok": true}
-	var world: Dictionary = world_v
 	var dest_trn: String = _dest_path(out_dir, "%s.trn" % out_stem)
+	var trn_dirty: bool = _truthy(dirty.get("trn"))
 	if not FileAccess.file_exists(dest_trn):
-		warnings.append("no .trn in the saved map; sun and fog were not written")
+		if trn_dirty:
+			warnings.append("no .trn in the saved map; sun and fog were not written")
 		return {"ok": true}
+	var loaded: Dictionary = _session_world(paths)
+	if BzErrors.is_err(loaded):
+		return loaded
+	var world: Dictionary = loaded.get("world", {})
+	var act: Dictionary = _write_fog_act(
+		world, out_dir, out_stem, written, regenerated, warnings, trn_dirty
+	)
+	if BzErrors.is_err(act):
+		return act
 	var cfg = BzTrn.read_trn(dest_trn)
 	if cfg == null:
 		warnings.append("could not parse %s; sun and fog were not written" % dest_trn.get_file())
 		return {"ok": true}
-	cfg.ensure_section("NormalView")
-	var fog: Vector2 = WorldLighting.clamp_fog(
-		float(world.get("fog_start_m", WorldLighting.FOG_START_DEFAULT)),
-		float(world.get("fog_end_m", WorldLighting.FOG_END_DEFAULT))
-	)
-	_set_trn(cfg, "NormalView", "Time", str(int(world.get("time", WorldLighting.TIME_DEFAULT))))
-	_set_trn(cfg, "NormalView", "FogStart", str(int(round(fog.x))))
-	_set_trn(cfg, "NormalView", "FogEnd", str(int(round(fog.y))))
-	_set_trn(cfg, "NormalView", "FogBreak", str(int(round(
-		float(world.get("fog_break_m", WorldLighting.FOG_BREAK_DEFAULT))
-	))))
-	# VisibilityRange is FogEnd + 50 by definition — the engine culls there, so
-	# a smaller value pops terrain in front of the fog wall.
-	_set_trn(cfg, "NormalView", "VisibilityRange", str(int(round(
-		WorldLighting.visibility_range(fog.y)
-	))))
-	var act: Dictionary = _apply_fog_palette(
-		world, meta_v, source_dir, out_dir, out_stem, manifest, cfg,
-		written, regenerated, warnings
-	)
-	if BzErrors.is_err(act):
-		return act
+	var touched: bool = false
+	if trn_dirty and not world.is_empty():
+		cfg.ensure_section("NormalView")
+		var fog: Vector2 = WorldLighting.clamp_fog(
+			float(world.get("fog_start_m", WorldLighting.FOG_START_DEFAULT)),
+			float(world.get("fog_end_m", WorldLighting.FOG_END_DEFAULT))
+		)
+		_set_trn(cfg, "NormalView", "Time", str(int(world.get("time", WorldLighting.TIME_DEFAULT))))
+		_set_trn(cfg, "NormalView", "FogStart", str(int(round(fog.x))))
+		_set_trn(cfg, "NormalView", "FogEnd", str(int(round(fog.y))))
+		_set_trn(cfg, "NormalView", "FogBreak", str(int(round(
+			float(world.get("fog_break_m", WorldLighting.FOG_BREAK_DEFAULT))
+		))))
+		# VisibilityRange is FogEnd + 50 by definition — the engine culls there, so
+		# a smaller value pops terrain in front of the fog wall.
+		_set_trn(cfg, "NormalView", "VisibilityRange", str(int(round(
+			WorldLighting.visibility_range(fog.y)
+		))))
+		touched = true
+	var dest_act: String = str(act.get("path", ""))
+	if dest_act.is_empty():
+		dest_act = _dest_path(out_dir, "%s.act" % out_stem)
+	if FileAccess.file_exists(dest_act):
+		var want: String = dest_act.get_file()
+		var have: String = _current_palette_file(cfg)
+		if have.to_lower() != want.to_lower():
+			cfg.ensure_section("Color")
+			_set_trn(cfg, "Color", "Palette", want)
+			touched = true
+	if not touched:
+		return {"ok": true}
 	cfg.write(dest_trn)
 	if not written.has(dest_trn.get_file()):
 		written.append(dest_trn.get_file())
@@ -803,116 +808,71 @@ static func _apply_world(
 	return {"ok": true}
 
 
-static func _apply_fog_palette(
+static func _session_world(paths: Dictionary) -> Dictionary:
+	var world := {}
+	var meta_path: String = str(paths.get("meta", ""))
+	if meta_path.is_empty() or not FileAccess.file_exists(meta_path):
+		return {"ok": true, "world": world}
+	var meta_v: Variant = BzSession.read_json(meta_path)
+	if BzErrors.is_err(meta_v):
+		return meta_v
+	if typeof(meta_v) == TYPE_DICTIONARY:
+		var world_v: Variant = (meta_v as Dictionary).get("world")
+		if typeof(world_v) == TYPE_DICTIONARY:
+			world = world_v
+	return {"ok": true, "world": world}
+
+
+static func _world_fog_color(world: Dictionary) -> Color:
+	var raw: String = str(world.get("fog_color", "")).strip_edges()
+	if raw.is_empty():
+		raw = str(WorldLighting.defaults().get("fog_color", "#8a97a8"))
+	return Color(raw)
+
+
+## Duplicate the shipped template.act, paint every entry the fog colour, and
+## write `{out_stem}.act` next to the map. Does not invent a ramp.
+static func _write_fog_act(
 	world: Dictionary,
-	meta: Dictionary,
-	source_dir: String,
 	out_dir: String,
 	out_stem: String,
-	manifest: Dictionary,
-	cfg,
 	written: Array,
 	regenerated: Array,
-	warnings: Array
+	warnings: Array,
+	mark_regenerated: bool
 ) -> Dictionary:
-	var wanted := Color(str(world.get("fog_color", "")))
-	if str(world.get("fog_color", "")).is_empty():
+	var template: String = BzAct.template_path()
+	if template.is_empty() or not FileAccess.file_exists(template):
+		warnings.append("fog colour not written: template.act not found")
 		return {"ok": true}
-	var named: String = _trn_palette_name(meta)
-	var base_path: String = _resolve_base_act(named, source_dir, manifest, world)
-	if base_path.is_empty() or not FileAccess.file_exists(base_path):
-		warnings.append(
-			(
-				"fog colour not written: could not find %s to base it on. "
-				+ "Redux reads fog colour from the palette [Color] Palette "
-				+ "names, and the editor will not invent one — every indexed "
-				+ ".map texture on the map decodes through it. Put a copy of "
-				+ "the palette next to the map and save again."
-			) % (named if not named.is_empty() else "an .act palette")
-		)
-		return {"ok": true}
-	var read: Dictionary = BzAct.read(base_path)
+	var read: Dictionary = BzAct.read(template)
 	if not bool(read.get("ok", false)):
-		warnings.append("fog colour not written: %s" % base_path.get_file())
-		return {"ok": true}
-	var base: PackedByteArray = read["palette"]
-	if BzAct.fog_color(base).is_equal_approx(wanted):
+		warnings.append("fog colour not written: %s" % template.get_file())
 		return {"ok": true}
 	var dest_act: String = _dest_path(out_dir, "%s.act" % out_stem)
-	var wrote: Dictionary = BzAct.write(dest_act, BzAct.with_fog(base, wanted))
+	var wrote: Dictionary = BzAct.write(
+		dest_act, BzAct.with_all_fog(read["palette"], _world_fog_color(world))
+	)
 	if BzErrors.is_err(wrote):
 		return wrote
-	if not written.has(dest_act.get_file()):
-		written.append(dest_act.get_file())
-	if not regenerated.has(dest_act.get_file()):
-		regenerated.append(dest_act.get_file())
-	cfg.ensure_section("Color")
-	_set_trn(cfg, "Color", "Palette", dest_act.get_file())
-	warnings.append(
-		"fog colour written into %s; [Color] Palette now points at it"
-		% dest_act.get_file()
-	)
-	return {"ok": true}
+	var name: String = dest_act.get_file()
+	if not written.has(name):
+		written.append(name)
+	if mark_regenerated and not regenerated.has(name):
+		regenerated.append(name)
+	return {"ok": true, "path": dest_act}
 
 
-static func _trn_palette_name(meta: Dictionary) -> String:
-	var trn: Variant = meta.get("trn")
-	if typeof(trn) != TYPE_DICTIONARY:
+static func _current_palette_file(cfg) -> String:
+	if cfg == null or cfg.section("Color") == null:
 		return ""
-	var color: Variant = (trn as Dictionary).get("Color")
-	if typeof(color) != TYPE_DICTIONARY:
-		return ""
-	return str((color as Dictionary).get("Palette", "")).strip_edges().get_file()
-
-
-## Where to get the 256 entries we are about to change one of.
-##
-## Best first: the palette the map's own `[Color] Palette` names, looked for
-## beside the map and in its residue; then any `.act` the map ships; then the
-## world's stock file from the install. A generated ramp is deliberately NOT a
-## fallback — every indexed `.map` texture on the map decodes through this
-## palette (F6 §4), so inventing one would recolour the map to buy a fog tint.
-static func _resolve_base_act(
-	named: String, source_dir: String, manifest: Dictionary, world: Dictionary
-) -> String:
-	var dirs: Array[String] = [source_dir]
-	var origin: String = str(manifest.get("source_path", "")).get_base_dir()
-	if not origin.is_empty() and not dirs.has(origin):
-		dirs.append(origin)
-	var stem_act: String = "%s.act" % str(manifest.get("stem", ""))
-	for dir_path in dirs:
-		for want in [named, stem_act]:
-			if str(want).is_empty():
-				continue
-			var hit: String = _file_named_ci(dir_path, str(want))
-			if not hit.is_empty():
-				return hit
-	for dir_path in dirs:
-		var any: String = _first_act(dir_path)
-		if not any.is_empty():
-			return any
-	return str(world.get("palette_source", ""))
-
-
-static func _file_named_ci(dir_path: String, name: String) -> String:
-	var da := DirAccess.open(dir_path)
-	if da == null:
-		return ""
-	var needle: String = name.to_lower()
-	for existing in da.get_files():
-		if str(existing).to_lower() == needle:
-			return dir_path.path_join(str(existing))
-	return ""
-
-
-static func _first_act(dir_path: String) -> String:
-	var da := DirAccess.open(dir_path)
-	if da == null:
-		return ""
-	for name in da.get_files():
-		if str(name).get_extension().to_lower() == "act":
-			return dir_path.path_join(str(name))
-	return ""
+	var raw: String = str(cfg.get_value("Color", "Palette", "")).strip_edges()
+	if raw.is_empty():
+		for existing in (cfg.section("Color") as BzTrn.Section).keys():
+			if str(existing).to_lower() == "palette":
+				raw = str(cfg.get_value("Color", str(existing), "")).strip_edges()
+				break
+	return raw.get_file()
 
 
 static func _set_trn(cfg, section_name: String, key: String, value: String) -> void:

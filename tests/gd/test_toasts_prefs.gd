@@ -234,6 +234,16 @@ func _status_activity(t) -> void:
 	Backend.call_finished.emit("save", {})
 	await t.tree.process_frame
 	t.ok(not act.visible, "finished hides the indicator when idle")
+	t.ok(bar.has_method("set_mode_controls"))
+	bar.set_mode_controls("Paint", "Alt+LMB eyedropper")
+	t.eq((bar.find_child("Status", true, false) as Label).text, "Paint — Alt+LMB eyedropper")
+	var clone_status := StatusBar.tool_status_text("clone")
+	t.ok("Ctrl+click" in clone_status, "clone status mentions sample")
+	t.ok("paint" in clone_status.to_lower())
+	t.ok("eyedropper" in StatusBar.tool_status_text("paint").to_lower())
+	t.ok("Shift+click" in StatusBar.tool_status_text("place"))
+	t.ok("Alt" in StatusBar.tool_status_text("qsel"))
+	t.eq(StatusBar.format_tool_status("clone"), clone_status)
 	bar.queue_free()
 	await t.tree.process_frame
 
@@ -245,16 +255,25 @@ func _prefs_dialog(t) -> void:
 	dlg.refresh()
 	t.ok(dlg.find_child("UiScale", true, false) is HSlider)
 	t.ok(dlg.find_child("CameraSpeed", true, false) is HSlider)
+	t.ok(dlg.find_child("CameraAccel", true, false) is HSlider)
 	t.ok(dlg.find_child("InvertLook", true, false) is CheckBox)
 	t.ok(dlg.find_child("ColorblindTeams", true, false) is CheckBox)
 	t.ok(dlg.find_child("SaveDir", true, false) is LineEdit)
+	t.ok(dlg.find_child("GameRoot", true, false) is LineEdit)
+	t.ok(dlg.find_child("WorkshopFolder", true, false) is LineEdit)
+	t.ok(dlg.find_child("ResetUiDefaults", true, false) is Button)
+	t.ok(dlg.find_child("Scroll", true, false) is ScrollContainer)
+	var box: Control = dlg.find_child("Box", true, false)
+	t.ok(box != null and box.get_parent() is ScrollContainer, "Box is wrapped in a ScrollContainer")
+	t.eq(box.size_flags_horizontal, Control.SIZE_EXPAND_FILL)
 
 	Settings.ui_scale = 1.0
-	Settings.autosave_interval_s = 30
+	Settings.autosave_interval_s = 60
 	Settings.camera_speed_mul = 1.0
 	Settings.invert_look = false
 	Settings.colorblind_teams = false
 	dlg.refresh()
+	t.ok((dlg.find_child("Auto60", true, false) as Button).button_pressed, "60s is selected at the default interval")
 
 	var scale: HSlider = dlg.find_child("UiScale", true, false)
 	scale.value = 1.35
@@ -279,6 +298,28 @@ func _prefs_dialog(t) -> void:
 	var cam: HSlider = dlg.find_child("CameraSpeed", true, false)
 	cam.value = 2.0
 	t.eq(Settings.camera_speed_mul, 2.0)
+
+	var accel: HSlider = dlg.find_child("CameraAccel", true, false)
+	t.eq(accel.min_value, Settings.CAM_ACCEL_MIN)
+	t.eq(accel.max_value, Settings.CAM_ACCEL_MAX)
+	t.eq(accel.step, 0.1)
+	accel.value = 2.5
+	t.near(Settings.camera_accel_mul, 2.5, 0.0001, "accel slider writes Settings")
+	Settings.camera_accel_mul = Settings.CAM_ACCEL_DEFAULT
+
+	dlg._apply_game_root("/tmp/bz-game")
+	t.eq(Settings.game_root, "/tmp/bz-game")
+	dlg._apply_workshop("/tmp/bz-workshop")
+	t.eq(Settings.workshop_folder, "/tmp/bz-workshop")
+	dlg._apply_workshop("")
+	t.eq(Settings.workshop_folder, "", "empty workshop folder means BZP default")
+	t.eq((dlg.find_child("WorkshopFolder", true, false) as LineEdit).placeholder_text, "BZP (default)")
+
+	var saved_scale := Settings.ui_scale
+	Settings.ui_scale = 1.5
+	(dlg.find_child("ResetUiDefaults", true, false) as Button).pressed.emit()
+	t.eq(Settings.ui_scale, Settings.UI_SCALE_DEFAULT, "Reset UI restores scale")
+	Settings.ui_scale = saved_scale
 
 	# Ctrl is held for saving, undo and setting the clone source, so every
 	# twitch while it is down turns the camera. The rate is a dial, and it
@@ -330,12 +371,15 @@ func _snapshot() -> Dictionary:
 		"cfg": cfg,
 		"autosave": Settings.autosave_interval_s,
 		"cam": Settings.camera_speed_mul,
+		"accel": Settings.camera_accel_mul,
 		"invert": Settings.invert_look,
 		"colorblind": Settings.colorblind_teams,
 		"default_save": Settings.default_save_dir,
 		"last_save": Settings.last_save_dir,
 		"scheme": Settings.keymap_scheme,
 		"ui_scale": Settings.ui_scale,
+		"game_root": Settings.game_root,
+		"workshop": Settings.workshop_folder,
 	}
 
 
@@ -352,9 +396,12 @@ func _restore(snap: Dictionary) -> void:
 		Settings._load()
 	Settings.autosave_interval_s = int(snap["autosave"])
 	Settings.camera_speed_mul = float(snap["cam"])
+	Settings.camera_accel_mul = float(snap.get("accel", Settings.CAM_ACCEL_DEFAULT))
 	Settings.invert_look = bool(snap["invert"])
 	Settings.colorblind_teams = bool(snap["colorblind"])
 	Settings.default_save_dir = str(snap["default_save"])
 	Settings.last_save_dir = str(snap["last_save"])
 	Settings.keymap_scheme = str(snap["scheme"])
 	Settings.ui_scale = float(snap["ui_scale"])
+	Settings.game_root = str(snap.get("game_root", ""))
+	Settings.workshop_folder = str(snap.get("workshop", ""))

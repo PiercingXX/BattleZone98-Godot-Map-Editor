@@ -292,6 +292,8 @@ func _overlay_kind(t) -> void:
 	t.eq(AiPathOverlay.kind_of({"name": "", "has_label": false}), "unlabeled")
 	t.ok(AiPathOverlay.is_editable({"name": "edge_path", "has_label": true}))
 	t.ok(not AiPathOverlay.is_editable({"name": "", "has_label": false}))
+	t.eq(AiPathOverlay.LIFT_M, 5.0, "path points sit 5 m above the terrain")
+	t.ok(AiPathOverlay.LABEL_LIFT_M > AiPathOverlay.LIFT_M, "labels stay higher than points")
 
 
 ## The AI-paths toggle used to be an item in the top bar's View menu. It is a

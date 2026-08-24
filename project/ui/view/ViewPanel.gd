@@ -26,6 +26,10 @@ var _checks: Dictionary = {}
 func _ready() -> void:
 	for pair in SIMPLE:
 		_add_check(str(pair[0]), str(pair[1]))
+	_add_check("slope", "Slope Tint")
+	_add_check("grid", "Terrain Grid")
+	_add_check("buildable", "Buildable Area")
+	_add_check("ai_traversable", "Ai Traversible")
 	_add_check("labels", "Labels")
 	_add_check("ghosts", "Ghost variants")
 	_add_check("balance", "Balance")
@@ -40,12 +44,19 @@ func _ready() -> void:
 
 func _add_check(key: String, caption: String) -> void:
 	var cb := CheckBox.new()
-	cb.name = "View" + key.capitalize()
+	cb.name = _check_name(key)
 	cb.text = caption
 	cb.focus_mode = Control.FOCUS_NONE
 	cb.toggled.connect(_on_toggled.bind(key))
 	_grid.add_child(cb)
 	_checks[key] = cb
+
+
+func _check_name(key: String) -> String:
+	var s := "View"
+	for part in key.split("_"):
+		s += part.capitalize()
+	return s
 
 
 func _on_toggled(on: bool, key: String) -> void:
@@ -79,6 +90,26 @@ func _on_toggled(on: bool, key: String) -> void:
 			AiPathOverlay.enabled = on
 			Settings.view_aipaths = on
 			EditorFeedback.log("view aipaths %s" % ("on" if on else "off"))
+		"slope":
+			if Settings.view_slope == on:
+				return
+			Settings.view_slope = on
+			EditorFeedback.log("view slope %s" % ("on" if on else "off"))
+		"grid":
+			if Settings.view_grid == on:
+				return
+			Settings.view_grid = on
+			EditorFeedback.log("view grid %s" % ("on" if on else "off"))
+		"buildable":
+			if Settings.view_buildable == on:
+				return
+			Settings.view_buildable = on
+			EditorFeedback.log("view buildable %s" % ("on" if on else "off"))
+		"ai_traversable":
+			if Settings.view_ai_traversable == on:
+				return
+			Settings.view_ai_traversable = on
+			EditorFeedback.log("view ai_traversable %s" % ("on" if on else "off"))
 		_:
 			if Settings.view_flag(key) == on:
 				return
@@ -110,6 +141,10 @@ func refresh() -> void:
 		var key := str(pair[0])
 		_set_check(key, Settings.view_flag(key), true, "")
 	_set_check("plants", Settings.view_plants, _plants_overlay_ready(), "no plant regions")
+	_set_check("slope", Settings.view_slope, true, "")
+	_set_check("grid", Settings.view_grid, true, "")
+	_set_check("buildable", Settings.view_buildable, true, "")
+	_set_check("ai_traversable", Settings.view_ai_traversable, true, "")
 	_set_check("labels", Settings.view_labels, true, "")
 	_set_check(
 		"ghosts", ObjectMarkers.ghost_other_variants, true,

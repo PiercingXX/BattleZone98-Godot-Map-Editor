@@ -15,6 +15,7 @@ func run(t) -> void:
 	_test_errors(t, tmp)
 	_test_untouched_roundtrip(t, tmp)
 	_test_stem_rename(t, tmp)
+	_test_fog_act_from_template(t, tmp)
 	_test_dirty_terrain(t, tmp)
 	_test_lgt_follows_the_buffer_not_the_flag(t, tmp)
 	_test_dirty_materials(t, tmp)
@@ -77,15 +78,26 @@ func _test_untouched_roundtrip(t, tmp: String) -> void:
 	var saved: Dictionary = BzSave.save_session(sess, out_dir)
 	t.eq(saved.get("ok"), true, "untouched save ok")
 	t.eq(saved.get("stem"), "synth")
-	t.eq(saved.get("regenerated"), [], "no regenerated files")
 	t.eq(saved.get("warnings"), [])
 	var files: Array = saved.get("files", [])
-	for name in ["other.dat", "synth.bzn", "synth.hg2", "synth.mat", "synth.trn", "synth.vxt"]:
+	for name in ["other.dat", "synth.bzn", "synth.hg2", "synth.mat", "synth.vxt"]:
 		t.ok(files.has(name), "files lists %s" % name)
 		t.ok((saved.get("byte_identical", []) as Array).has(name), "byte_identical %s" % name)
 		t.ok(_same_bytes(src.path_join(name), out_dir.path_join(name)), "bytes match residue %s" % name)
+	t.ok(files.has("synth.trn"), "files lists synth.trn")
+	var trn_text: String = FileAccess.get_file_as_string(out_dir.path_join("synth.trn"))
+	t.ok(trn_text.contains("Palette = synth.act") or trn_text.contains("palette = synth.act"),
+		"Palette points at {stem}.act")
 	t.ok(saved.has("out"), "payload has out")
 	t.ok(saved.has("features"), "payload has features")
+	t.ok(FileAccess.file_exists(out_dir.path_join("synth.act")), "ships {stem}.act next to the .trn")
+	var act: Dictionary = BzAct.read(out_dir.path_join("synth.act"))
+	t.ok(bool(act.get("ok")), "clean-save .act is a valid palette")
+	t.eq(
+		_solid_mismatches(act["palette"], Color(str(WorldLighting.defaults()["fog_color"]))),
+		0,
+		"clean-save .act is the default fog colour"
+	)
 
 
 func _test_stem_rename(t, tmp: String) -> void:
@@ -102,8 +114,48 @@ func _test_stem_rename(t, tmp: String) -> void:
 	t.eq(saved.get("stem"), "newstem")
 	t.ok(FileAccess.file_exists(out_dir.path_join("newstem.trn")))
 	t.ok(FileAccess.file_exists(out_dir.path_join("newstem_S.bzn")))
-	t.ok(_same_bytes(src.path_join("oldstem.trn"), out_dir.path_join("newstem.trn")))
-	t.ok((saved.get("byte_identical", []) as Array).has("newstem.trn"))
+	t.ok(FileAccess.file_exists(out_dir.path_join("newstem.act")), "restem ships {stem}.act")
+	var trn_text: String = FileAccess.get_file_as_string(out_dir.path_join("newstem.trn"))
+	t.ok(trn_text.contains("Palette = newstem.act") or trn_text.contains("palette = newstem.act"),
+		"restem Palette points at {stem}.act")
+
+
+func _test_fog_act_from_template(t, tmp: String) -> void:
+	## dirty.trn: duplicate the shipped template, paint every entry, point
+	## `[Color] Palette` at `{stem}.act`. Existing key spelling is reused.
+	var sess: String = tmp.path_join("fog_act")
+	var src: String = sess.path_join("residue").path_join("source")
+	DirAccess.make_dir_recursive_absolute(src)
+	_write_json(sess.path_join("manifest.json"), {
+		"contract_version": 1, "stem": "fogmap", "variants": [""],
+		"mat_grid_x": 64, "mat_grid_z": 64,
+	})
+	_write_json(sess.path_join("dirty.json"), {
+		"terrain": false, "materials": false, "objects": {"": []},
+		"features": false, "meta": [], "trn": true,
+	})
+	_write_bytes(src.path_join("fogmap.trn"), (
+		"[NormalView]\r\nTime=900\r\n\r\n"
+		+ "[Color]\r\npalette=elysium.act\r\nLuma=elysium.lum\r\n"
+	).to_utf8_buffer())
+	_write_bytes(src.path_join("fogmap.bzn"), "version [1] =\r\n2016\r\n".to_utf8_buffer())
+	_write_json(sess.path_join("meta.json"), {
+		"world": {"time": 900, "fog_color": "204080"},
+	})
+	var out_dir: String = tmp.path_join("out_fog_act")
+	var saved: Dictionary = BzSave.save_session(sess, out_dir)
+	t.eq(saved.get("ok"), true, "fog-act save ok")
+	var act_path: String = out_dir.path_join("fogmap.act")
+	t.ok(FileAccess.file_exists(act_path), "wrote {stem}.act")
+	var wrote: Dictionary = BzAct.read(act_path)
+	t.ok(bool(wrote.get("ok")), "saved .act is a valid palette")
+	t.eq(_solid_mismatches(wrote["palette"], Color("204080")), 0, "all 256 entries are the fog colour")
+	var text: String = FileAccess.get_file_as_string(out_dir.path_join("fogmap.trn"))
+	t.ok(text.contains("palette = fogmap.act"), "existing Palette spelling is replaced")
+	t.ok(not text.contains("Palette = fogmap.act"), "does not duplicate Palette under a new spelling")
+	t.ok(text.contains("Luma=elysium.lum"), "the rest of [Color] survives")
+	t.ok((saved.get("regenerated", []) as Array).has("fogmap.act"))
+	t.ok((saved.get("regenerated", []) as Array).has("fogmap.trn"))
 
 
 func _test_dirty_terrain(t, tmp: String) -> void:
@@ -568,6 +620,18 @@ func _write_bytes(path: String, buf: PackedByteArray) -> void:
 		return
 	f.store_buffer(buf)
 	f.close()
+
+
+func _solid_mismatches(palette: PackedByteArray, color: Color) -> int:
+	var r: int = clampi(int(round(color.r * 255.0)), 0, 255)
+	var g: int = clampi(int(round(color.g * 255.0)), 0, 255)
+	var b: int = clampi(int(round(color.b * 255.0)), 0, 255)
+	var bad := 0
+	for i in BzAct.ENTRIES:
+		var at: int = i * 3
+		if int(palette[at]) != r or int(palette[at + 1]) != g or int(palette[at + 2]) != b:
+			bad += 1
+	return bad
 
 
 func _same_bytes(a: String, b: String) -> bool:

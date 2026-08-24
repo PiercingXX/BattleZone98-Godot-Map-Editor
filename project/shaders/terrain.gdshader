@@ -14,6 +14,8 @@ uniform vec2 lod_center = vec2(0.0);
 uniform float lod_span_quads = 65.0;
 uniform vec2 lod_morph = vec2(0.72, 0.92);
 uniform bool show_slope = false;
+uniform bool show_buildable = false;
+uniform bool show_ai_traversable = false;
 uniform bool show_materials = true;
 uniform bool show_grid = false;
 uniform vec3 mat_colors[16];
@@ -24,6 +26,10 @@ uniform int brush_count = 1;
 uniform float brush_radius = 40.0;
 uniform float brush_falloff = 0.65;
 uniform int brush_shape = 0;
+uniform bool show_brush_noise = false;
+uniform vec2 brush_noise_scale = vec2(10.0, 10.0);
+uniform float brush_noise_contrast = 1.0;
+uniform float brush_noise_seed = 1.0;
 uniform float water_level = -1.0;
 uniform sampler2D mask_tex : filter_nearest, repeat_disable;
 uniform bool show_mask = false;
@@ -35,12 +41,47 @@ uniform bool show_selection = false;
 varying vec2 v_uv;
 varying vec3 v_world;
 
+// tan(5°) constructor limit (BzCheckBalance.BUILDABLE_SLOPE).
+const float BUILDABLE_SLOPE = 0.08748866352592401;
+// tan(30°) AI traversable (BzCheckConnectivity.SLOPE_30_DEG).
+const float TRAVERSE_SLOPE = 0.5773502691896257;
+
 vec2 world_to_uv(vec2 world_xz) {
 	return world_xz / (map_cells * cell_m);
 }
 
 float height_at(vec2 world_xz) {
 	return texture(height_tex, world_to_uv(world_xz)).r;
+}
+
+float brush_hash(vec2 p) {
+	p = fract(p * vec2(123.34, 456.21) + vec2(brush_noise_seed * 0.013, brush_noise_seed * 0.017));
+	p += dot(p, p + 45.32);
+	return fract(p.x * p.y);
+}
+
+float brush_value_noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	float a = brush_hash(i);
+	float b = brush_hash(i + vec2(1.0, 0.0));
+	float c = brush_hash(i + vec2(0.0, 1.0));
+	float d = brush_hash(i + vec2(1.0, 1.0));
+	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float brush_noise_at(vec2 world_xz) {
+	vec2 sc = max(brush_noise_scale, vec2(0.1));
+	vec2 p = world_xz / sc;
+	float n = 0.0;
+	float a = 0.5;
+	for (int o = 0; o < 3; o++) {
+		n += a * (brush_value_noise(p) * 2.0 - 1.0);
+		p *= 2.0;
+		a *= 0.5;
+	}
+	return clamp(n * max(brush_noise_contrast, 0.1), -1.0, 1.0);
 }
 
 void vertex() {
@@ -152,6 +193,16 @@ void fragment() {
 		vec3 slope_col = mix(vec3(0.16, 0.28, 0.72), vec3(0.95, 0.95, 0.95), clamp(slope * 3.0, 0.0, 1.0));
 		ground = mix(ground, slope_col, 0.55);
 	}
+	if (show_ai_traversable || show_buildable) {
+		// Gradient magnitude vs tan(angle), same as BzHg2.slope / buildable_mask.
+		float grad = length(vec2((h_r - h_l) / (2.0 * cell_m), (h_u - h_d) / (2.0 * cell_m)));
+		if (show_ai_traversable && grad <= TRAVERSE_SLOPE) {
+			ground = mix(ground, vec3(0.95, 0.82, 0.15), 0.40);
+		}
+		if (show_buildable && grad <= BUILDABLE_SLOPE) {
+			ground = mix(ground, vec3(0.20, 0.78, 0.28), 0.45);
+		}
+	}
 	float h = texture(height_tex, v_uv).r;
 	// Void cells (raw height 0) hatch only in the diagnostic flat-colour
 	// view; with the atlas active the game just draws their tiles.
@@ -178,7 +229,11 @@ void fragment() {
 			float edge = abs(dist - brush_radius);
 			float ring = 1.0 - smoothstep(0.0, 2.5, edge);
 			float inner = 1.0 - clamp(dist / max(brush_radius, 0.001), 0.0, 1.0);
-			float fill = pow(inner, mix(1.0, 0.4, brush_falloff)) * 0.22;
+			float fill = pow(inner, mix(1.0, 0.4, 1.0 - brush_falloff)) * 0.22;
+			if (show_brush_noise) {
+				float npat = brush_noise_at(vec2(v_world.x, v_world.z));
+				fill *= 0.18 + 0.82 * (npat * 0.5 + 0.5);
+			}
 			acc = max(acc, max(ring, fill));
 		}
 		ground = mix(ground, vec3(0.95, 0.85, 0.25), acc);

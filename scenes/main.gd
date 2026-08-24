@@ -95,10 +95,20 @@ var _measure_from: Vector3 = Vector3.INF
 var _measure_to: Vector3 = Vector3.INF
 var _measure_mesh: MeshInstance3D
 var _aipath_bar: HBoxContainer
+var _btn_place: Button
+var _btn_select: Button
 var _btn_add_path: Button
 var _btn_del_path: Button
 var _btn_add_pt: Button
 var _btn_del_pt: Button
+var _place_pressing: bool = false
+var _place_aiming: bool = false
+var _place_from: Vector3 = Vector3.ZERO
+var _place_from_screen: Vector2 = Vector2.ZERO
+var _place_normal: Vector3 = Vector3.UP
+var _minimap_hovered: bool = false
+var _clone_hint: Label
+var _clone_marker: MeshInstance3D
 var _aipath_dragging: bool = false
 var _aipath_drag_path: int = -1
 var _aipath_drag_point: int = -1
@@ -208,6 +218,17 @@ func _wire() -> void:
 	_top.frame_requested.connect(camera_frame)
 	_top.map_mode_requested.connect(_toggle_map_mode)
 	_viewp.view_changed.connect(_apply_view_settings)
+	if Settings.has_signal("prefs_changed") and not Settings.prefs_changed.is_connected(_on_prefs_changed):
+		Settings.prefs_changed.connect(_on_prefs_changed)
+	if _prefs != null and _prefs.has_signal("visibility_changed"):
+		if not _prefs.visibility_changed.is_connected(_update_camera_controls):
+			_prefs.visibility_changed.connect(_update_camera_controls)
+	if _file_dialog != null and _file_dialog.has_signal("visibility_changed"):
+		if not _file_dialog.visibility_changed.is_connected(_update_camera_controls):
+			_file_dialog.visibility_changed.connect(_update_camera_controls)
+	if _save_dialog != null and _save_dialog.has_signal("visibility_changed"):
+		if not _save_dialog.visibility_changed.is_connected(_update_camera_controls):
+			_save_dialog.visibility_changed.connect(_update_camera_controls)
 	if _status.has_signal("goto_submitted"):
 		_status.goto_submitted.connect(_on_goto_submitted)
 	_palette.class_armed.connect(func(rec):
@@ -271,6 +292,7 @@ func _wire() -> void:
 	UndoStack.changed.connect(_refresh_map_label)
 	ToolState.tool_changed.connect(_on_tool_state)
 	ToolState.brush_changed.connect(_sync_sculpt)
+	ToolState.brush_changed.connect(_refresh_clone_overlay)
 	ToolState.armed_changed.connect(func():
 		if ToolState.armed.is_empty():
 			_objects.set_ghost(false, {}, MapState.field, Vector3.UP)
@@ -300,6 +322,11 @@ func _wire() -> void:
 	_refresh_aipath_bar()
 	_install_selection_gizmo()
 	_install_command_palette()
+	_install_clone_overlay()
+	_hide_rail_view_toggles()
+	_pin_minimap_overlay()
+	_refresh_tool_status(ToolState.tool)
+	_update_camera_controls()
 
 
 func _process(_delta: float) -> void:
@@ -330,6 +357,10 @@ func _process(_delta: float) -> void:
 		_finish_aipath_drag()
 	elif _aipath_dragging:
 		_update_aipath_drag()
+	if _place_pressing and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		_finish_place_gesture()
+	elif _place_pressing:
+		_update_place_aim()
 	if _ramp_dragging and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		_finish_ramp_drag()
 	elif _ramp_dragging:
@@ -342,9 +373,11 @@ func _process(_delta: float) -> void:
 	_sync_gizmo()
 	if ui_tick and _objects and _objects.has_method("refresh_labels"):
 		_objects.refresh_labels(_camera)
+	if ui_tick:
+		_refresh_clone_overlay()
 	var over_view := _center.get_global_rect().has_point(get_global_mouse_position())
 	if not over_view:
-		_terrain.set_brush(false, Vector2.ZERO, 0.0, 0.0, false)
+		_set_brush_cursor(false, Vector2.ZERO, 0.0, 0.0, false)
 		_update_select_hover(false)
 		_flush_live_gpu()
 		return
@@ -363,18 +396,13 @@ func _process(_delta: float) -> void:
 		])
 		var sculpting := ToolState.is_mask_painting() or ToolState.is_brush_tool(ToolState.tool)
 		if sculpting:
-			_terrain.set_brush(true, Vector2(p.x, p.z), ToolState.radius_m, ToolState.falloff, ToolState.shape == "square")
+			_set_brush_cursor(true, Vector2(p.x, p.z), ToolState.radius_m, ToolState.falloff, ToolState.shape == "square")
 		elif ToolState.tool == "place" and ToolState.effective_symmetry() != ToolState.SYMMETRY_OFF:
-			_terrain.set_brush(true, Vector2(p.x, p.z), 12.0, 0.35, false)
+			_set_brush_cursor(true, Vector2(p.x, p.z), 12.0, 0.35, false)
 		else:
-			_terrain.set_brush(false, Vector2.ZERO, 0.0, 0.0, false)
-		if ToolState.tool == "place" and not ToolState.armed.is_empty():
-			var ghost := ToolState.armed.duplicate()
-			var snapped := EditActions.snap_world_xz(p.x, p.z)
-			ghost["x"] = snapped.x
-			ghost["z"] = snapped.y
-			ghost["y"] = MapState.field.height_at(snapped.x, snapped.y) if MapState.field else p.y
-			_objects.set_ghost(true, ghost, MapState.field, hit.get("normal", Vector3.UP))
+			_set_brush_cursor(false, Vector2.ZERO, 0.0, 0.0, false)
+		if ToolState.tool == "place" and not ToolState.armed.is_empty() and not _place_pressing:
+			_update_place_ghost(p, hit.get("normal", Vector3.UP), ToolState.place_yaw_deg)
 	if _stroking and hit.get("hit", false) and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		var p2: Vector3 = hit["position"]
 		# March along the drag segment at even spacing: a fast drag used
@@ -459,6 +487,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _measuring:
 			_clear_measure()
 			_log.call("measure cancelled")
+		if _place_pressing:
+			_cancel_place_gesture()
 		ToolState.clear_armed()
 		if ToolState.mask_paint:
 			ToolState.set_mask_paint(false)
@@ -568,10 +598,12 @@ func _apply_keymap_action(action: String) -> void:
 
 
 func _on_view_gui_input(event: InputEvent) -> void:
+	if _minimap_hovered:
+		return
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index in [MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
-			_camera.handle_event(event)
+			_forward_camera_event(event)
 			accept_event()
 			return
 		if mb.button_index == MOUSE_BUTTON_LEFT:
@@ -586,6 +618,8 @@ func _on_view_gui_input(event: InputEvent) -> void:
 				if _measuring:
 					_finish_measure()
 				_on_lmb_up()
+				if _place_pressing:
+					_finish_place_gesture()
 				if _gizmo_dragging:
 					_finish_gizmo_drag()
 				if _aipath_dragging:
@@ -634,10 +668,13 @@ func _on_view_gui_input(event: InputEvent) -> void:
 		# banked here — the motion event is the only place it is reported.
 		_sculpt.set_pressure((event as InputEventMouseMotion).pressure)
 		if _camera.map_mode and _camera.panning:
-			_camera.handle_event(event)
+			_forward_camera_event(event)
 			accept_event()
 			return
-		if _gizmo_dragging:
+		if _place_pressing:
+			_update_place_aim()
+			accept_event()
+		elif _gizmo_dragging:
 			_update_gizmo_drag()
 			accept_event()
 		elif _aipath_dragging:
@@ -654,12 +691,12 @@ func _on_view_gui_input(event: InputEvent) -> void:
 				_marquee.queue_redraw()
 			accept_event()
 		elif _camera.looking or _camera.orbiting or _camera.pan_dragging:
-			_camera.handle_event(event)
+			_forward_camera_event(event)
 			accept_event()
 		else:
 			# The camera also owns the buttonless modifier moves
 			# (Ctrl+move orbit, Shift+move pan); it ignores plain motion.
-			_camera.handle_event(event)
+			_forward_camera_event(event)
 
 
 func _on_lmb_down(p: Vector3, hit: Dictionary, shift: bool, alt: bool = false, ctrl: bool = false) -> void:
@@ -681,11 +718,12 @@ func _on_lmb_down(p: Vector3, hit: Dictionary, shift: bool, alt: bool = false, c
 				EditActions.delete_selected(_log)
 				_on_objects_mutated()
 			return
-		EditActions.place_at(p, hit.get("normal", Vector3.UP), true, _log)
+		_begin_place_gesture(p, hit)
 		return
 	if ToolState.tool == "clone" and ctrl:
 		ToolState.set_clone_source(p.x, p.z)
 		_log.call("clone source %.1f, %.1f" % [p.x, p.z])
+		_refresh_clone_overlay()
 		return
 	if ToolState.tool == "setangle" and ctrl:
 		ToolState.set_angle_origin(p.x, p.z)
@@ -894,9 +932,13 @@ func _on_tool_state(name: String) -> void:
 	_sculpt.mode = name
 	# TopBar subscribes to ToolState.tool_changed itself.
 	_apply_grid()
+	_refresh_tool_status(name)
+	_refresh_aipath_bar()
+	_refresh_clone_overlay()
 	if name != "ramp":
 		_cancel_ramp_drag()
 	if name != "place":
+		_cancel_place_gesture()
 		_objects.set_ghost(false, {}, MapState.field, Vector3.UP)
 	if name != "select":
 		_cancel_gizmo_drag()
@@ -967,7 +1009,7 @@ func _sync_sculpt() -> void:
 
 func _apply_grid() -> void:
 	if _terrain.has_method("set_show_grid"):
-		_terrain.set_show_grid(_show_grid or ToolState.tool == "paint")
+		_terrain.set_show_grid(_show_grid)
 
 
 func _pick() -> Dictionary:
@@ -1250,6 +1292,15 @@ func _wire_minimap() -> void:
 	if _terrain != null and "ranges" in _terrain:
 		_minimap.set_range_source(_terrain.ranges)
 	_minimap.set_findings(MapState.findings)
+	if _minimap.has_signal("hover_changed"):
+		if not _minimap.hover_changed.is_connected(_on_minimap_hover):
+			_minimap.hover_changed.connect(_on_minimap_hover)
+	if not _minimap.mouse_entered.is_connected(_on_minimap_mouse_entered):
+		_minimap.mouse_entered.connect(_on_minimap_mouse_entered)
+	if not _minimap.mouse_exited.is_connected(_on_minimap_mouse_exited):
+		_minimap.mouse_exited.connect(_on_minimap_mouse_exited)
+	_pin_minimap_overlay()
+	_minimap.visible = MapState.has_session
 
 
 ## The palette is a Window built in code, so the shell owns its lifetime.
@@ -1673,10 +1724,13 @@ func _draw_ramp_guide() -> void:
 
 func _on_session_changed() -> void:
 	_cancel_gizmo_drag()
+	_cancel_place_gesture()
 	if _gizmo:
 		_gizmo.hide_gizmo()
 	if _compass:
 		_compass.visible = MapState.has_session
+	if _minimap:
+		_minimap.visible = MapState.has_session
 	if _top.has_method("set_map_mode"):
 		_top.set_map_mode(_camera.map_mode)
 	_refresh_start_screen()
@@ -1693,6 +1747,9 @@ func _on_session_changed() -> void:
 	_refresh_selection_overlay()
 	_apply_view_settings()
 	_apply_world_lighting()
+	_refresh_clone_overlay()
+	_refresh_aipath_bar()
+	_update_camera_controls()
 	if not MapState.has_session:
 		return
 	if _terrain.has_method("rebuild"):
@@ -1761,6 +1818,7 @@ func _apply_view_settings() -> void:
 	_fill_inspector()
 	if _terrain and _terrain.has_method("set_water_visible"):
 		_terrain.set_water_visible(Settings.view_water)
+	_apply_terrain_view_overlays()
 	_apply_plants_view()
 	_apply_sky_view()
 	_apply_balance_view()
@@ -1916,9 +1974,20 @@ func _on_compass_draw() -> void:
 		if font:
 			var txt := str(arm["id"])
 			var sz := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+			var pos := label_at - Vector2(sz.x * 0.5, -sz.y * 0.25)
+			_compass.draw_string_outline(
+				font,
+				pos,
+				txt,
+				HORIZONTAL_ALIGNMENT_LEFT,
+				-1,
+				fs,
+				4,
+				Color(0, 0, 0, 1),
+			)
 			_compass.draw_string(
 				font,
-				label_at - Vector2(sz.x * 0.5, -sz.y * 0.25),
+				pos,
 				txt,
 				HORIZONTAL_ALIGNMENT_LEFT,
 				-1,
@@ -2096,10 +2165,7 @@ func _apply_layout_settings() -> void:
 		_findings.set_collapsed(Settings.collapse_findings)
 	if _history and _history.has_method("set_collapsed"):
 		_history.set_collapsed(Settings.collapse_history)
-	_show_grid = Settings.view_grid
-	_apply_grid()
-	if _terrain and _terrain.has_method("set_slope_overlay"):
-		_terrain.set_slope_overlay(Settings.view_slope)
+	_apply_terrain_view_overlays()
 	_apply_split_offsets()
 	_apply_focus_mode()
 	if not Settings.focus_mode:
@@ -2171,6 +2237,8 @@ func _name_right_tabs() -> void:
 	if not Settings.layout_docks.is_empty():
 		DockLayout.apply(docks, Settings.layout_docks)
 	DockLayout.retitle(docks)
+	_retitle_world_tabs(docks)
+	_pin_minimap_overlay()
 	for dock_name in docks:
 		var dock: TabContainer = docks[dock_name]
 		if dock == null:
@@ -2188,7 +2256,10 @@ func _name_right_tabs() -> void:
 
 
 func _on_docks_changed() -> void:
-	DockLayout.retitle(_docks())
+	var docks := _docks()
+	DockLayout.retitle(docks)
+	_retitle_world_tabs(docks)
+	_pin_minimap_overlay()
 	_on_split_dragged()
 
 
@@ -2466,18 +2537,40 @@ func _install_aipath_overlay() -> void:
 	elif _terrain:
 		_terrain.get_parent().add_child(_aipaths)
 	_aipath_bar = HBoxContainer.new()
-	_aipath_bar.name = "AiPathBar"
+	_aipath_bar.name = "ObjectToolsBar"
 	_aipath_bar.add_theme_constant_override("separation", 6)
 	_aipath_bar.mouse_filter = Control.MOUSE_FILTER_STOP
 	_aipath_bar.position = Vector2(8, 8)
+	_aipath_bar.z_index = 12
+	_btn_place = _make_aipath_btn("Place")
+	_btn_place.name = "Place"
+	_btn_place.toggle_mode = true
+	EditorIcons.apply_button(_btn_place, "place", true)
+	_btn_select = _make_aipath_btn("Select")
+	_btn_select.name = "Select"
+	_btn_select.toggle_mode = true
+	EditorIcons.apply_button(_btn_select, "select", true)
+	_btn_place.pressed.connect(func() -> void: _set_tool("place"))
+	_btn_select.pressed.connect(func() -> void: _set_tool("select"))
+	_btn_place.toggled.connect(func(_on: bool) -> void: _refresh_aipath_bar())
+	_btn_select.toggled.connect(func(_on: bool) -> void: _refresh_aipath_bar())
 	_btn_add_path = _make_aipath_btn("Add path")
+	_btn_add_path.name = "AddPath"
 	_btn_del_path = _make_aipath_btn("Delete path")
+	_btn_del_path.name = "DeletePath"
 	_btn_add_pt = _make_aipath_btn("Add point")
+	_btn_add_pt.name = "AddPoint"
 	_btn_del_pt = _make_aipath_btn("Delete point")
+	_btn_del_pt.name = "DeletePoint"
 	_btn_add_path.pressed.connect(_on_add_aipath)
 	_btn_del_path.pressed.connect(_on_delete_aipath)
 	_btn_add_pt.pressed.connect(_on_add_aipath_point)
 	_btn_del_pt.pressed.connect(_on_delete_aipath_point)
+	_aipath_bar.add_child(_btn_place)
+	_aipath_bar.add_child(_btn_select)
+	var sep := VSeparator.new()
+	sep.name = "PathSep"
+	_aipath_bar.add_child(sep)
 	_aipath_bar.add_child(_btn_add_path)
 	_aipath_bar.add_child(_btn_del_path)
 	_aipath_bar.add_child(_btn_add_pt)
@@ -2496,9 +2589,24 @@ func _make_aipath_btn(caption: String) -> Button:
 func _refresh_aipath_bar() -> void:
 	if _aipath_bar == null:
 		return
-	var show := MapState.has_session and AiPathOverlay.enabled
+	var show := MapState.has_session
 	_aipath_bar.visible = show
+	if _btn_place:
+		_btn_place.set_pressed_no_signal(ToolState.tool == "place")
+		_btn_place.disabled = not show
+		_btn_place.tooltip_text = "Place  (%s)" % Keymap.format_action(Keymap.ACTION_PLACE)
+	if _btn_select:
+		_btn_select.set_pressed_no_signal(ToolState.tool == "select")
+		_btn_select.disabled = not show
+		_btn_select.tooltip_text = "Select  (%s)" % Keymap.format_action(Keymap.ACTION_SELECT)
 	if not show:
+		return
+	if not AiPathOverlay.enabled:
+		var why := "Turn on View → AI Paths first"
+		_set_aipath_btn(_btn_add_path, false, why)
+		_set_aipath_btn(_btn_del_path, false, why)
+		_set_aipath_btn(_btn_add_pt, false, why)
+		_set_aipath_btn(_btn_del_pt, false, why)
 		return
 	var recs: Array = MapState.active_paths()
 	var pi := MapState.selected_path_index
@@ -2789,4 +2897,352 @@ func _try_delete_aipath() -> bool:
 		_on_delete_aipath()
 		return true
 	return false
+
+
+func _begin_place_gesture(p: Vector3, hit: Dictionary) -> void:
+	_place_pressing = true
+	_place_aiming = false
+	_place_from = p
+	_place_from_screen = _viewport.get_mouse_position()
+	_place_normal = hit.get("normal", Vector3.UP)
+	_update_place_ghost(p, _place_normal, ToolState.place_yaw_deg)
+
+
+func _update_place_aim() -> void:
+	if not _place_pressing:
+		return
+	var screen := _viewport.get_mouse_position()
+	if not _place_aiming and EditActions.place_aim_exceeded(_place_from_screen, screen):
+		_place_aiming = true
+	if not _place_aiming:
+		return
+	var hit := _pick()
+	if not hit.get("hit", false):
+		return
+	var yaw := EditActions.place_aim_yaw_deg(_place_from, hit["position"])
+	if ToolState.snap_angle > 0.0:
+		yaw = SelectionGizmo.snap_angle_deg(yaw, ToolState.snap_angle)
+	ToolState.place_yaw_deg = yaw
+	_update_place_ghost(_place_from, _place_normal, yaw)
+
+
+func _finish_place_gesture() -> void:
+	if not _place_pressing:
+		return
+	_place_pressing = false
+	_place_aiming = false
+	if ToolState.tool != "place" or ToolState.armed.is_empty():
+		return
+	EditActions.place_at(_place_from, _place_normal, true, _log)
+	_on_objects_mutated()
+
+
+func _cancel_place_gesture() -> void:
+	_place_pressing = false
+	_place_aiming = false
+
+
+func _update_place_ghost(p: Vector3, normal: Vector3, yaw_deg: float) -> void:
+	if _objects == null or ToolState.armed.is_empty():
+		return
+	var ghost := ToolState.armed.duplicate()
+	var snapped := EditActions.snap_world_xz(p.x, p.z)
+	ghost["x"] = snapped.x
+	ghost["z"] = snapped.y
+	ghost["y"] = MapState.field.height_at(snapped.x, snapped.y) if MapState.field else p.y
+	ghost["yaw_deg"] = yaw_deg
+	if ObjectMarkers.classify_record(ghost) == ObjectMarkers.VIEW_BUILDINGS:
+		ghost["up_convention"] = "follow"
+	_objects.set_ghost(true, ghost, MapState.field, normal)
+
+
+func _set_brush_cursor(on: bool, center: Vector2, radius: float, falloff: float, square: bool) -> void:
+	if _terrain == null:
+		return
+	_terrain.set_brush(on, center, radius, falloff, square)
+	if not _terrain.has_method("set_brush_noise"):
+		return
+	if on and ToolState.tool == "noise":
+		_terrain.set_brush_noise(ToolState.noise_scale, ToolState.noise_contrast, ToolState.brush_seed)
+	else:
+		_terrain.set_brush_noise(0.0, 0.0, 0)
+
+
+func _apply_terrain_view_overlays() -> void:
+	_show_grid = Settings.view_grid
+	_apply_grid()
+	if _terrain == null:
+		return
+	if _terrain.has_method("set_slope_overlay"):
+		_terrain.set_slope_overlay(Settings.view_slope)
+	if _terrain.has_method("set_buildable_overlay"):
+		_terrain.set_buildable_overlay(Settings.view_buildable)
+	if _terrain.has_method("set_ai_traversable_overlay"):
+		_terrain.set_ai_traversable_overlay(Settings.view_ai_traversable)
+
+
+func _hide_rail_view_toggles() -> void:
+	if _rail == null:
+		return
+	var grid: Button = _rail.get("_grid") as Button
+	var slope: Button = _rail.get("_slope") as Button
+	if grid:
+		grid.visible = false
+	if slope:
+		slope.visible = false
+
+
+func _refresh_tool_status(tool: String = "") -> void:
+	if _status == null:
+		return
+	if tool.is_empty():
+		tool = ToolState.tool
+	var text := ""
+	if _status.has_method("tool_status_text"):
+		text = str(_status.call("tool_status_text", tool))
+	else:
+		text = _fallback_tool_status_text(tool)
+	if text.is_empty():
+		return
+	_status.set_status("info", text)
+
+
+func _fallback_tool_status_text(tool: String) -> String:
+	match tool:
+		"fly":
+			return "fly  RMB look  WASD move  wheel zoom"
+		"place":
+			return "place  LMB place  drag to aim  Shift+click delete"
+		"select":
+			return "select  LMB pick  drag marquee  gizmo to move"
+		"paint":
+			return "paint  LMB paint  Alt+LMB eyedropper"
+		"clone":
+			return "clone  Ctrl+click sample  LMB stamp"
+		"noise":
+			return "noise  LMB stamp"
+		"ramp":
+			return "ramp  drag A to B"
+		"qsel":
+			return "qsel  LMB add  Alt+LMB subtract"
+		"rsel":
+			return "rsel  drag rect  Shift add  Alt subtract"
+		"wand":
+			return "wand  click flood  Shift add  Alt subtract"
+		_:
+			return "%s  LMB sculpt" % tool
+
+
+func _on_prefs_changed() -> void:
+	Settings.apply_ui_scale(get_window())
+	_apply_layout_settings()
+	_apply_autosave()
+	_apply_view_settings()
+	_update_camera_controls()
+
+
+func _dialog_blocks_camera() -> bool:
+	if _prefs != null and _prefs.visible:
+		return true
+	if _file_dialog != null and _file_dialog.visible:
+		return true
+	if _save_dialog != null and _save_dialog.visible:
+		return true
+	return false
+
+
+func _update_camera_controls(_arg: Variant = null) -> void:
+	if _camera == null:
+		return
+	var on := not _minimap_hovered and not _dialog_blocks_camera()
+	if _camera.get("controls_enabled") == null:
+		return
+	_camera.controls_enabled = on
+
+
+func _forward_camera_event(event: InputEvent) -> void:
+	if _camera == null:
+		return
+	if _minimap_hovered or _dialog_blocks_camera():
+		return
+	_camera.handle_event(event)
+
+
+func _on_minimap_hover(on: bool) -> void:
+	_minimap_hovered = on
+	_update_camera_controls()
+
+
+func _on_minimap_mouse_entered() -> void:
+	_on_minimap_hover(true)
+
+
+func _on_minimap_mouse_exited() -> void:
+	_on_minimap_hover(false)
+
+
+func _pin_minimap_overlay() -> void:
+	if _minimap == null or _center == null:
+		return
+	if _minimap.get_parent() != _center:
+		var old := _minimap.get_parent()
+		if old:
+			old.remove_child(_minimap)
+		_center.add_child(_minimap)
+	_minimap.set_anchors_preset(Control.PRESET_BOTTOM_LEFT, false)
+	_minimap.anchor_left = 0.0
+	_minimap.anchor_right = 0.0
+	_minimap.anchor_top = 1.0
+	_minimap.anchor_bottom = 1.0
+	_minimap.offset_left = 8.0
+	_minimap.offset_top = -208.0
+	_minimap.offset_right = 208.0
+	_minimap.offset_bottom = -8.0
+	_minimap.custom_minimum_size = Vector2(200, 200)
+	_minimap.size = Vector2(200, 200)
+	_minimap.mouse_filter = Control.MOUSE_FILTER_STOP
+	_minimap.z_index = 15
+
+
+func _retitle_world_tabs(docks: Dictionary) -> void:
+	for dock_name in docks:
+		var dock: TabContainer = docks[dock_name]
+		if dock == null:
+			continue
+		for i in dock.get_tab_count():
+			if str(dock.get_tab_control(i).name) == "WorldPanel":
+				dock.set_tab_title(i, "World")
+
+
+func _install_clone_overlay() -> void:
+	if _clone_hint == null and _center != null:
+		_clone_hint = Label.new()
+		_clone_hint.name = "CloneHint"
+		_clone_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_clone_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_clone_hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		_clone_hint.add_theme_font_size_override("font_size", 12)
+		_clone_hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
+		_clone_hint.add_theme_constant_override("outline_size", 4)
+		_clone_hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM, false)
+		_clone_hint.anchor_left = 0.5
+		_clone_hint.anchor_right = 0.5
+		_clone_hint.anchor_top = 1.0
+		_clone_hint.anchor_bottom = 1.0
+		_clone_hint.offset_left = -180.0
+		_clone_hint.offset_right = 180.0
+		_clone_hint.offset_top = -28.0
+		_clone_hint.offset_bottom = -8.0
+		_clone_hint.z_index = 12
+		_center.add_child(_clone_hint)
+	if _clone_marker == null:
+		var world: Node = _terrain.get_parent() if _terrain else null
+		if world:
+			_clone_marker = MeshInstance3D.new()
+			_clone_marker.name = "CloneSourceMarker"
+			_clone_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var mat := StandardMaterial3D.new()
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.albedo_color = Color(0.95, 0.85, 0.25)
+			mat.vertex_color_use_as_albedo = true
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+			mat.disable_receive_shadows = true
+			_clone_marker.material_override = mat
+			world.add_child(_clone_marker)
+	_refresh_clone_overlay()
+
+
+func _clone_hint_text() -> String:
+	return "Ctrl+click to sample terrain"
+
+
+func _refresh_clone_overlay() -> void:
+	var clone_on := ToolState.tool == "clone"
+	if _clone_hint:
+		_clone_hint.visible = clone_on
+		if clone_on:
+			_clone_hint.text = _clone_hint_text()
+	var show_x := clone_on and ToolState.has_clone_source() and MapState.has_session
+	if _terrain != null and _terrain.has_method("set_clone_marker"):
+		if show_x:
+			_terrain.set_clone_marker(true, ToolState.clone_source_m, ToolState.radius_m)
+		else:
+			_terrain.set_clone_marker(false, Vector2.ZERO, 0.0)
+		if _clone_marker:
+			_clone_marker.visible = false
+		return
+	if _clone_marker == null:
+		return
+	_clone_marker.visible = show_x
+	if not show_x:
+		return
+	_rebuild_clone_marker_mesh()
+
+
+func _rebuild_clone_marker_mesh() -> void:
+	if _clone_marker == null:
+		return
+	var src: Vector2 = ToolState.clone_source_m
+	var radius := maxf(ToolState.radius_m, 2.0)
+	var field: HeightField = MapState.field
+	var col := Color(0.95, 0.85, 0.25)
+	var lift := 0.4
+	var width := maxf(radius * 0.04, 0.6)
+	var mesh := ImmediateMesh.new()
+	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	_clone_x_arm(mesh, src.x, src.y, Vector2(-radius, -radius), Vector2(radius, radius), width, lift, field, col)
+	_clone_x_arm(mesh, src.x, src.y, Vector2(-radius, radius), Vector2(radius, -radius), width, lift, field, col)
+	mesh.surface_end()
+	_clone_marker.mesh = mesh
+
+
+func _clone_x_arm(
+	mesh: ImmediateMesh,
+	cx: float,
+	cz: float,
+	a_off: Vector2,
+	b_off: Vector2,
+	width: float,
+	lift: float,
+	field: HeightField,
+	col: Color
+) -> void:
+	var steps := 8
+	var prev := Vector3.ZERO
+	for i in range(steps + 1):
+		var t := float(i) / float(steps)
+		var xz := a_off.lerp(b_off, t)
+		var x := cx + xz.x
+		var z := cz + xz.y
+		var y := lift
+		if field != null and field.grid_x > 1:
+			y += field.height_at(x, z)
+		var pos := Vector3(x, y, z)
+		if i > 0:
+			_clone_ribbon(mesh, prev, pos, width, col)
+		prev = pos
+
+
+func _clone_ribbon(mesh: ImmediateMesh, a: Vector3, b: Vector3, width: float, col: Color) -> void:
+	var dir := b - a
+	if dir.length_squared() < 0.0001:
+		return
+	var side := Vector3.UP.cross(dir.normalized())
+	if side.length_squared() < 0.0001:
+		side = Vector3.RIGHT
+	else:
+		side = side.normalized()
+	side *= width * 0.5
+	var a0 := a - side
+	var a1 := a + side
+	var b0 := b - side
+	var b1 := b + side
+	mesh.surface_set_color(col)
+	mesh.surface_add_vertex(a0)
+	mesh.surface_add_vertex(b0)
+	mesh.surface_add_vertex(b1)
+	mesh.surface_add_vertex(a0)
+	mesh.surface_add_vertex(b1)
+	mesh.surface_add_vertex(a1)
 

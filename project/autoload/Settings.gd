@@ -14,6 +14,10 @@ const UI_FONT_SIZE_DEFAULT := 13
 const CAM_SPEED_MIN := 0.25
 const CAM_SPEED_MAX := 4.0
 const CAM_SPEED_DEFAULT := 1.0
+## RMB fly/pan accel and drag multiplier. 1.0 reaches full 1.0× speed in 1 s.
+const CAM_ACCEL_MIN := 0.5
+const CAM_ACCEL_MAX := 6.0
+const CAM_ACCEL_DEFAULT := 1.0
 ## Buttonless Ctrl+move orbit, as a multiplier on the base rate. Ctrl is held
 ## for plenty of things that are not orbiting — Ctrl+S, Ctrl+Z, Ctrl+click to
 ## set the clone source — so every twitch while it is down turns the camera.
@@ -21,7 +25,7 @@ const CAM_SPEED_DEFAULT := 1.0
 const ORBIT_SENS_MIN := 0.05
 const ORBIT_SENS_MAX := 2.0
 const ORBIT_SENS_DEFAULT := 0.25
-const AUTOSAVE_DEFAULT_S := 30
+const AUTOSAVE_DEFAULT_S := 60
 const AUTOSAVE_CHOICES: Array[int] = [0, 15, 30, 60]
 const LAYOUT_SPLIT_BODY_DEFAULT := 252
 const LAYOUT_SPLIT_MID_DEFAULT := -280
@@ -34,8 +38,14 @@ const BRUSH_RADIUS_MAX := 400.0
 const BRUSH_RADIUS_DEFAULT := 40.0
 const BRUSH_STRENGTH_DEFAULT := 0.45
 const BRUSH_FALLOFF_DEFAULT := 0.65
+const NOISE_PARAM_MIN := 0.1
+const NOISE_PARAM_MAX := 100.0
+const NOISE_SCALE_DEFAULT := 10.0
+const NOISE_CONTRAST_DEFAULT := 1.0
 
 var game_root: String = ""
+## Extra workshop / pack folder. Empty means the default BZP pack.
+var workshop_folder: String = ""
 var last_map_dir: String = ""
 var last_save_dir: String = ""
 ## User-chosen default for Save / Save As when last_save_dir is empty.
@@ -43,6 +53,8 @@ var default_save_dir: String = ""
 var walk_mode: bool = false
 ## Fly / pan multiplier. Clamped CAM_SPEED_MIN..CAM_SPEED_MAX.
 var camera_speed_mul: float = CAM_SPEED_DEFAULT
+## Accel / drag multiplier for RMB camera translation. Clamped CAM_ACCEL_MIN..MAX.
+var camera_accel_mul: float = CAM_ACCEL_DEFAULT
 ## Buttonless Ctrl+move orbit rate. Clamped ORBIT_SENS_MIN..ORBIT_SENS_MAX.
 var orbit_sensitivity: float = ORBIT_SENS_DEFAULT
 ## Flip vertical mouse look (RMB).
@@ -73,6 +85,10 @@ var view_aipaths: bool = false
 ## Status-bar view aids (not in the View menu, but the same persistence).
 var view_grid: bool = false
 var view_slope: bool = false
+## Tint cells a constructor can build on (slope ≤ ~5°).
+var view_buildable: bool = false
+## Tint cells AI ground units can traverse (slope ≤ ~30°).
+var view_ai_traversable: bool = false
 ## View → Labels: class / label billboards above object markers.
 var view_labels: bool = false
 ## World → Fog: draw the map's fog in the viewport. Editor-side visibility
@@ -113,6 +129,9 @@ var height_feather_m: float = 2.0
 var noise_frequency: float = 0.02
 var noise_octaves: int = 3
 var noise_amplitude_m: float = 6.0
+## Noise-brush X/Y scale and contrast, each 0.1..100.
+var noise_scale: float = NOISE_SCALE_DEFAULT
+var noise_contrast: float = NOISE_CONTRAST_DEFAULT
 ## Seeds the noise field and the random-rotation stream (C6).
 var brush_seed: int = 1
 var erode_radius_m: float = 10.0
@@ -154,11 +173,13 @@ func _load() -> void:
 	if _cfg.load(PATH) != OK:
 		return
 	game_root = _cfg.get_value("paths", "game_root", "")
+	workshop_folder = str(_cfg.get_value("paths", "workshop_folder", ""))
 	last_map_dir = _cfg.get_value("paths", "last_map_dir", "")
 	last_save_dir = _cfg.get_value("paths", "last_save_dir", "")
 	default_save_dir = str(_cfg.get_value("paths", "default_save_dir", ""))
 	walk_mode = bool(_cfg.get_value("camera", "walk_mode", false))
 	camera_speed_mul = coerce_camera_speed(_cfg.get_value("camera", "speed_mul", CAM_SPEED_DEFAULT))
+	camera_accel_mul = coerce_camera_accel(_cfg.get_value("camera", "accel_mul", CAM_ACCEL_DEFAULT))
 	orbit_sensitivity = coerce_orbit_sensitivity(
 		_cfg.get_value("camera", "orbit_sensitivity", ORBIT_SENS_DEFAULT)
 	)
@@ -184,6 +205,8 @@ func _load() -> void:
 	view_aipaths = bool(_cfg.get_value("view", "aipaths", false))
 	view_grid = bool(_cfg.get_value("view", "grid", false))
 	view_slope = bool(_cfg.get_value("view", "slope", false))
+	view_buildable = bool(_cfg.get_value("view", "buildable", false))
+	view_ai_traversable = bool(_cfg.get_value("view", "ai_traversable", false))
 	view_labels = bool(_cfg.get_value("view", "labels", false))
 
 	_load_brush()
@@ -247,6 +270,7 @@ func record_recent_map(path: String) -> void:
 func save() -> void:
 	_prune_missing_recents()
 	_cfg.set_value("paths", "game_root", game_root)
+	_cfg.set_value("paths", "workshop_folder", workshop_folder)
 	_cfg.set_value("paths", "last_map_dir", last_map_dir)
 	_cfg.set_value("paths", "last_save_dir", last_save_dir)
 	_cfg.set_value("paths", "default_save_dir", default_save_dir)
@@ -254,6 +278,8 @@ func save() -> void:
 	_cfg.set_value("camera", "walk_mode", walk_mode)
 	camera_speed_mul = coerce_camera_speed(camera_speed_mul)
 	_cfg.set_value("camera", "speed_mul", camera_speed_mul)
+	camera_accel_mul = coerce_camera_accel(camera_accel_mul)
+	_cfg.set_value("camera", "accel_mul", camera_accel_mul)
 	orbit_sensitivity = coerce_orbit_sensitivity(orbit_sensitivity)
 	_cfg.set_value("camera", "orbit_sensitivity", orbit_sensitivity)
 	_cfg.set_value("camera", "invert_look", invert_look)
@@ -277,6 +303,8 @@ func save() -> void:
 	_cfg.set_value("view", "aipaths", view_aipaths)
 	_cfg.set_value("view", "grid", view_grid)
 	_cfg.set_value("view", "slope", view_slope)
+	_cfg.set_value("view", "buildable", view_buildable)
+	_cfg.set_value("view", "ai_traversable", view_ai_traversable)
 	_cfg.set_value("view", "labels", view_labels)
 
 	_save_brush()
@@ -344,6 +372,11 @@ func _load_brush() -> void:
 	noise_frequency = clampf(_cfg_float("brush", "noise_frequency", 0.02), 0.00001, 1.0)
 	noise_octaves = clampi(int(_cfg_float("brush", "noise_octaves", 3.0)), 1, 8)
 	noise_amplitude_m = maxf(_cfg_float("brush", "noise_amplitude_m", 6.0), 0.0)
+	var legacy_scale := _cfg_float("brush", "noise_scale_x", NOISE_SCALE_DEFAULT)
+	noise_scale = coerce_noise_param(_cfg_float("brush", "noise_scale", legacy_scale), NOISE_SCALE_DEFAULT)
+	noise_contrast = coerce_noise_param(
+		_cfg_float("brush", "noise_contrast", NOISE_CONTRAST_DEFAULT), NOISE_CONTRAST_DEFAULT
+	)
 	brush_seed = int(_cfg_float("brush", "seed", 1.0))
 	erode_radius_m = clampf(_cfg_float("brush", "erode_radius_m", 10.0), 5.0, 20.0)
 	erode_slack_m = maxf(_cfg_float("brush", "erode_slack_m", 3.0), 0.0)
@@ -376,6 +409,8 @@ func _save_brush() -> void:
 	_cfg.set_value("brush", "noise_frequency", noise_frequency)
 	_cfg.set_value("brush", "noise_octaves", noise_octaves)
 	_cfg.set_value("brush", "noise_amplitude_m", noise_amplitude_m)
+	_cfg.set_value("brush", "noise_scale", coerce_noise_param(noise_scale, NOISE_SCALE_DEFAULT))
+	_cfg.set_value("brush", "noise_contrast", coerce_noise_param(noise_contrast, NOISE_CONTRAST_DEFAULT))
 	_cfg.set_value("brush", "seed", brush_seed)
 	_cfg.set_value("brush", "erode_radius_m", erode_radius_m)
 	_cfg.set_value("brush", "erode_slack_m", erode_slack_m)
@@ -454,6 +489,8 @@ func layout_dict() -> Dictionary:
 		"collapse_history": collapse_history,
 		"view_grid": view_grid,
 		"view_slope": view_slope,
+		"view_buildable": view_buildable,
+		"view_ai_traversable": view_ai_traversable,
 		"view_ghost_variants": view_ghost_variants,
 		"view_balance": view_balance,
 		"view_aipaths": view_aipaths,
@@ -475,6 +512,8 @@ func apply_layout_dict(data: Dictionary) -> void:
 	collapse_history = bool(data.get("collapse_history", collapse_history))
 	view_grid = bool(data.get("view_grid", view_grid))
 	view_slope = bool(data.get("view_slope", view_slope))
+	view_buildable = bool(data.get("view_buildable", view_buildable))
+	view_ai_traversable = bool(data.get("view_ai_traversable", view_ai_traversable))
 	view_ghost_variants = bool(data.get("view_ghost_variants", view_ghost_variants))
 	view_balance = bool(data.get("view_balance", view_balance))
 	view_aipaths = bool(data.get("view_aipaths", view_aipaths))
@@ -521,6 +560,57 @@ func coerce_orbit_sensitivity(raw: Variant) -> float:
 	if not is_finite(v):
 		return ORBIT_SENS_DEFAULT
 	return clampf(v, ORBIT_SENS_MIN, ORBIT_SENS_MAX)
+
+
+func coerce_noise_param(raw: Variant, default: float) -> float:
+	var v := default
+	match typeof(raw):
+		TYPE_FLOAT, TYPE_INT:
+			v = float(raw)
+		TYPE_STRING:
+			if str(raw).is_valid_float():
+				v = float(str(raw))
+		_:
+			return default
+	if not is_finite(v):
+		return default
+	return clampf(v, NOISE_PARAM_MIN, NOISE_PARAM_MAX)
+
+
+func coerce_camera_accel(raw: Variant) -> float:
+	var v := CAM_ACCEL_DEFAULT
+	match typeof(raw):
+		TYPE_FLOAT, TYPE_INT:
+			v = float(raw)
+		TYPE_STRING:
+			if str(raw).is_valid_float():
+				v = float(str(raw))
+		_:
+			return CAM_ACCEL_DEFAULT
+	if not is_finite(v):
+		return CAM_ACCEL_DEFAULT
+	return clampf(v, CAM_ACCEL_MIN, CAM_ACCEL_MAX)
+
+
+func reset_ui_defaults() -> void:
+	## First-boot chrome: splits, docks, collapse, scale, font, console, focus.
+	ui_scale = UI_SCALE_DEFAULT
+	ui_font_size = UI_FONT_SIZE_DEFAULT
+	layout_split_body = LAYOUT_SPLIT_BODY_DEFAULT
+	layout_split_mid = LAYOUT_SPLIT_MID_DEFAULT
+	layout_split_right = LAYOUT_SPLIT_RIGHT_DEFAULT
+	layout_split_upper = LAYOUT_SPLIT_UPPER_DEFAULT
+	layout_split_lower = LAYOUT_SPLIT_LOWER_DEFAULT
+	layout_docks = {}
+	console_visible = false
+	focus_mode = false
+	collapse_palette = false
+	collapse_inspector = false
+	collapse_features = false
+	collapse_findings = false
+	collapse_history = false
+	save()
+	notify_prefs()
 
 
 func coerce_camera_speed(raw: Variant) -> float:

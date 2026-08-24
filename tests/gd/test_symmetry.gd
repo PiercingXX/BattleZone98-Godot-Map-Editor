@@ -212,7 +212,7 @@ func _paint_undo(t) -> void:
 	var sculpt := SculptTool.new()
 	sculpt.paint_material = 5
 	sculpt.radius_m = 8.0
-	sculpt.falloff = 0.0
+	sculpt.falloff = 1.0
 	sculpt.begin_stroke(MapState.field, 30.0, 30.0, true)
 	var cmd = sculpt.end_paint()
 	t.ok(cmd != null, "paint stroke produced a command")
@@ -297,7 +297,7 @@ func _ramp_undo(t) -> void:
 	var sculpt := SculptTool.new()
 	sculpt.radius_m = 10.0
 	sculpt.strength = 1.0
-	sculpt.falloff = 0.0
+	sculpt.falloff = 1.0
 	var a := Vector3(20.0, 10.0, 40.0)
 	var b := Vector3(20.0, 30.0, 80.0)
 	var logs: Array = []

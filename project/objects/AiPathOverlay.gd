@@ -5,7 +5,7 @@ class_name AiPathOverlay
 ## Session-only View toggle (same ownership as BalanceOverlay).
 static var enabled: bool = false
 
-const LIFT_M := 1.2
+const LIFT_M := 5.0
 const LABEL_LIFT_M := 10.0
 const LINE_WIDTH_M := 1.6
 const POINT_RADIUS_M := 4.5

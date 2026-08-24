@@ -9,6 +9,8 @@ const NUDGE_SHIFT_M := 5.0
 const ROTATE_DEG := 15.0
 const ROTATE_SHIFT_DEG := 90.0
 const MARQUEE_DRAG_PX := 4.0
+## Place-tool drag-to-aim: screen pixels before LMB-down becomes a yaw drag.
+const PLACE_AIM_DEADZONE_PX := 20.0
 ## Select-tool query syntax. Also the LineEdit tooltip and help extra.
 const OBJECT_QUERY_HELP := "Space-separated terms: class:<glob> (prjid, * wildcard; bare text is a class glob), team:<n>, cat:<category> (asset-index), label:<substr>. Matches the active variant; hidden view-filter categories are skipped."
 
@@ -277,6 +279,19 @@ static func select_click(markers: Node3D, camera: Camera3D, viewport: SubViewpor
 	markers.highlight(MapState.selected_ids)
 
 
+static func place_aim_exceeded(from_screen: Vector2, to_screen: Vector2) -> bool:
+	return from_screen.distance_to(to_screen) > PLACE_AIM_DEADZONE_PX
+
+
+## Battlezone yaw: 0 = +z (north), 90 = +x (east).
+static func place_aim_yaw_deg(from: Vector3, toward: Vector3) -> float:
+	var dx := toward.x - from.x
+	var dz := toward.z - from.z
+	if dx * dx + dz * dz < 0.0001:
+		return ToolState.place_yaw_deg
+	return wrap_yaw_deg(rad_to_deg(atan2(dx, dz)))
+
+
 static func place_at(p: Vector3, normal: Vector3, keep: bool, log: Callable) -> void:
 	var info: Dictionary = ToolState.armed
 	var prjid := str(info.get("prjid", ""))
@@ -288,9 +303,15 @@ static func place_at(p: Vector3, normal: Vector3, keep: bool, log: Callable) -> 
 	p.z = snapped.y
 	if ToolState.snap_grid_m > 0.0 and MapState.field != null:
 		p.y = _terrain_y(p.x, p.z)
-	var yaw0 := 0.0
-	if str(info.get("up_convention", "upright")) == "follow":
+	var is_building := ObjectMarkers.classify_record(info) == ObjectMarkers.VIEW_BUILDINGS
+	var up_conv := "follow" if is_building else str(info.get("up_convention", "upright"))
+	var yaw0 := ToolState.place_yaw_deg
+	# Follow-normal craft keep their facing from the slope, not the last aim.
+	if not is_building and up_conv == "follow":
 		yaw0 = rad_to_deg(atan2(normal.x, normal.z))
+	if ToolState.snap_angle > 0.0:
+		yaw0 = SelectionGizmo.snap_angle_deg(yaw0, ToolState.snap_angle)
+	yaw0 = wrap_yaw_deg(yaw0)
 	var team := _default_team(prjid, info)
 	var is_player := prjid.to_lower() == "player"
 	var mode := ToolState.effective_symmetry()
@@ -309,11 +330,13 @@ static func place_at(p: Vector3, normal: Vector3, keep: bool, log: Callable) -> 
 			"z": float(pose.get("z", p.z)),
 			"yaw_deg": wrap_yaw_deg(float(pose.get("yaw_deg", yaw0))),
 			"team": team, "label": "%s%s" % [prjid, MapState.next_new_id],
-			"up_convention": "upright", "pinned_y": false, "managed": false,
+			"up_convention": up_conv, "pinned_y": false, "managed": false,
 			"required": is_player,
 			"template_verified": bool(info.get("template_verified", false)),
 			"placement_mode": str(info.get("placement_mode", "runtime")),
 		}
+		if info.has("category"):
+			rec["category"] = info["category"]
 		recs.append(rec)
 	var cmd = ObjectCommandScript.new()
 	cmd.kind = ObjectCommandScript.Kind.ADD

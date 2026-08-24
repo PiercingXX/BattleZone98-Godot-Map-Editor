@@ -9,13 +9,17 @@ extends PanelContainer
 var _time: HSlider
 var _time_label: Label
 var _fog_show: CheckBox
-var _fog_start: SpinBox
-var _fog_end: SpinBox
-var _fog_break: SpinBox
+var _fog_start: HSlider
+var _fog_end: HSlider
+var _fog_break: HSlider
+var _fog_start_val: Label
+var _fog_end_val: Label
+var _fog_break_val: Label
 var _fog_color: ColorPickerButton
 var _visibility: Label
 var _syncing: bool = false
 var _time_dragging: bool = false
+var _fog_end_dragging: bool = false
 
 
 func _ready() -> void:
@@ -63,13 +67,22 @@ func _build() -> void:
 	)
 	_fog_show.toggled.connect(_on_show_fog)
 	_box.add_child(_fog_show)
-	_fog_start = _distance_spin("FogStart", "start m ", "Where the fog begins.")
-	_fog_end = _distance_spin("FogEnd", "end m ", "Full fog, and what VisibilityRange follows.")
-	_fog_break = _distance_spin(
-		"FogBreak", "break m ", "The .trn FogBreak distance, saved as written."
+	_fog_start = _distance_slider(
+		"FogStart", "Start", "Where the fog begins."
 	)
+	_fog_start_val = _fog_start.get_meta("value_label") as Label
 	_fog_start.value_changed.connect(func(v: float): _on_fog("fog_start_m", v))
-	_fog_end.value_changed.connect(func(v: float): _on_fog("fog_end_m", v))
+	_fog_end = _distance_slider(
+		"FogEnd", "End", "Full fog, and what VisibilityRange follows."
+	)
+	_fog_end_val = _fog_end.get_meta("value_label") as Label
+	_fog_end.value_changed.connect(_on_fog_end_value)
+	_fog_end.drag_started.connect(func() -> void: _fog_end_dragging = true)
+	_fog_end.drag_ended.connect(_on_fog_end_drag_ended)
+	_fog_break = _distance_slider(
+		"FogBreak", "Break", "The .trn FogBreak distance, saved as written."
+	)
+	_fog_break_val = _fog_break.get_meta("value_label") as Label
 	_fog_break.value_changed.connect(func(v: float): _on_fog("fog_break_m", v))
 
 	var color_row := HBoxContainer.new()
@@ -104,16 +117,26 @@ func _heading(caption: String) -> Label:
 	return l
 
 
-func _distance_spin(node_name: String, prefix: String, tip: String) -> SpinBox:
-	var s := SpinBox.new()
+func _distance_slider(node_name: String, caption: String, tip: String) -> HSlider:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	_box.add_child(row)
+	var cap := Label.new()
+	cap.text = caption
+	row.add_child(cap)
+	var s := HSlider.new()
 	s.name = node_name
 	s.min_value = WorldLighting.FOG_MIN_M
 	s.max_value = WorldLighting.FOG_MAX_M
 	s.step = 1.0
-	s.prefix = prefix
 	s.tooltip_text = tip
 	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_box.add_child(s)
+	row.add_child(s)
+	var val := Label.new()
+	val.name = node_name + "Value"
+	val.custom_minimum_size = Vector2(56, 0)
+	row.add_child(val)
+	s.set_meta("value_label", val)
 	return s
 
 
@@ -126,7 +149,8 @@ func refresh() -> void:
 	if not _time_dragging:
 		_time.value = WorldLighting.minutes_from_time(w.get("time", WorldLighting.TIME_DEFAULT))
 	_fog_start.value = float(w.get("fog_start_m", WorldLighting.FOG_START_DEFAULT))
-	_fog_end.value = float(w.get("fog_end_m", WorldLighting.FOG_END_DEFAULT))
+	if not _fog_end_dragging:
+		_fog_end.value = float(w.get("fog_end_m", WorldLighting.FOG_END_DEFAULT))
 	_fog_break.value = float(w.get("fog_break_m", WorldLighting.FOG_BREAK_DEFAULT))
 	_fog_color.color = MapState.fog_color()
 	_fog_show.set_pressed_no_signal(Settings.view_fog)
@@ -144,6 +168,12 @@ func _sync_labels() -> void:
 	_time_label.text = "%s · %d" % [
 		WorldLighting.format_clock(minutes), WorldLighting.time_from_minutes(minutes)
 	]
+	if _fog_start_val:
+		_fog_start_val.text = "%d m" % int(_fog_start.value)
+	if _fog_end_val:
+		_fog_end_val.text = "%d m" % int(_fog_end.value)
+	if _fog_break_val:
+		_fog_break_val.text = "%d m" % int(_fog_break.value)
 	_visibility.text = "VisibilityRange %d m — always FogEnd + %d." % [
 		int(round(WorldLighting.visibility_range(_fog_end.value))),
 		int(WorldLighting.VISIBILITY_MARGIN_M),
@@ -183,6 +213,30 @@ func _preview_sun() -> void:
 	var shell := get_tree().get_first_node_in_group("editor_shell")
 	if shell != null and shell.has_method("preview_sun_minutes"):
 		shell.preview_sun_minutes(int(_time.value))
+
+
+func _on_fog_end_value(v: float) -> void:
+	_sync_labels()
+	if _syncing:
+		return
+	# Live-update while FogEnd stays at or past FogStart. The FogEnd < FogStart
+	# clamp waits for mouse release so MapState does not pull FogStart down.
+	if v < _fog_start.value:
+		return
+	_on_fog("fog_end_m", v)
+
+
+func _on_fog_end_drag_ended(_changed: bool) -> void:
+	_fog_end_dragging = false
+	if _fog_end.value < _fog_start.value:
+		var was := _syncing
+		_syncing = true
+		_fog_end.value = _fog_start.value
+		_syncing = was
+		_sync_labels()
+	if not MapState.has_session:
+		return
+	_on_fog("fog_end_m", _fog_end.value)
 
 
 func _on_fog(key: String, value: float) -> void:

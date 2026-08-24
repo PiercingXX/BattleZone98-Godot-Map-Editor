@@ -1,7 +1,7 @@
 extends Camera3D
 class_name FlyCamera
-## RMB look, wheel zoom (Ctrl+wheel too), Shift+wheel truck, Alt+wheel orbit,
-## Ctrl+move orbit, Shift+move pan, MMB orbit, WASD fly. Map mode is north-up.
+## RMB look, wheel zoom, MMB orbit, WASD fly. Shift/Ctrl/Alt camera verbs
+## (pan, orbit, truck, sprint/slow) are fly-tool only. Map mode is north-up.
 
 signal speed_changed(mps: float)
 signal map_mode_changed(on: bool)
@@ -21,6 +21,8 @@ const WALK_CLEARANCE_M := 4.0
 ## Godot identity looks −Z (south). Yaw π faces +Z (north).
 const NORTH_YAW := PI
 const COMPASS_HUB_RATIO := 0.28
+## Seconds from rest to 1.0× default speed (and back) at accel_mul 1.0.
+const ACCEL_TIME_S := 1.0
 
 var base_speed: float = 80.0
 var looking: bool = false
@@ -33,24 +35,37 @@ var map_mode: bool = false
 var _look_sens: float = 0.003
 var _saved_3d: Dictionary = {}
 var _map_size: float = 800.0
+## Prefs / file picker / minimap hover set this false. No look, fly, or capture.
+var controls_enabled: bool = true:
+	set(v):
+		controls_enabled = v
+		if not v:
+			_halt_motion()
+## World-space WASD/QE velocity (m/s). Linear accel/drag toward wish.
+var _velocity: Vector3 = Vector3.ZERO
+## Map-mode WASD pan velocity, world XZ stored as (x, z).
+var _map_velocity: Vector2 = Vector2.ZERO
 
 
 func handle_event(event: InputEvent) -> void:
+	if not controls_enabled:
+		return
 	if map_mode:
 		_handle_map_event(event)
 		return
+	var mods := is_modifier_camera_allowed()
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
 			# Modifier+RMB drags: Shift pans the view, Ctrl/Alt orbits the
-			# pivot, plain RMB free-looks. RMB is camera-only, so single
-			# modifiers stay free of tool click bindings.
+			# pivot, plain RMB free-looks. Only the fly tool owns those
+			# modifiers so paint/clone/eyedropper can keep Ctrl/Alt/Shift.
 			looking = false
 			orbiting = false
 			pan_dragging = false
-			if mb.pressed and mb.shift_pressed:
+			if mb.pressed and mods and mb.shift_pressed:
 				pan_dragging = true
-			elif mb.pressed and (mb.ctrl_pressed or mb.alt_pressed):
+			elif mb.pressed and mods and (mb.ctrl_pressed or mb.alt_pressed):
 				orbiting = true
 			else:
 				looking = mb.pressed
@@ -63,7 +78,7 @@ func handle_event(event: InputEvent) -> void:
 			orbiting = mb.pressed
 			looking = false
 			pan_dragging = false
-			if mb.pressed and mb.shift_pressed:
+			if mb.pressed and mods and mb.shift_pressed:
 				orbiting = false
 				pan_dragging = true
 			Input.mouse_mode = (
@@ -76,9 +91,9 @@ func handle_event(event: InputEvent) -> void:
 			var dir := -1.0 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0
 			# GIMP-style modifiers: Shift+wheel trucks left/right,
 			# Alt+wheel orbits the pivot, plain and Ctrl+wheel zoom.
-			if mb.shift_pressed:
+			if mods and mb.shift_pressed:
 				_truck(dir)
-			elif mb.alt_pressed:
+			elif mods and mb.alt_pressed:
 				_orbit_step(dir)
 			else:
 				_dolly(dir)
@@ -98,14 +113,14 @@ func handle_event(event: InputEvent) -> void:
 		elif mm.button_mask == 0 and _fly_keys_down():
 			# Shift/Ctrl also modulate WASD speed; never hijack mid-flight.
 			pass
-		elif mm.button_mask == 0 and mm.ctrl_pressed:
+		elif mods and mm.button_mask == 0 and mm.ctrl_pressed:
 			# Buttonless Ctrl+move orbits the pivot, deliberately slow. Ctrl is
 			# held for things that are not orbiting, so the default is a
 			# hundredth of drag-orbit speed and Preferences can take it lower.
 			_orbit(mm.relative * BUTTONLESS_ORBIT_RATE * Settings.coerce_orbit_sensitivity(
 				Settings.orbit_sensitivity
 			))
-		elif mm.button_mask == 0 and mm.alt_pressed:
+		elif mods and mm.button_mask == 0 and mm.alt_pressed:
 			# Buttonless Alt+move pans the camera tripod-style.
 			rotate_y(look_yaw_delta(mm.relative.x, _look_sens))
 			rotation.x = clampf(
@@ -113,11 +128,16 @@ func handle_event(event: InputEvent) -> void:
 				-1.35,
 				1.35,
 			)
-		elif mm.button_mask == 0 and mm.shift_pressed:
+		elif mods and mm.button_mask == 0 and mm.shift_pressed:
 			_pan_ground(mm.relative)
 
 
+func is_modifier_camera_allowed() -> bool:
+	return controls_enabled and ToolState.tool == "fly"
+
+
 func _handle_map_event(event: InputEvent) -> void:
+	var mods := is_modifier_camera_allowed()
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_MIDDLE or mb.button_index == MOUSE_BUTTON_RIGHT:
@@ -130,7 +150,7 @@ func _handle_map_event(event: InputEvent) -> void:
 			or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN
 		):
 			var dir := -1.0 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0
-			if mb.shift_pressed:
+			if mods and mb.shift_pressed:
 				pan_by_pixels(Vector2(dir * MAP_WHEEL_PAN_PX, 0.0))
 			else:
 				zoom_to_cursor(dir)
@@ -138,12 +158,12 @@ func _handle_map_event(event: InputEvent) -> void:
 		var mmm := event as InputEventMouseMotion
 		if panning:
 			pan_by_pixels(mmm.relative)
-		elif mmm.button_mask == 0 and mmm.shift_pressed:
+		elif mods and mmm.button_mask == 0 and mmm.shift_pressed:
 			pan_by_pixels(mmm.relative)
 
 
 func begin_pan() -> void:
-	if not map_mode:
+	if not map_mode or not controls_enabled:
 		return
 	panning = true
 	looking = false
@@ -169,6 +189,13 @@ func _end_pointer_capture() -> void:
 	orbiting = false
 	pan_dragging = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func _halt_motion() -> void:
+	_end_pointer_capture()
+	panning = false
+	_velocity = Vector3.ZERO
+	_map_velocity = Vector2.ZERO
 
 
 func _dolly(sign: float) -> void:
@@ -224,11 +251,20 @@ func _orbit(rel: Vector2) -> void:
 
 
 func _process(delta: float) -> void:
+	if not controls_enabled:
+		_halt_motion()
+		if not map_mode:
+			enforce_walk_floor()
+		return
 	if map_mode:
-		if not _text_focused():
+		if _text_focused():
+			_map_velocity = Vector2.ZERO
+		else:
 			_process_map_pan(delta)
 		return
-	if not _text_focused():
+	if _text_focused():
+		_velocity = Vector3.ZERO
+	else:
 		_process_fly(delta)
 	# Unconditionally, once a frame — not inside the WASD branch above. The
 	# wheel and drag verbs move the camera between frames and never went
@@ -238,6 +274,9 @@ func _process(delta: float) -> void:
 
 
 func _process_fly(delta: float) -> void:
+	if not controls_enabled:
+		_velocity = Vector3.ZERO
+		return
 	var wish := Vector3.ZERO
 	if Input.is_key_pressed(KEY_W):
 		wish -= global_transform.basis.z
@@ -251,14 +290,22 @@ func _process_fly(delta: float) -> void:
 		wish += Vector3.UP
 	if Input.is_key_pressed(KEY_Q):
 		wish -= Vector3.UP
-	if wish.length_squared() < 0.0001:
-		return
+	var mods := is_modifier_camera_allowed()
+	var speed_mul := Settings.coerce_camera_speed(Settings.camera_speed_mul)
 	var mul := speed_multiplier(
-		Input.is_key_pressed(KEY_SHIFT),
-		Input.is_key_pressed(KEY_CTRL),
-		Settings.coerce_camera_speed(Settings.camera_speed_mul),
+		mods and Input.is_key_pressed(KEY_SHIFT),
+		mods and Input.is_key_pressed(KEY_CTRL),
+		speed_mul,
 	)
-	global_position += wish.normalized() * base_speed * mul * delta
+	var wish_vel := Vector3.ZERO
+	if wish.length_squared() >= 0.0001:
+		wish_vel = wish.normalized() * base_speed * mul
+	var accel := translation_accel(base_speed, speed_mul, Settings.camera_accel_mul)
+	_velocity = integrate_velocity(_velocity, wish_vel, accel, delta)
+	if _velocity.length_squared() < 0.0001:
+		_velocity = Vector3.ZERO
+		return
+	global_position += _velocity * delta
 
 
 ## Walk mode's promise: the eye never gets closer than WALK_CLEARANCE_M to the
@@ -275,6 +322,9 @@ func enforce_walk_floor() -> void:
 
 
 func _process_map_pan(delta: float) -> void:
+	if not controls_enabled:
+		_map_velocity = Vector2.ZERO
+		return
 	var wish := Vector2.ZERO
 	if Input.is_key_pressed(KEY_W):
 		wish.y += 1.0
@@ -284,16 +334,29 @@ func _process_map_pan(delta: float) -> void:
 		wish.x -= 1.0
 	if Input.is_key_pressed(KEY_D):
 		wish.x += 1.0
-	if wish.length_squared() < 0.0001:
-		return
+	var mods := is_modifier_camera_allowed()
+	var speed_mul := Settings.coerce_camera_speed(Settings.camera_speed_mul)
 	var mul := speed_multiplier(
-		Input.is_key_pressed(KEY_SHIFT),
-		Input.is_key_pressed(KEY_CTRL),
-		Settings.coerce_camera_speed(Settings.camera_speed_mul),
+		mods and Input.is_key_pressed(KEY_SHIFT),
+		mods and Input.is_key_pressed(KEY_CTRL),
+		speed_mul,
 	)
-	var step := wish.normalized() * base_speed * mul * delta
-	global_position.x += step.x
-	global_position.z += step.y
+	var wish_vel := Vector2.ZERO
+	if wish.length_squared() >= 0.0001:
+		wish_vel = wish.normalized() * base_speed * mul
+	var accel := translation_accel(base_speed, speed_mul, Settings.camera_accel_mul)
+	var next := integrate_velocity(
+		Vector3(_map_velocity.x, 0.0, _map_velocity.y),
+		Vector3(wish_vel.x, 0.0, wish_vel.y),
+		accel,
+		delta,
+	)
+	_map_velocity = Vector2(next.x, next.z)
+	if _map_velocity.length_squared() < 0.0001:
+		_map_velocity = Vector2.ZERO
+		return
+	global_position.x += _map_velocity.x * delta
+	global_position.z += _map_velocity.y * delta
 	pivot.x = global_position.x
 	pivot.z = global_position.z
 	_apply_map_orientation()
@@ -334,6 +397,8 @@ func top_down(width_m: float, depth_m: float) -> void:
 func set_map_mode(on: bool) -> void:
 	if map_mode == on:
 		return
+	_velocity = Vector3.ZERO
+	_map_velocity = Vector2.ZERO
 	if on:
 		_saved_3d = _pose_dict()
 		map_mode = true
@@ -544,6 +609,21 @@ static func speed_multiplier(sprint: bool, slow: bool, settings_mul: float) -> f
 	elif slow:
 		m *= 0.25
 	return m
+
+
+## m/s². At accel_mul 1.0, rest → 1.0× (base_speed * camera_speed_mul) in ACCEL_TIME_S.
+static func translation_accel(base_speed: float, camera_speed_mul: float, accel_mul: float) -> float:
+	return (base_speed * camera_speed_mul) / ACCEL_TIME_S * Settings.coerce_camera_accel(accel_mul)
+
+
+## Linear approach of vel toward wish_vel at `accel` m/s². Same rate is drag.
+static func integrate_velocity(vel: Vector3, wish_vel: Vector3, accel: float, delta: float) -> Vector3:
+	var dv := wish_vel - vel
+	var max_change := accel * maxf(delta, 0.0)
+	var d2 := dv.length_squared()
+	if d2 <= max_change * max_change:
+		return wish_vel
+	return vel + dv * (max_change / sqrt(d2))
 
 
 static func parse_goto(text: String) -> Vector2:

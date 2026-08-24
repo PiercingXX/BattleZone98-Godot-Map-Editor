@@ -127,13 +127,7 @@ func sync_poses(field: HeightField) -> void:
 		var rec := MapState.find_object(str(id))
 		if rec.is_empty():
 			continue
-		var x := float(rec.get("x", inst.position.x))
-		var z := float(rec.get("z", inst.position.z))
-		var y := float(rec.get("y", inst.position.y))
-		if field and field.grid_x > 0 and not bool(rec.get("pinned_y", false)):
-			y = field.height_at(x, z)
-		inst.position = Vector3(x, y, z)
-		inst.rotation.y = deg_to_rad(float(rec.get("yaw_deg", rad_to_deg(inst.rotation.y))))
+		_apply_record_transform(inst, rec, field)
 
 
 func rebuild(objects: Dictionary, field: HeightField) -> void:
@@ -186,10 +180,7 @@ func set_ghost(visible: bool, rec: Dictionary, field: HeightField, normal: Vecto
 	var z := float(rec.get("z", 0.0))
 	var y := field.height_at(x, z) if field else float(rec.get("y", 0.0))
 	_ghost.position = Vector3(x, y, z)
-	if rec.get("up_convention", "upright") == "follow" and normal.length_squared() > 0.01:
-		_ghost.look_at(_ghost.position + Vector3(normal.x, 0.0, normal.z) + Vector3(0.01, 0, 0), normal)
-	else:
-		_ghost.rotation = Vector3(0.0, deg_to_rad(float(rec.get("yaw_deg", 0.0))), 0.0)
+	_apply_record_orientation(_ghost, rec, field, normal)
 
 
 func highlight(ids: Array) -> void:
@@ -213,7 +204,17 @@ func preview_poses(poses: Dictionary) -> void:
 			float(pose.get("y", inst.position.y)),
 			float(pose.get("z", inst.position.z)),
 		)
-		inst.rotation.y = deg_to_rad(float(pose.get("yaw_deg", rad_to_deg(inst.rotation.y))))
+		var rec := MapState.find_object(str(key))
+		var yaw := float(pose.get("yaw_deg", rad_to_deg(inst.rotation.y)))
+		if rec.is_empty() or not follows_terrain(rec):
+			inst.rotation.y = deg_to_rad(yaw)
+		else:
+			var live := rec.duplicate()
+			live["x"] = inst.position.x
+			live["y"] = inst.position.y
+			live["z"] = inst.position.z
+			live["yaw_deg"] = yaw
+			_apply_record_orientation(inst, live, MapState.field)
 
 
 func restore_placed() -> void:
@@ -290,6 +291,68 @@ func apply_visibility() -> void:
 			_apply_fade(inst, false)
 		_sync_variant_tag(inst, rec, variant, ghosted)
 	_refresh_styles()
+
+
+static func follows_terrain(rec: Dictionary) -> bool:
+	if rec.is_empty():
+		return false
+	if str(rec.get("up_convention", "upright")) == "follow":
+		return true
+	return classify_record(rec) == VIEW_BUILDINGS
+
+
+## Yaw 0 faces +z (north), 90 faces +x; `up` is the building's local +Y.
+static func orient_basis(up: Vector3, yaw_deg: float) -> Basis:
+	var n := up
+	if n.length_squared() < 0.0001:
+		n = Vector3.UP
+	else:
+		n = n.normalized()
+	var yaw := deg_to_rad(yaw_deg)
+	var front := Vector3(sin(yaw), 0.0, cos(yaw))
+	var f := front - n * front.dot(n)
+	if f.length_squared() < 0.0001:
+		var alt := Vector3.RIGHT if absf(n.dot(Vector3.FORWARD)) > 0.9 else Vector3.FORWARD
+		f = alt - n * alt.dot(n)
+	f = f.normalized()
+	var right := n.cross(f)
+	if right.length_squared() < 0.0001:
+		right = Vector3.RIGHT
+	else:
+		right = right.normalized()
+	f = right.cross(n)
+	if f.length_squared() < 0.0001:
+		return Basis(Vector3.RIGHT, n, Vector3.FORWARD)
+	return Basis(right, n, f.normalized())
+
+
+func _apply_record_transform(inst: Node3D, rec: Dictionary, field: HeightField, normal: Vector3 = Vector3.ZERO) -> void:
+	var x := float(rec.get("x", inst.position.x))
+	var z := float(rec.get("z", inst.position.z))
+	var y := float(rec.get("y", inst.position.y))
+	if field and field.grid_x > 0 and not bool(rec.get("pinned_y", false)):
+		y = field.height_at(x, z)
+	inst.position = Vector3(x, y, z)
+	_apply_record_orientation(inst, rec, field, normal)
+
+
+func _apply_record_orientation(inst: Node3D, rec: Dictionary, field: HeightField, normal: Vector3 = Vector3.ZERO) -> void:
+	var yaw := float(rec.get("yaw_deg", 0.0))
+	if not follows_terrain(rec):
+		inst.rotation = Vector3(0.0, deg_to_rad(yaw), 0.0)
+		return
+	var n := normal
+	if n.length_squared() < 0.01:
+		n = _terrain_normal(field, float(rec.get("x", inst.position.x)), float(rec.get("z", inst.position.z)))
+	var saved := inst.scale
+	inst.basis = orient_basis(n, yaw)
+	inst.scale = saved
+
+
+static func _terrain_normal(field: HeightField, x: float, z: float) -> Vector3:
+	if field == null or field.grid_x < 2:
+		return Vector3.UP
+	return TerrainRaycast.normal_at(field, x, z)
 
 
 static func classify_record(rec: Dictionary) -> String:
@@ -616,13 +679,7 @@ func _place(rec: Dictionary, field: HeightField, ghosted: bool, variant: String)
 
 
 func _update_placed(inst: Node3D, rec: Dictionary, field: HeightField, ghosted: bool, variant: String) -> void:
-	var x := float(rec.get("x", 0.0))
-	var z := float(rec.get("z", 0.0))
-	var y := float(rec.get("y", 0.0))
-	if field and field.grid_x > 0 and not bool(rec.get("pinned_y", false)):
-		y = field.height_at(x, z)
-	inst.position = Vector3(x, y, z)
-	inst.rotation.y = deg_to_rad(float(rec.get("yaw_deg", 0.0)))
+	_apply_record_transform(inst, rec, field)
 	inst.set_meta("variant", variant)
 	inst.set_meta("ghosted", ghosted)
 	var prjid := str(rec.get("prjid", ""))

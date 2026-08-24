@@ -27,6 +27,8 @@ var _map_w: float = 0.0
 var _map_d: float = 0.0
 var _center: Vector2 = Vector2(INF, INF)
 var _show_slope: bool = false
+var _show_buildable: bool = false
+var _show_ai_traversable: bool = false
 var _show_water: bool = true
 var _mask_on: bool = false
 var _mask_tint: Color = Color(0.12, 0.32, 0.62)
@@ -42,6 +44,10 @@ var _brush_radius: float = -1.0
 var _brush_falloff: float = -1.0
 var _brush_square: bool = false
 var _brush_count: int = 0
+var _brush_noise_on: bool = false
+var _brush_noise_scale: Vector2 = Vector2(-1.0, -1.0)
+var _brush_noise_contrast: float = -1.0
+var _brush_noise_seed: float = -1.0
 
 
 func _ready() -> void:
@@ -108,6 +114,16 @@ func set_slope_overlay(on: bool) -> void:
 	_set_all("show_slope", _show_slope)
 
 
+func set_buildable_overlay(on: bool) -> void:
+	_show_buildable = on
+	_set_all("show_buildable", _show_buildable)
+
+
+func set_ai_traversable_overlay(on: bool) -> void:
+	_show_ai_traversable = on
+	_set_all("show_ai_traversable", _show_ai_traversable)
+
+
 func set_brush(on: bool, center: Vector2, radius: float, falloff: float, square: bool) -> void:
 	var pts: Array[Vector2] = []
 	if on:
@@ -119,6 +135,11 @@ func set_brush(on: bool, center: Vector2, radius: float, falloff: float, square:
 	for i in mini(4, pts.size()):
 		packed[i] = pts[i]
 	var count := mini(4, pts.size())
+	var noise_on := on and ToolState.tool == "noise"
+	var sc := Settings.coerce_noise_param(ToolState.noise_scale, Settings.NOISE_SCALE_DEFAULT)
+	var nscale := Vector2(sc, sc)
+	var ncontrast := Settings.coerce_noise_param(ToolState.noise_contrast, Settings.NOISE_CONTRAST_DEFAULT)
+	var nseed := float(ToolState.brush_seed)
 	if (
 		on == _brush_on
 		and center == _brush_center
@@ -126,6 +147,10 @@ func set_brush(on: bool, center: Vector2, radius: float, falloff: float, square:
 		and is_equal_approx(falloff, _brush_falloff)
 		and square == _brush_square
 		and count == _brush_count
+		and noise_on == _brush_noise_on
+		and nscale.is_equal_approx(_brush_noise_scale)
+		and is_equal_approx(ncontrast, _brush_noise_contrast)
+		and is_equal_approx(nseed, _brush_noise_seed)
 	):
 		return
 	if on and _brush_on and radius > 0.0 and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
@@ -139,6 +164,10 @@ func set_brush(on: bool, center: Vector2, radius: float, falloff: float, square:
 	_brush_falloff = falloff
 	_brush_square = square
 	_brush_count = count
+	_brush_noise_on = noise_on
+	_brush_noise_scale = nscale
+	_brush_noise_contrast = ncontrast
+	_brush_noise_seed = nseed
 	if _material == null:
 		return
 	_material.set_shader_parameter("brush_on", on)
@@ -148,6 +177,26 @@ func set_brush(on: bool, center: Vector2, radius: float, falloff: float, square:
 	_material.set_shader_parameter("brush_radius", radius)
 	_material.set_shader_parameter("brush_falloff", falloff)
 	_material.set_shader_parameter("brush_shape", 1 if square else 0)
+	_apply_brush_noise_params()
+
+
+func set_brush_noise(scale: float, contrast: float, p_seed: int) -> void:
+	var on := _brush_on and scale > 0.0 and ToolState.tool == "noise"
+	var sc := Settings.coerce_noise_param(scale, Settings.NOISE_SCALE_DEFAULT)
+	_brush_noise_on = on
+	_brush_noise_scale = Vector2(sc, sc)
+	_brush_noise_contrast = Settings.coerce_noise_param(contrast, Settings.NOISE_CONTRAST_DEFAULT)
+	_brush_noise_seed = float(p_seed)
+	_apply_brush_noise_params()
+
+
+func _apply_brush_noise_params() -> void:
+	if _material == null:
+		return
+	_material.set_shader_parameter("show_brush_noise", _brush_noise_on)
+	_material.set_shader_parameter("brush_noise_scale", _brush_noise_scale)
+	_material.set_shader_parameter("brush_noise_contrast", _brush_noise_contrast)
+	_material.set_shader_parameter("brush_noise_seed", _brush_noise_seed)
 
 
 func _refresh_brush_range(pts: Array[Vector2], radius: float) -> void:
@@ -314,6 +363,7 @@ func rebuild(p_field: HeightField) -> void:
 	_lut_world = ""
 	_brush_on = false
 	_brush_center = Vector2.INF
+	_brush_noise_on = false
 	_center = Vector2(INF, INF)
 	_clipmap.clear()
 	for child in get_children():
@@ -341,6 +391,9 @@ func rebuild(p_field: HeightField) -> void:
 	_material.set_shader_parameter("lod_morph", MORPH_BAND)
 	_material.set_shader_parameter("lod_center", Vector2.ZERO)
 	_material.set_shader_parameter("show_slope", _show_slope)
+	_material.set_shader_parameter("show_buildable", _show_buildable)
+	_material.set_shader_parameter("show_ai_traversable", _show_ai_traversable)
+	_material.set_shader_parameter("show_brush_noise", false)
 	_clipmap.setup(get_world_3d().scenario, _material.get_rid(), _ring_count())
 	refresh_materials()
 	set_water_level(MapState.water_level() if _show_water else -1.0)

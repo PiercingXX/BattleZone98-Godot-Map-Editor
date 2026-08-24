@@ -45,10 +45,14 @@ var limit_height: bool = false
 var height_min_m: float = 0.0
 var height_max_m: float = 409.5
 var height_feather_m: float = 2.0
-## Noise brush. Metres of amplitude; frequency is per world metre.
+## Noise brush. Amplitude is metres; scale is the period of one noise cycle.
 var noise_frequency: float = 0.02
 var noise_octaves: int = 3
 var noise_amplitude_m: float = 6.0
+var noise_scale: float = 10.0
+var noise_contrast: float = 1.0
+## Clone: absolute sampled height vs destination-relative delta.
+var clone_match_height: bool = true
 ## Seeds the noise field and the random-rotation stream. Fixed = reproducible.
 var brush_seed: int = 1
 ## Morphological erode / dilate. Slack is the height cost per cell of
@@ -431,11 +435,13 @@ func _apply_height(cur: int, w: float, x: int, z: int, field: HeightField) -> in
 			var avg := acc / n
 			return _clamp_write(int(round(lerpf(float(cur), float(avg), amt))))
 		"noise":
-			# Sampled in world metres, so the field is anchored to the map and a
-			# second pass over the same ground reinforces it instead of beating
-			# against it.
+			# Sampled in world metres / scale, so the field is anchored to the
+			# map and a second pass over the same ground reinforces it.
 			var cell := HeightField.CELL_M
-			var nse := _noise_field().get_noise_2d(float(x) * cell, float(z) * cell)
+			var sc := maxf(noise_scale, Settings.NOISE_PARAM_MIN)
+			var nse := _noise_field().get_noise_2d(
+				float(x) * cell / sc, float(z) * cell / sc
+			) * noise_contrast
 			var amp := noise_amplitude_m / HeightField.HEIGHT_SCALE
 			return _clamp_write(cur + int(round(nse * amp * amt)))
 		"erode", "dilate":
@@ -456,7 +462,7 @@ func _apply_height(cur: int, w: float, x: int, z: int, field: HeightField) -> in
 			# Source the pre-stroke grid, so a stamp overlapping its own source
 			# does not feed back into itself.
 			var src := _heights.value_at(field.heights, sx, sz)
-			var tgt := _clone_dst_base + (src - _clone_src_base)
+			var tgt := src if clone_match_height else _clone_dst_base + (src - _clone_src_base)
 			return _clamp_write(int(round(lerpf(float(cur), float(tgt), amt))))
 		_:
 			return cur
@@ -520,13 +526,18 @@ func _plane_raw(x_m: float, z_m: float) -> float:
 
 
 func _noise_field() -> FastNoiseLite:
-	var key := "%d/%.6f/%d" % [brush_seed, noise_frequency, noise_octaves]
+	var key := "%d/%.6f/%.4f/%d" % [
+		brush_seed, noise_frequency, noise_scale, noise_octaves
+	]
 	if _noise != null and _noise_key == key:
 		return _noise
 	var n := FastNoiseLite.new()
 	n.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	n.seed = brush_seed
-	n.frequency = maxf(noise_frequency, 0.00001)
+	# Sample space is world_m / scale. Default frequency 0.02 maps to 1.0 so
+	# one cycle matches the scale period; callers that only change frequency
+	# still change the field.
+	n.frequency = maxf(noise_frequency, 0.00001) / 0.02
 	n.fractal_type = FastNoiseLite.FRACTAL_FBM
 	n.fractal_octaves = clampi(noise_octaves, 1, 8)
 	_noise = n
@@ -695,6 +706,9 @@ func pull_brush_params() -> void:
 	noise_frequency = ToolState.noise_frequency
 	noise_octaves = ToolState.noise_octaves
 	noise_amplitude_m = ToolState.noise_amplitude_m
+	noise_scale = ToolState.noise_scale
+	noise_contrast = ToolState.noise_contrast
+	clone_match_height = ToolState.clone_match_height
 	brush_seed = ToolState.brush_seed
 	erode_radius_m = ToolState.erode_radius_m
 	erode_slack_m = ToolState.erode_slack_m
@@ -742,9 +756,9 @@ func _weight(cx: float, cz: float, x: float, z: float) -> float:
 	var m := _mask.sample(dx / span + 0.5, dz / span + 0.5)
 	if m <= 0.0:
 		return 0.0
-	# The tip carries the shape; falloff stays live as a hardness exponent, the
-	# same direction it pulls the analytic kernel.
-	return pow(m, lerpf(1.0, 0.35, clampf(falloff, 0.0, 1.0)))
+	# The tip carries the shape; falloff is hardness (high = hard), matching
+	# the analytic kernel.
+	return pow(m, lerpf(1.0, 0.35, clampf(1.0 - falloff, 0.0, 1.0)))
 
 
 static func brush_weight(
@@ -766,9 +780,11 @@ static func brush_weight(
 	if dist > radius:
 		return 0.0
 	var t := 1.0 - dist / maxf(radius, 0.001)
-	if fall <= 0.001:
+	# High Falloff is a hard disc; low Falloff is the cosine feather.
+	var inv := 1.0 - clampf(fall, 0.0, 1.0)
+	if inv <= 0.001:
 		return 1.0
-	return 0.5 - 0.5 * cos(PI * pow(t, lerpf(1.0, 0.35, fall)))
+	return 0.5 - 0.5 * cos(PI * pow(t, lerpf(1.0, 0.35, inv)))
 
 
 func _begin_clone(field: HeightField, cx_m: float, cz_m: float) -> void:

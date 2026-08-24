@@ -6,9 +6,8 @@ class_name BzAct
 ## `[Color] Palette` names — there is no `FogColor` key anywhere in the `.trn`.
 ## Changing fog colour therefore means shipping the map its own `.act`.
 ##
-## The palette is not ours to invent: every indexed `.map` texture on the map
-## resolves through it (F6 §4), so a generated ramp would recolour the world.
-## `with_fog` copies a real palette and overwrites one entry.
+## The palette is not generated from scratch: `with_all_fog` copies the
+## shipped template and paints every entry the fog colour.
 
 const SIZE := 768
 const ENTRIES := 256
@@ -16,6 +15,16 @@ const ENTRIES := 256
 ## Which entry the engine reads as fog. Recorded here rather than inlined so
 ## the day it turns out to be a different index it is a one-line change.
 const FOG_INDEX := 0
+
+const _TEMPLATE_RES := "res://project/backend/reference/template.act"
+const _TEMPLATE_FALLBACK_RES := "res://refs/template.act"
+
+
+static func template_path() -> String:
+	var primary := ProjectSettings.globalize_path(_TEMPLATE_RES)
+	if FileAccess.file_exists(primary):
+		return primary
+	return ProjectSettings.globalize_path(_TEMPLATE_FALLBACK_RES)
 
 
 static func read(path: String) -> Dictionary:
@@ -50,17 +59,26 @@ static func write(path: String, palette: PackedByteArray) -> Dictionary:
 	return {"ok": true}
 
 
-static func with_fog(base: PackedByteArray, color: Color) -> PackedByteArray:
-	## `base` with FOG_INDEX replaced. A base of the wrong size is refused by
-	## returning it untouched — the caller checks the size and warns.
+static func with_all_fog(base: PackedByteArray, color: Color) -> PackedByteArray:
+	## `base` with every RGB triplet set to the 8-bit quantized colour.
+	## A base of the wrong size is refused by returning it untouched — the
+	## caller checks the size and warns.
 	if base.size() != SIZE:
 		return base
 	var out := base.duplicate()
-	var at: int = FOG_INDEX * 3
-	out[at] = clampi(int(round(color.r * 255.0)), 0, 255)
-	out[at + 1] = clampi(int(round(color.g * 255.0)), 0, 255)
-	out[at + 2] = clampi(int(round(color.b * 255.0)), 0, 255)
+	var r: int = clampi(int(round(color.r * 255.0)), 0, 255)
+	var g: int = clampi(int(round(color.g * 255.0)), 0, 255)
+	var b: int = clampi(int(round(color.b * 255.0)), 0, 255)
+	for i in ENTRIES:
+		var at: int = i * 3
+		out[at] = r
+		out[at + 1] = g
+		out[at + 2] = b
 	return out
+
+
+static func with_fog(base: PackedByteArray, color: Color) -> PackedByteArray:
+	return with_all_fog(base, color)
 
 
 static func fog_color(palette: PackedByteArray) -> Color:

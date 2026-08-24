@@ -73,12 +73,12 @@ func _ops(t) -> void:
 	MapState.rect_terrain_selection(0, 0, 1, 1, MapState.SEL_SUBTRACT)
 	t.ok(MapState.selection_empty(), "subtract from empty is a no-op")
 
-	MapState.stamp_terrain_selection(20.0, 20.0, 8.0, 0.0, "circle", MapState.SEL_ADD)
+	MapState.stamp_terrain_selection(20.0, 20.0, 8.0, 1.0, "circle", MapState.SEL_ADD)
 	t.ok(not MapState.selection_empty(), "brush-select add")
 	t.eq(int(MapState.terrain_selection[4 * 16 + 4]), 255, "brush centre is full")
 	var mid := int(MapState.terrain_selection[4 * 16 + 5])
 	t.ok(mid > 0, "brush covers a neighbour")
-	MapState.stamp_terrain_selection(20.0, 20.0, 8.0, 0.0, "circle", MapState.SEL_SUBTRACT)
+	MapState.stamp_terrain_selection(20.0, 20.0, 8.0, 1.0, "circle", MapState.SEL_SUBTRACT)
 	t.ok(MapState.selection_empty() or int(MapState.terrain_selection[4 * 16 + 4]) == 0, "brush subtract")
 
 
@@ -132,7 +132,7 @@ func _constrained_stamp(t) -> void:
 	sculpt.mode = "raise"
 	sculpt.radius_m = 80.0
 	sculpt.strength = 1.0
-	sculpt.falloff = 0.0
+	sculpt.falloff = 1.0
 	sculpt.shape = "circle"
 	# Cell (4,8) and (7,8) share the same chebyshev/euclidean offset from (8,8)
 	# only if we stamp at a point equally far... stamp at (20, 40) = cell (4, 8)
@@ -199,12 +199,15 @@ func _clone_stamp(t) -> void:
 	field.heights[4 * 16 + 5] = 300
 	ToolState.set_clone_source(22.5, 22.5)  # cell (4,4)
 	var saved_mats := ToolState.clone_materials
+	var saved_match := ToolState.clone_match_height
 	ToolState.set_clone_materials(false)
+	ToolState.set_clone_match_height(false)
 	var sculpt := SculptTool.new()
 	sculpt.mode = "clone"
 	sculpt.radius_m = 12.0
 	sculpt.strength = 1.0
-	sculpt.falloff = 0.0
+	sculpt.falloff = 1.0
+	sculpt.clone_match_height = false
 	sculpt.shape = "circle"
 	# Stamp at (12,4) = 62.5, 22.5
 	sculpt.begin_stroke(field, 62.5, 22.5, false)
@@ -222,6 +225,7 @@ func _clone_stamp(t) -> void:
 	t.eq(field.heights[4 * 16 + 13], 100, "clone redo")
 	UndoStack.clear()
 	ToolState.set_clone_materials(saved_mats)
+	ToolState.set_clone_match_height(saved_match)
 	ToolState.clear_clone_source()
 
 

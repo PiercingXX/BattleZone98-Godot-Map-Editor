@@ -26,6 +26,10 @@ signal collapsed_changed(collapsed: bool)
 @onready var _falloff_val: Label = %FalloffVal
 @onready var _shape_circle: Button = %ShapeCircle
 @onready var _shape_square: Button = %ShapeSquare
+@onready var _noise_scale: HSlider = %NoiseScale
+@onready var _noise_contrast: HSlider = %NoiseContrast
+@onready var _noise_scale_val: Label = %NoiseScaleVal
+@onready var _noise_contrast_val: Label = %NoiseContrastVal
 @onready var _swatches: GridContainer = %Swatches
 @onready var _palette_section: Control = %PaletteSection
 @onready var _brush_section: Control = %BrushSection
@@ -69,6 +73,7 @@ var _mat_sel_btn: Button
 var _terrain_hint: Label
 var _clone_row: HBoxContainer
 var _clone_mats: CheckBox
+var _clone_match: CheckBox
 var _match_edges: CheckBox
 var _match_btn: Button
 var _kind_solid: Button
@@ -81,7 +86,6 @@ var _tile_grid: GridContainer
 var _tile_pick: Label
 var _tile_buttons: Array = []
 var _tile_sig: String = ""
-var _clone_hint: Label
 var _snap_grid: OptionButton
 var _snap_angle: OptionButton
 var _snap_row: HBoxContainer
@@ -103,6 +107,8 @@ func _ready() -> void:
 	_falloff.value_changed.connect(_on_falloff)
 	_shape_circle.pressed.connect(func(): _on_shape("circle"))
 	_shape_square.pressed.connect(func(): _on_shape("square"))
+	_noise_scale.value_changed.connect(_on_noise_scale)
+	_noise_contrast.value_changed.connect(_on_noise_contrast)
 	_build_swatches()
 	_build_paint_match()
 	_build_select_tools()
@@ -148,7 +154,7 @@ func set_collapsed(on: bool) -> void:
 		_hide_body()
 	else:
 		refresh_context()
-	PanelCollapse.apply_toggle(_collapse, "Palette", not _collapsed)
+	PanelCollapse.apply_toggle(_collapse, "Tool", not _collapsed)
 	collapsed_changed.emit(on)
 
 
@@ -156,7 +162,7 @@ func _install_collapse() -> void:
 	var box := get_node_or_null("Box") as VBoxContainer
 	if box == null:
 		return
-	_collapse = PanelCollapse.make_toggle("Palette", true)
+	_collapse = PanelCollapse.make_toggle("Tool", true)
 	box.add_child(_collapse)
 	box.move_child(_collapse, 0)
 	_collapse.toggled.connect(func(on: bool) -> void: set_collapsed(not on))
@@ -219,6 +225,7 @@ func refresh_context() -> void:
 	if ToolState.tool == "qsel":
 		_set_strength_visible(false)
 	_set_clone_visible(ToolState.tool == "clone")
+	_set_noise_visible(ToolState.tool == "noise")
 	if _wand_row:
 		_wand_row.visible = ToolState.tool == "wand"
 	_refresh_symmetry_item()
@@ -736,6 +743,20 @@ func _on_shape(shape: String) -> void:
 		return
 	ToolState.set_shape(shape)
 	_sync_shape_buttons()
+
+
+func _on_noise_scale(v: float) -> void:
+	if _syncing:
+		return
+	_noise_scale_val.text = "%.1f" % v
+	ToolState.set_noise_scale(v)
+
+
+func _on_noise_contrast(v: float) -> void:
+	if _syncing:
+		return
+	_noise_contrast_val.text = "%.1f" % v
+	ToolState.set_noise_contrast(v)
 
 
 func _build_symmetry() -> void:
@@ -1427,28 +1448,40 @@ func _build_clone_tools() -> void:
 	_clone_mats.toggled.connect(func(on: bool) -> void:
 		ToolState.set_clone_materials(on)
 	)
+	_clone_match = CheckBox.new()
+	_clone_match.name = "MatchHeight"
+	_clone_match.text = "Match height"
+	_clone_match.tooltip_text = "Enabled: sampled absolute height. Disabled: relative to the cursor."
+	_clone_match.focus_mode = Control.FOCUS_NONE
+	_clone_match.button_pressed = ToolState.clone_match_height
+	_clone_match.toggled.connect(func(on: bool) -> void:
+		ToolState.set_clone_match_height(on)
+	)
 	_clone_row.add_child(_clone_mats)
+	_clone_row.add_child(_clone_match)
 	_brush_section.add_child(_clone_row)
-	_clone_hint = Label.new()
-	_clone_hint.name = "CloneHint"
-	_clone_hint.visible = false
-	_clone_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_clone_hint.add_theme_color_override("font_color", Color(0.62, 0.62, 0.64, 1))
-	_clone_hint.text = "Ctrl+click sets the source (GIMP). Paint copies height deltas through the brush."
-	_brush_section.add_child(_clone_hint)
 
 
 func _set_clone_visible(on: bool) -> void:
 	if _clone_row:
 		_clone_row.visible = on
-	if _clone_hint:
-		_clone_hint.visible = on
 	if on and _clone_mats:
 		_clone_mats.set_pressed_no_signal(ToolState.clone_materials)
 		if ToolState.has_clone_source():
 			_clone_mats.tooltip_text = "Also copy material tile words from the source-relative region"
 		else:
 			_clone_mats.tooltip_text = "Ctrl+click the ground to set the clone source first"
+	if on and _clone_match:
+		_clone_match.set_pressed_no_signal(ToolState.clone_match_height)
+
+
+func _set_noise_visible(on: bool) -> void:
+	if _brush_section == null:
+		return
+	for path in ["NoiseScaleRow", "NoiseScale", "NoiseContrastRow", "NoiseContrast"]:
+		var n := _brush_section.get_node_or_null(path)
+		if n:
+			(n as CanvasItem).visible = on
 
 
 func _sel_block_reason() -> String:
@@ -1528,6 +1561,14 @@ func _sync_from_state() -> void:
 	_radius_val.text = "%d m" % int(ToolState.radius_m)
 	_strength_val.text = "%d%%" % int(ToolState.strength * 100.0)
 	_falloff_val.text = "%d%%" % int(ToolState.falloff * 100.0)
+	if _noise_scale:
+		_noise_scale.value = ToolState.noise_scale
+	if _noise_contrast:
+		_noise_contrast.value = ToolState.noise_contrast
+	if _noise_scale_val:
+		_noise_scale_val.text = "%.1f" % ToolState.noise_scale
+	if _noise_contrast_val:
+		_noise_contrast_val.text = "%.1f" % ToolState.noise_contrast
 	_sync_shape_buttons()
 	_highlight_swatch()
 	_sync_symmetry_from_state()

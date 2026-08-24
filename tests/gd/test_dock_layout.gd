@@ -37,7 +37,7 @@ func run(t) -> void:
 	DockLayout.retitle(docks)
 	t.eq(a.get_tab_title(0), "History", "titles come from the panel map")
 	t.eq(b.get_tab_title(0), "Findings")
-	t.eq(b.get_tab_title(1), "Palette")
+	t.eq(b.get_tab_title(1), "Tool")
 
 	# Unknown panels and docks are ignored, not crashed on.
 	DockLayout.apply(docks, {"DockX": {"tabs": ["Nope"]}, "Dock1": {"tabs": ["Ghost"]}})

@@ -309,22 +309,25 @@ func _view_interaction(t) -> void:
 	await t.tree.process_frame
 	t.ok(true, "drawing markers and the camera arrow completes")
 
-	# Zoom and pan.
+	# Overlay: always the full map. Wheel does not zoom; LMB hold flies.
 	t.near(view.zoom(), 1.0, 0.0001)
 	var r0: Rect2 = view.region_uv()
-	t.near(r0.size.x, 1.0, 0.0001, "unzoomed shows the whole map")
+	t.near(r0.size.x, 1.0, 0.0001, "always shows the whole map")
 	_wheel(view, m.get_center(), MOUSE_BUTTON_WHEEL_UP)
-	t.ok(view.zoom() > 1.0, "wheel zooms in")
-	var r1: Rect2 = view.region_uv()
-	t.ok(r1.size.x < 1.0, "the visible slice shrinks")
-	t.ok(r1.position.x >= -0.0001 and r1.position.x + r1.size.x <= 1.0001,
-			"the slice stays inside the map")
+	t.near(view.zoom(), 1.0, 0.0001, "wheel does not zoom")
+	t.near(view.region_uv().size.x, 1.0, 0.0001)
 	flown.clear()
 	_drag(view, m.get_center(), Vector2(30, 0))
-	t.eq(flown.size(), 0, "a drag pans, it does not fly")
-	t.ok(view.region_uv().position.x < r1.position.x, "dragging right pans west")
+	t.ok(flown.size() >= 2, "LMB hold + motion keeps flying")
+	t.near(view.region_uv().size.x, 1.0, 0.0001, "drag does not pan")
 	view.reset_view()
-	t.near(view.zoom(), 1.0, 0.0001, "reset returns to the whole map")
+	t.near(view.zoom(), 1.0, 0.0001, "reset stays on the whole map")
+
+	var hovers: Array = []
+	view.hover_changed.connect(func(on: bool) -> void: hovers.append(on))
+	view.mouse_entered.emit()
+	view.mouse_exited.emit()
+	t.eq(hovers, [true, false], "hover_changed tracks enter/exit")
 
 	view.queue_free()
 	await t.tree.process_frame
@@ -345,7 +348,12 @@ func _panel(t) -> void:
 	var view: MinimapView = panel.find_child("View", true, false)
 	t.ok(view != null, "the panel owns a view")
 	t.ok(not view.raster.ready(), "no map open, nothing to draw")
+	t.eq(panel.custom_minimum_size, Vector2(200, 200), "panel min size is 200×200")
+	t.eq(view.custom_minimum_size, Vector2(200, 200), "view min size is 200×200")
+	var head: CanvasItem = panel.find_child("Head", true, false)
+	t.ok(head != null and not head.visible, "title row is hidden for overlay use")
 	t.ok((panel.find_child("TitleIcon", true, false) as TextureRect).texture != null)
+	t.ok(panel.has_signal("hover_changed"), "panel forwards hover_changed")
 
 	var modes: Array = []
 	panel.overlay_changed.connect(func(m: int) -> void: modes.append(m))

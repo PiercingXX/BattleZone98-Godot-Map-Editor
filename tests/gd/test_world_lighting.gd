@@ -71,17 +71,9 @@ func _test_act(t, tmp: String) -> void:
 	var read: Dictionary = BzAct.read(path)
 	t.ok(bool(read.get("ok")), "read it back")
 	t.ok((read["palette"] as PackedByteArray) == base, "byte-identical")
-	var tinted := BzAct.with_fog(base, Color8(10, 20, 30))
+	var tinted := BzAct.with_all_fog(base, Color8(10, 20, 30))
 	t.eq(tinted.size(), BzAct.SIZE, "size unchanged")
-	t.eq(int(tinted[BzAct.FOG_INDEX * 3]), 10)
-	t.eq(int(tinted[BzAct.FOG_INDEX * 3 + 1]), 20)
-	t.eq(int(tinted[BzAct.FOG_INDEX * 3 + 2]), 30)
-	var untouched := true
-	for i in range(3, BzAct.SIZE):
-		if tinted[i] != base[i]:
-			untouched = false
-			break
-	t.ok(untouched, "only the fog entry changed")
+	t.eq(_solid_mismatches(tinted, Color8(10, 20, 30)), 0, "every entry is the fog colour")
 	t.ok(BzAct.fog_color(tinted).is_equal_approx(Color8(10, 20, 30)), "reads back")
 	var short_p: String = tmp.path_join("short.act")
 	_write_bytes(short_p, PackedByteArray([1, 2, 3]))
@@ -138,14 +130,14 @@ func _test_save_writes_trn(t, tmp: String) -> void:
 	var wrote: Dictionary = BzAct.read(act_path)
 	t.ok(bool(wrote.get("ok")), "and it is a valid palette")
 	t.ok(BzAct.fog_color(wrote["palette"]).is_equal_approx(Color("204080")), "carrying the fog colour")
-	t.eq(int((wrote["palette"] as PackedByteArray)[3]), 9, "every other entry is the base palette")
+	t.eq(_solid_mismatches(wrote["palette"], Color("204080")), 0, "all 256 entries are the fog colour")
 	t.ok((saved.get("regenerated", []) as Array).has("wsun.trn"), "trn reported as regenerated")
 	t.ok((saved.get("regenerated", []) as Array).has("wsun.act"), "act reported as regenerated")
 
 
 func _test_save_untouched_without_flag(t, tmp: String) -> void:
-	## The world step must not touch a file it was not asked to: no `trn` flag,
-	## no rewrite, and open→save stays byte-identical.
+	## No `trn` flag: sun/fog keys stay residue bytes except `[Color] Palette`,
+	## which always points at `{stem}.act`. The ACT still ships from the template.
 	var sess: String = tmp.path_join("world_clean")
 	var src: String = sess.path_join("residue").path_join("source")
 	DirAccess.make_dir_recursive_absolute(src)
@@ -163,10 +155,17 @@ func _test_save_untouched_without_flag(t, tmp: String) -> void:
 	var out_dir: String = tmp.path_join("world_clean_out")
 	var saved: Dictionary = BzSave.save_session(sess, out_dir)
 	t.eq(saved.get("ok"), true)
-	t.ok(_same_bytes(src.path_join("wclean.trn"), out_dir.path_join("wclean.trn")),
-		"clean .trn ships byte-identical")
-	t.ok(not (saved.get("regenerated", []) as Array).has("wclean.trn"))
-	t.ok(not FileAccess.file_exists(out_dir.path_join("wclean.act")), "no .act invented")
+	var trn_text: String = FileAccess.get_file_as_string(out_dir.path_join("wclean.trn"))
+	t.ok(trn_text.contains("Time=1200"), "untouched sun key stays residue bytes")
+	t.ok(trn_text.contains("Palette = wclean.act") or trn_text.contains("palette = wclean.act"),
+		"Palette points at the shipped {stem}.act")
+	t.ok((saved.get("regenerated", []) as Array).has("wclean.trn"), "Palette rewrite marks trn regenerated")
+	var act_path: String = out_dir.path_join("wclean.act")
+	t.ok(FileAccess.file_exists(act_path), "ships {stem}.act from the template")
+	var wrote: Dictionary = BzAct.read(act_path)
+	t.ok(bool(wrote.get("ok")), "clean-save .act is a valid palette")
+	var want := Color(str(WorldLighting.defaults()["fog_color"]))
+	t.eq(_solid_mismatches(wrote["palette"], want), 0, "clean-save .act is the default fog colour")
 
 
 func _test_panel(t) -> void:
@@ -176,18 +175,40 @@ func _test_panel(t) -> void:
 	var time_slider: HSlider = panel.find_child("SunTime", true, false)
 	t.ok(time_slider != null, "sun time slider")
 	t.eq(time_slider.max_value, float(WorldLighting.MINUTES_PER_DAY - 1))
-	var start_spin: SpinBox = panel.find_child("FogStart", true, false)
-	var end_spin: SpinBox = panel.find_child("FogEnd", true, false)
-	var break_spin: SpinBox = panel.find_child("FogBreak", true, false)
-	t.ok(start_spin != null and end_spin != null and break_spin != null, "fog distance fields")
-	t.eq(start_spin.max_value, WorldLighting.FOG_MAX_M, "fog range tops out at 1000 m")
-	t.eq(start_spin.min_value, WorldLighting.FOG_MIN_M)
+	var start_s: HSlider = panel.find_child("FogStart", true, false)
+	var end_s: HSlider = panel.find_child("FogEnd", true, false)
+	var break_s: HSlider = panel.find_child("FogBreak", true, false)
+	t.ok(start_s != null and end_s != null and break_s != null, "fog distance sliders")
+	t.eq(start_s.max_value, WorldLighting.FOG_MAX_M, "fog range tops out at 1000 m")
+	t.eq(start_s.min_value, WorldLighting.FOG_MIN_M)
+	t.eq(end_s.max_value, WorldLighting.FOG_MAX_M)
+	t.eq(break_s.min_value, WorldLighting.FOG_MIN_M)
+	t.ok(panel.find_child("FogStartValue", true, false) is Label, "FogStart has a readout")
+	t.ok(panel.find_child("FogEndValue", true, false) is Label)
+	t.ok(panel.find_child("FogBreakValue", true, false) is Label)
+	start_s.value = 200
+	end_s.value = 50
+	t.ok(end_s.value < start_s.value, "FogEnd can sit below FogStart while dragging")
+	end_s.drag_ended.emit(true)
+	t.eq(end_s.value, start_s.value, "FogEnd clamps up to FogStart on release")
 	t.ok(panel.find_child("FogColor", true, false) is ColorPickerButton, "fog colour picker")
 	var show_fog: CheckBox = panel.find_child("ShowFog", true, false)
 	t.ok(show_fog != null, "fog visibility checkbox")
 	t.ok(panel.find_child("VisibilityNote", true, false) is Label, "visibility readout")
 	panel.queue_free()
 	await t.tree.process_frame
+
+
+func _solid_mismatches(palette: PackedByteArray, color: Color) -> int:
+	var r: int = clampi(int(round(color.r * 255.0)), 0, 255)
+	var g: int = clampi(int(round(color.g * 255.0)), 0, 255)
+	var b: int = clampi(int(round(color.b * 255.0)), 0, 255)
+	var bad := 0
+	for i in BzAct.ENTRIES:
+		var at: int = i * 3
+		if int(palette[at]) != r or int(palette[at + 1]) != g or int(palette[at + 2]) != b:
+			bad += 1
+	return bad
 
 
 func _write_json(path: String, payload: Variant) -> void:

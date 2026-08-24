@@ -196,12 +196,18 @@ func _group_open_save_no_edits(zones_x: int, zones_z: int, label: String) -> voi
 	if not _expect_ok(saved, "save %s" % label):
 		return
 	var regen := _as_str_array((saved as Dictionary).get("regenerated", []))
-	_t.eq(regen, [], "%s regenerated empty on no-edits" % label)
+	for name in regen:
+		var ext := str(name).get_extension().to_lower()
+		_t.ok(ext == "trn" or ext == "act",
+			"%s no-edits only regenerates fog palette files, got %s" % [label, ",".join(regen)])
 
 	var residue := _residue_source(session)
 	_t.ok(DirAccess.dir_exists_absolute(residue), "%s residue/source" % label)
 	var mismatches: Array[String] = []
 	for name in _list_files(residue):
+		var ext := str(name).get_extension().to_lower()
+		if ext == "trn" or ext == "act":
+			continue
 		var dest := out.path_join(name)
 		if not FileAccess.file_exists(dest):
 			mismatches.append("missing %s" % name)

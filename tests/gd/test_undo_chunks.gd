@@ -110,11 +110,14 @@ func _clone_overlap(t) -> void:
 	var saved_mats := ToolState.clone_materials
 	ToolState.set_clone_source(150.0, 150.0)
 	ToolState.set_clone_materials(false)
+	var saved_match := ToolState.clone_match_height
+	ToolState.set_clone_match_height(false)
 	var sculpt := SculptTool.new()
 	sculpt.mode = "clone"
 	sculpt.radius_m = 60.0
 	sculpt.strength = 1.0
-	sculpt.falloff = 0.0
+	sculpt.falloff = 1.0
+	sculpt.clone_match_height = false
 	# Destination overlaps the source, so the kernel must read pre-stroke cells.
 	sculpt.begin_stroke(field, 190.0, 190.0, false)
 	sculpt.stamp(field, 210.0, 210.0)
@@ -131,6 +134,7 @@ func _clone_overlap(t) -> void:
 		t.eq(field.heights, after, "clone redo restores exactly")
 	UndoStack.clear()
 	ToolState.set_clone_materials(saved_mats)
+	ToolState.set_clone_match_height(saved_match)
 	if saved_src.is_finite():
 		ToolState.set_clone_source(saved_src.x, saved_src.y)
 
@@ -150,7 +154,7 @@ func _multichunk_paint(t) -> void:
 	sculpt.mode = "paint"
 	sculpt.paint_material = 5
 	sculpt.radius_m = 60.0
-	sculpt.falloff = 0.0
+	sculpt.falloff = 1.0
 	sculpt.begin_stroke(MapState.field, 200.0, 200.0, true)
 	for i in 60:
 		sculpt.stamp(MapState.field, 200.0 + float(i) * 40.0, 200.0 + float(i) * 40.0)

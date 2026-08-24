@@ -153,7 +153,7 @@ func _tool(mode: String) -> SculptTool:
 	sculpt.mode = mode
 	sculpt.radius_m = 30.0
 	sculpt.strength = 1.0
-	sculpt.falloff = 0.0
+	sculpt.falloff = 1.0
 	sculpt.shape = "circle"
 	return sculpt
 

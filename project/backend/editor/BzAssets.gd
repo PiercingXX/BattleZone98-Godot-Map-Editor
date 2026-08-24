@@ -184,6 +184,20 @@ static func build_assets(
 			for item in discovery.get("installs", []):
 				if typeof(item) == TYPE_DICTIONARY and item.get("kind") == "workshop_item":
 					packs.append(str(item.get("path", "")))
+		var extra: String = str(Settings.workshop_folder).strip_edges()
+		if extra.is_empty():
+			for candidate in [
+				root.path_join("addon").path_join("BZP"),
+				root.path_join("BZP"),
+				root.path_join("packaged_mods").path_join("BZP"),
+			]:
+				if DirAccess.dir_exists_absolute(candidate):
+					extra = candidate
+					break
+		if not extra.is_empty() and DirAccess.dir_exists_absolute(extra) and not packs.has(extra):
+			# Last pack wins prjid collisions; the chosen workshop/BZP folder
+			# is the one the mapmaker asked Preferences to use.
+			packs.append(extra)
 
 	var fingerprint := _fingerprint(root, packs)
 	if FileAccess.file_exists(index_path) and not refresh:

@@ -172,6 +172,83 @@ func set_status(kind: String, text: String) -> void:
 		_status.remove_theme_color_override("font_color")
 
 
+func set_mode_controls(mode_text: String, controls_text: String) -> void:
+	var line := mode_text.strip_edges()
+	var extra := controls_text.strip_edges()
+	if not extra.is_empty():
+		line = "%s — %s" % [line, extra]
+	set_status("info", line)
+
+
+## Shell helper: `_status.set_status("info", StatusBar.tool_status_text(ToolState.tool))`.
+static func tool_status_text(tool: String) -> String:
+	return format_tool_status(tool)
+
+
+static func format_tool_status(tool: String) -> String:
+	var id := tool.strip_edges().to_lower()
+	var hotkey := Keymap.format_action(_tool_action(id))
+	var mode := _tool_label(id)
+	if not hotkey.is_empty():
+		mode = "%s (%s)" % [mode, hotkey]
+	var extra := _tool_controls(id)
+	if extra.is_empty():
+		return mode
+	return "%s — %s" % [mode, extra]
+
+
+static func _tool_action(tool: String) -> String:
+	match tool:
+		"setheight":
+			return Keymap.ACTION_SET_HEIGHT
+		"setangle":
+			return Keymap.ACTION_SET_ANGLE
+		_:
+			return "tool." + tool
+
+
+static func _tool_label(tool: String) -> String:
+	match tool:
+		"qsel":
+			return "QSel"
+		"rsel":
+			return "RSel"
+		"setheight":
+			return "Set height"
+		"setangle":
+			return "Set angle"
+		_:
+			return tool.capitalize()
+
+
+static func _tool_controls(tool: String) -> String:
+	match tool:
+		"fly":
+			return "RMB look · WASD move"
+		"raise", "lower", "flatten", "smooth", "noise", "erode", "dilate", "setheight":
+			return "LMB paint"
+		"ramp":
+			return "drag to aim"
+		"paint":
+			return "LMB paint · Alt+LMB eyedropper"
+		"place":
+			return "click place · drag to aim · Shift+click delete"
+		"select":
+			return "click select · Shift add"
+		"clone":
+			return "Ctrl+click sample · LMB paint"
+		"qsel":
+			return "LMB add · Alt subtract"
+		"rsel":
+			return "drag rectangle · Shift add · Alt subtract"
+		"wand":
+			return "click fill · Shift add · Alt subtract"
+		"setangle":
+			return "LMB stamp · Ctrl+click origin"
+		_:
+			return "LMB"
+
+
 func set_cursor(text: String) -> void:
 	_cursor.text = text
 

@@ -166,6 +166,22 @@ offset_right = -8.0
 offset_bottom = 84.0
 mouse_filter = 0
 
+[node name="MinimapPanel" parent="Root/Body/Mid/Center" instance=ExtResource("23_minimap")]
+unique_name_in_owner = true
+visible = false
+z_index = 15
+custom_minimum_size = Vector2(200, 200)
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = -208.0
+offset_right = 208.0
+offset_bottom = -8.0
+grow_vertical = 0
+mouse_filter = 0
+
 [node name="ToastLayer" type="VBoxContainer" parent="Root/Body/Mid/Center"]
 unique_name_in_owner = true
 z_index = 40
@@ -221,10 +237,6 @@ unique_name_in_owner = true
 layout_mode = 2
 
 [node name="WorldPanel" parent="Root/Body/Mid/Right/SplitB/Dock2" instance=ExtResource("22_world")]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="MinimapPanel" parent="Root/Body/Mid/Right/SplitB/Dock2" instance=ExtResource("23_minimap")]
 unique_name_in_owner = true
 layout_mode = 2
 

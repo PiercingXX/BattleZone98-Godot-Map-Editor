@@ -45,7 +45,7 @@ func _sculpt() -> SculptTool:
 	var s := SculptTool.new()
 	s.radius_m = 10.0
 	s.strength = 1.0
-	s.falloff = 0.0
+	s.falloff = 1.0
 	return s
 
 

@@ -65,7 +65,7 @@ func _mask_weight(t) -> void:
 	var sculpt := SculptTool.new()
 	sculpt.follow_tool_state = false
 	sculpt.radius_m = 40.0
-	sculpt.falloff = 0.0
+	sculpt.falloff = 1.0
 	sculpt.shape = "circle"
 	var analytic: float = sculpt._weight(0.0, 0.0, 10.0, 0.0)
 
@@ -91,7 +91,7 @@ func _rotation(t) -> void:
 	var sculpt := SculptTool.new()
 	sculpt.follow_tool_state = false
 	sculpt.radius_m = 40.0
-	sculpt.falloff = 0.0
+	sculpt.falloff = 1.0
 	sculpt.mask_id = "chisel"
 	# The chisel is a 2:1 ellipse: at rest it is wide in x, and a quarter turn
 	# has to swap which axis reaches furthest.

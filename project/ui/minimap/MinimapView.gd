@@ -2,19 +2,15 @@ extends Control
 class_name MinimapView
 ## The minimap drawing + interaction surface. North is up, always (C8).
 ##
-## Left-click flies the camera to the clicked ground point, which is the whole
-## reason the panel exists; right-click asks for the overlay menu; wheel zooms
-## the minimap and a drag pans it once zoomed. Left-drag is disambiguated from
-## left-click by DRAG_PX, so panning never costs a stray fly.
+## Overlay: always the full map. Hold LMB to fly the camera to the world point
+## under the cursor (emits while pressed and on motion). Right-click asks for
+## the overlay menu. Hover is announced so the shell can park the 3D camera.
 
 signal fly_requested(world: Vector3)
 signal context_menu_requested(at: Vector2)
+signal hover_changed(on: bool)
 
 const MARGIN := 6.0
-const MAX_ZOOM := 8.0
-const ZOOM_STEP := 1.25
-## Pointer travel that turns a press into a pan instead of a click.
-const DRAG_PX := 4.0
 ## Camera movement below these is not worth a repaint (C17).
 const CAM_MOVE_EPS_M := 4.0
 const CAM_TURN_EPS_RAD := 0.026
@@ -43,17 +39,17 @@ var _findings: Array = []
 var _cam_pos: Vector3 = Vector3.ZERO
 var _cam_dir: Vector3 = Vector3.FORWARD
 var _has_cam: bool = false
-var _press_at: Vector2 = Vector2.ZERO
 var _pressed: bool = false
-var _dragging: bool = false
 
 
 func _ready() -> void:
 	focus_mode = Control.FOCUS_NONE
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	custom_minimum_size = Vector2(0, 140)
+	custom_minimum_size = Vector2(200, 200)
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	mouse_entered.connect(func() -> void: hover_changed.emit(true))
+	mouse_exited.connect(func() -> void: hover_changed.emit(false))
 
 
 func data() -> MinimapData:
@@ -112,15 +108,9 @@ func map_rect() -> Rect2:
 	return Rect2(inner.position + (inner.size - Vector2(w, h)) * 0.5, Vector2(w, h))
 
 
-## Visible slice of normalised map space, clamped inside [0, 1]².
+## Visible slice of normalised map space. Overlay always shows the full map.
 func region_uv() -> Rect2:
-	var s := clampf(1.0 / _zoom, 1.0 / MAX_ZOOM, 1.0)
-	var half := s * 0.5
-	return Rect2(
-		Vector2(clampf(_center.x, half, 1.0 - half) - half,
-				clampf(_center.y, half, 1.0 - half) - half),
-		Vector2(s, s)
-	)
+	return Rect2(Vector2.ZERO, Vector2.ONE)
 
 
 func norm_to_point(n: Vector2) -> Vector2:
@@ -261,72 +251,26 @@ func _gui_input(event: InputEvent) -> void:
 
 func _on_button(mb: InputEventMouseButton) -> void:
 	match mb.button_index:
-		MOUSE_BUTTON_WHEEL_UP:
-			if mb.pressed:
-				_zoom_at(mb.position, ZOOM_STEP)
-				accept_event()
-		MOUSE_BUTTON_WHEEL_DOWN:
-			if mb.pressed:
-				_zoom_at(mb.position, 1.0 / ZOOM_STEP)
-				accept_event()
 		MOUSE_BUTTON_RIGHT:
 			if mb.pressed:
 				context_menu_requested.emit(mb.position)
 				accept_event()
-		MOUSE_BUTTON_MIDDLE:
-			_pressed = mb.pressed
-			_dragging = mb.pressed
-			_press_at = mb.position
-			accept_event()
 		MOUSE_BUTTON_LEFT:
+			_pressed = mb.pressed
 			if mb.pressed:
-				_pressed = true
-				_dragging = false
-				_press_at = mb.position
-			else:
-				if _pressed and not _dragging and map_rect().has_point(mb.position):
-					_fly_to(mb.position)
-				_pressed = false
-				_dragging = false
+				_fly_to(mb.position)
 			accept_event()
 
 
 func _on_motion(mm: InputEventMouseMotion) -> void:
 	if not _pressed:
 		return
-	if not _dragging and mm.position.distance_to(_press_at) > DRAG_PX:
-		# Panning a map that fully fits would only fight the clamp, so a drag
-		# at 1x stays a (cancelled) click rather than a no-op pan.
-		if _zoom <= 1.0:
-			return
-		_dragging = true
-	if not _dragging:
-		return
-	var m := map_rect()
-	if m.size.x <= 0.0 or m.size.y <= 0.0:
-		return
-	var r := region_uv()
-	_center -= mm.relative / m.size * r.size
-	_clamp_center()
-	queue_redraw()
+	_fly_to(mm.position)
 	accept_event()
 
 
-func _zoom_at(at: Vector2, factor: float) -> void:
-	var before := point_to_norm(at)
-	_zoom = clampf(_zoom * factor, 1.0, MAX_ZOOM)
-	var after := point_to_norm(at)
-	_center += before - after
-	_clamp_center()
-	queue_redraw()
-
-
-func _clamp_center() -> void:
-	var half := clampf(1.0 / _zoom, 1.0 / MAX_ZOOM, 1.0) * 0.5
-	_center.x = clampf(_center.x, half, 1.0 - half)
-	_center.y = clampf(_center.y, half, 1.0 - half)
-
-
 func _fly_to(at: Vector2) -> void:
+	if not map_rect().has_point(at):
+		return
 	var w := point_to_world(at)
 	fly_requested.emit(Vector3(w.x, data().height_at_world(w.x, w.y), w.y))

@@ -72,10 +72,41 @@ func run(t) -> void:
 	t.eq((north >> 12) & 0xF, 5, "north edge keeps 5")
 	t.eq((north >> 8) & 0xF, 0, "north edge meets 0")
 	t.eq((north >> 7) & 1, 0, "straight edge is a cap")
+	t.eq((north >> 6) & 1, 1, "north cap keeps the edge flip")
+	t.eq((north >> 4) & 0x3, 0, "north cap rot inverted (was 2)")
+	var west: int = MapState.materials[3 * gx + 2]
+	t.eq((west >> 7) & 1, 0, "west edge is a cap")
+	t.eq((west >> 4) & 0x3, 1, "west cap rot inverted (was 3)")
+	var south: int = MapState.materials[4 * gx + 3]
+	t.eq((south >> 7) & 1, 0, "south edge is a cap")
+	t.eq((south >> 4) & 0x3, 2, "south cap rot inverted (was 0)")
+	var east: int = MapState.materials[3 * gx + 4]
+	t.eq((east >> 7) & 1, 0, "east edge is a cap")
+	t.eq((east >> 4) & 0x3, 3, "east cap rot inverted (was 1)")
 	var nw: int = MapState.materials[2 * gx + 2]
 	t.eq((nw >> 12) & 0xF, 5, "NW corner keeps 5")
 	t.eq((nw >> 8) & 0xF, 0)
 	t.eq((nw >> 7) & 1, 1, "NW outer corner is a diagonal")
+	t.eq((nw >> 6) & 1, 0, "NW corner flip inverted")
+	t.eq((nw >> 4) & 0x3, 2, "NW corner keeps identity rot")
+	var ne: int = MapState.materials[2 * gx + 4]
+	t.eq((ne >> 7) & 1, 1, "NE outer corner is a diagonal")
+	t.eq((ne >> 6) & 1, 1, "NE corner keeps unmirrored flip")
+	t.eq((ne >> 4) & 0x3, 1, "NE corner rot unchanged")
+	var sw: int = MapState.materials[4 * gx + 2]
+	t.eq((sw >> 7) & 1, 1, "SW outer corner is a diagonal")
+	t.eq((sw >> 6) & 1, 0, "SW corner flip inverted")
+	t.eq((sw >> 4) & 0x3, 3, "SW corner keeps its rot")
+	var se: int = MapState.materials[4 * gx + 4]
+	t.eq((se >> 7) & 1, 1, "SE outer corner is a diagonal")
+	t.eq((se >> 6) & 1, 1, "SE corner keeps unmirrored flip")
+	t.eq((se >> 4) & 0x3, 0, "SE corner rot unchanged")
+	t.eq(BzMat.encode_diag(5, 0, 0), BzMat.encode_entry(5, 0, 1, 0, 2), "NW diag flip inverted")
+	t.eq(BzMat.encode_diag(5, 0, 1), BzMat.encode_entry(5, 0, 1, 1, 1), "NE diag unchanged")
+	t.eq(BzMat.encode_diag(5, 0, 2), BzMat.encode_entry(5, 0, 1, 1, 0), "SE diag unchanged")
+	t.eq(BzMat.encode_diag(5, 0, 3), BzMat.encode_entry(5, 0, 1, 0, 3), "SW diag flip inverted")
+	t.eq(BzMat.autotile_neighbors(5, 0, 5, 5, 5), BzMat.encode_entry(5, 0, 0, 1, 0), "north cap rot+2")
+	t.eq(BzMat.autotile_neighbors(5, 5, 5, 5, 0), BzMat.encode_entry(5, 0, 0, 1, 1), "west cap rot+2")
 	t.eq(MapState.materials[1 * gx + 1], 0, "kitty-corner background stays solid")
 	MapState.materials.fill(0)
 	for x in range(2, 5):

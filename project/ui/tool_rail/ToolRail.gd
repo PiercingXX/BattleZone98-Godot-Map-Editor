@@ -33,11 +33,12 @@ const ACTIONS := {
 	"Setheight": Keymap.ACTION_SET_HEIGHT,
 	"Setangle": Keymap.ACTION_SET_ANGLE,
 }
-## Rail order mirrors the workflow: navigate, sculpt, paint, place, select.
+## Rail order mirrors the workflow: navigate, sculpt, paint, terrain-select.
+## Place / Select live on ObjectToolsBar, not here.
 const ORDER: PackedStringArray = [
 	"Fly", "Raise", "Lower", "Flatten", "Smooth", "Ramp", "Noise",
 	"Erode", "Dilate", "Setheight", "Setangle",
-	"Paint", "Clone", "Place", "Select", "Qsel", "Rsel", "Wand",
+	"Paint", "Clone", "Qsel", "Rsel", "Wand",
 ]
 
 var _setting_tool: bool = false

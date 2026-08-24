@@ -28,12 +28,18 @@ var _auto_60: Button
 var _auto_off: Button
 var _cam_speed: HSlider
 var _cam_label: Label
+var _cam_accel: HSlider
+var _cam_accel_label: Label
 var _orbit_sens: HSlider
 var _orbit_label: Label
 var _invert: CheckBox
 var _colorblind: CheckBox
 var _save_dir: LineEdit
 var _browse: FileDialog
+var _game_root: LineEdit
+var _game_browse: FileDialog
+var _workshop: LineEdit
+var _workshop_browse: FileDialog
 
 
 func _ready() -> void:
@@ -65,9 +71,12 @@ func refresh() -> void:
 	_sync_autosave()
 	if _cam_speed:
 		_cam_speed.value = Settings.coerce_camera_speed(Settings.camera_speed_mul)
+	if _cam_accel:
+		_cam_accel.value = Settings.coerce_camera_accel(Settings.camera_accel_mul)
 	if _orbit_sens:
 		_orbit_sens.value = Settings.coerce_orbit_sensitivity(Settings.orbit_sensitivity)
 	_sync_cam_label()
+	_sync_cam_accel_label()
 	_sync_orbit_label()
 	if _invert:
 		_invert.set_pressed_no_signal(Settings.invert_look)
@@ -78,6 +87,10 @@ func refresh() -> void:
 		if shown.is_empty():
 			shown = Settings.last_save_dir
 		_save_dir.text = shown
+	if _game_root:
+		_game_root.text = Settings.game_root
+	if _workshop:
+		_workshop.text = Settings.workshop_folder
 	_applying = false
 
 
@@ -89,10 +102,18 @@ func _build_ui() -> void:
 	margin.add_theme_constant_override("margin_top", 16)
 	margin.add_theme_constant_override("margin_bottom", 16)
 	add_child(margin)
+	var scroll := ScrollContainer.new()
+	scroll.name = "Scroll"
+	scroll.set_anchors_preset(Control.PRESET_FULL_RECT)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	margin.add_child(scroll)
 	var box := VBoxContainer.new()
 	box.name = "Box"
 	box.add_theme_constant_override("separation", 10)
-	margin.add_child(box)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(box)
 
 	box.add_child(_heading("Keyboard scheme"))
 	var scheme_row := HBoxContainer.new()
@@ -160,9 +181,13 @@ func _build_ui() -> void:
 	box.add_child(auto_row)
 	var auto_group := ButtonGroup.new()
 	_auto_15 = _radio("15s", auto_group)
+	_auto_15.name = "Auto15"
 	_auto_30 = _radio("30s", auto_group)
+	_auto_30.name = "Auto30"
 	_auto_60 = _radio("60s", auto_group)
+	_auto_60.name = "Auto60"
 	_auto_off = _radio("Off", auto_group)
+	_auto_off.name = "AutoOff"
 	_auto_15.tooltip_text = "Persist the unsaved session every 15 seconds"
 	_auto_30.tooltip_text = "Persist the unsaved session every 30 seconds"
 	_auto_60.tooltip_text = "Persist the unsaved session every 60 seconds"
@@ -196,6 +221,27 @@ func _build_ui() -> void:
 	_cam_label.name = "CameraSpeedValue"
 	_cam_label.custom_minimum_size = Vector2(48, 0)
 	cam_row.add_child(_cam_label)
+	var accel_row := HBoxContainer.new()
+	accel_row.add_theme_constant_override("separation", 8)
+	box.add_child(accel_row)
+	var accel_cap := Label.new()
+	accel_cap.text = "Acceleration multiplier"
+	accel_row.add_child(accel_cap)
+	_cam_accel = HSlider.new()
+	_cam_accel.name = "CameraAccel"
+	_cam_accel.min_value = Settings.CAM_ACCEL_MIN
+	_cam_accel.max_value = Settings.CAM_ACCEL_MAX
+	_cam_accel.step = 0.1
+	_cam_accel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_cam_accel.tooltip_text = "How quickly fly/pan speed ramps up (%.1f–%.1f×)" % [
+		Settings.CAM_ACCEL_MIN, Settings.CAM_ACCEL_MAX,
+	]
+	_cam_accel.value_changed.connect(_on_cam_accel)
+	accel_row.add_child(_cam_accel)
+	_cam_accel_label = Label.new()
+	_cam_accel_label.name = "CameraAccelValue"
+	_cam_accel_label.custom_minimum_size = Vector2(48, 0)
+	accel_row.add_child(_cam_accel_label)
 	var orbit_row := HBoxContainer.new()
 	orbit_row.add_theme_constant_override("separation", 8)
 	box.add_child(orbit_row)
@@ -260,6 +306,66 @@ func _build_ui() -> void:
 	_browse.ok_button_text = "Use this folder"
 	_browse.dir_selected.connect(_apply_save_dir)
 	add_child(_browse)
+
+	box.add_child(_heading("Battlezone Redux game path"))
+	var game_row := HBoxContainer.new()
+	game_row.add_theme_constant_override("separation", 8)
+	box.add_child(game_row)
+	_game_root = LineEdit.new()
+	_game_root.name = "GameRoot"
+	_game_root.placeholder_text = "Battlezone Redux install folder"
+	_game_root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_game_root.text_submitted.connect(_on_game_root_submitted)
+	_game_root.focus_exited.connect(_commit_game_root)
+	game_row.add_child(_game_root)
+	var game_btn := Button.new()
+	game_btn.name = "BrowseGameRoot"
+	game_btn.text = "Browse…"
+	game_btn.tooltip_text = "Choose the Battlezone Redux game folder"
+	game_btn.pressed.connect(_on_browse_game_root)
+	game_row.add_child(game_btn)
+	_game_browse = FileDialog.new()
+	_game_browse.name = "GameRootDialog"
+	_game_browse.access = FileDialog.ACCESS_FILESYSTEM
+	_game_browse.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	_game_browse.title = "Battlezone Redux game path"
+	_game_browse.ok_button_text = "Use this folder"
+	_game_browse.dir_selected.connect(_apply_game_root)
+	add_child(_game_browse)
+
+	box.add_child(_heading("Workshop folder"))
+	var ws_row := HBoxContainer.new()
+	ws_row.add_theme_constant_override("separation", 8)
+	box.add_child(ws_row)
+	_workshop = LineEdit.new()
+	_workshop.name = "WorkshopFolder"
+	_workshop.placeholder_text = "BZP (default)"
+	_workshop.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_workshop.tooltip_text = "Extra workshop / pack folder. Empty uses the default BZP pack."
+	_workshop.text_submitted.connect(_on_workshop_submitted)
+	_workshop.focus_exited.connect(_commit_workshop)
+	ws_row.add_child(_workshop)
+	var ws_btn := Button.new()
+	ws_btn.name = "BrowseWorkshop"
+	ws_btn.text = "Browse…"
+	ws_btn.tooltip_text = "Choose a workshop folder, or leave empty for BZP"
+	ws_btn.pressed.connect(_on_browse_workshop)
+	ws_row.add_child(ws_btn)
+	_workshop_browse = FileDialog.new()
+	_workshop_browse.name = "WorkshopDialog"
+	_workshop_browse.access = FileDialog.ACCESS_FILESYSTEM
+	_workshop_browse.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	_workshop_browse.title = "Workshop folder"
+	_workshop_browse.ok_button_text = "Use this folder"
+	_workshop_browse.dir_selected.connect(_apply_workshop)
+	add_child(_workshop_browse)
+
+	var reset_ui := Button.new()
+	reset_ui.name = "ResetUiDefaults"
+	reset_ui.text = "Reset UI to defaults"
+	reset_ui.tooltip_text = "Restore layout splits, docks, collapse, UI scale, font, console, and focus to first-boot"
+	reset_ui.pressed.connect(_on_reset_ui)
+	box.add_child(reset_ui)
 
 
 func _build_bindings(box: VBoxContainer) -> void:
@@ -672,6 +778,20 @@ func _on_cam_speed(v: float) -> void:
 	EditorFeedback.log("camera speed %.2f×" % next)
 
 
+func _on_cam_accel(v: float) -> void:
+	if _applying:
+		return
+	var next := Settings.coerce_camera_accel(v)
+	if is_equal_approx(Settings.camera_accel_mul, next):
+		_sync_cam_accel_label()
+		return
+	Settings.camera_accel_mul = next
+	Settings.save()
+	Settings.notify_prefs()
+	_sync_cam_accel_label()
+	EditorFeedback.log("camera accel %.1f×" % next)
+
+
 func _on_invert(on: bool) -> void:
 	if _applying:
 		return
@@ -732,6 +852,91 @@ func _apply_save_dir(path: String) -> void:
 		EditorFeedback.log("default save directory %s" % cleaned)
 
 
+func _on_browse_game_root() -> void:
+	_popup_dir(_game_browse, _game_root.text.strip_edges() if _game_root else "", Settings.game_root)
+
+
+func _on_game_root_submitted(path: String) -> void:
+	_apply_game_root(path)
+
+
+func _commit_game_root() -> void:
+	if _game_root == null or _applying:
+		return
+	_apply_game_root(_game_root.text)
+
+
+func _apply_game_root(path: String) -> void:
+	if _applying:
+		return
+	var cleaned := path.strip_edges().simplify_path()
+	if cleaned == Settings.game_root:
+		return
+	Settings.game_root = cleaned
+	Settings.save()
+	Settings.notify_prefs()
+	if _game_root:
+		_game_root.text = cleaned
+	if cleaned.is_empty():
+		EditorFeedback.log("game path cleared")
+	else:
+		EditorFeedback.log("game path %s" % cleaned)
+
+
+func _on_browse_workshop() -> void:
+	_popup_dir(
+		_workshop_browse,
+		_workshop.text.strip_edges() if _workshop else "",
+		Settings.workshop_folder
+	)
+
+
+func _on_workshop_submitted(path: String) -> void:
+	_apply_workshop(path)
+
+
+func _commit_workshop() -> void:
+	if _workshop == null or _applying:
+		return
+	_apply_workshop(_workshop.text)
+
+
+func _apply_workshop(path: String) -> void:
+	if _applying:
+		return
+	var cleaned := path.strip_edges().simplify_path()
+	if cleaned == Settings.workshop_folder:
+		return
+	Settings.workshop_folder = cleaned
+	Settings.save()
+	Settings.notify_prefs()
+	if _workshop:
+		_workshop.text = cleaned
+	if cleaned.is_empty():
+		EditorFeedback.log("workshop folder cleared (BZP default)")
+	else:
+		EditorFeedback.log("workshop folder %s" % cleaned)
+
+
+func _popup_dir(dlg: FileDialog, typed: String, fallback: String) -> void:
+	if dlg == null:
+		return
+	var start := typed if not typed.is_empty() else fallback
+	if not start.is_empty() and DirAccess.dir_exists_absolute(start):
+		dlg.current_dir = start
+	dlg.popup_centered_ratio(0.5)
+
+
+func _on_reset_ui() -> void:
+	if _applying:
+		return
+	Settings.reset_ui_defaults()
+	Settings.apply_ui_scale()
+	_apply_theme()
+	refresh()
+	EditorFeedback.log("ui reset to defaults")
+
+
 func _sync_scheme() -> void:
 	var scheme := Keymap.active_scheme()
 	if _scheme_godot:
@@ -765,6 +970,11 @@ func _sync_font_label() -> void:
 func _sync_cam_label() -> void:
 	if _cam_label:
 		_cam_label.text = "%.2f×" % Settings.coerce_camera_speed(Settings.camera_speed_mul)
+
+
+func _sync_cam_accel_label() -> void:
+	if _cam_accel_label:
+		_cam_accel_label.text = "%.1f×" % Settings.coerce_camera_accel(Settings.camera_accel_mul)
 
 
 func _sync_orbit_label() -> void:

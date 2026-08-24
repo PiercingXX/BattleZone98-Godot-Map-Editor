@@ -110,7 +110,7 @@ func _test_autotile_neighbors(t) -> void:
 	t.eq((edge >> 8) & 0xF, 0, "edge transitions to the outsider")
 	t.eq((edge >> 7) & 1, 0, "straight run is a cap")
 	t.eq((edge >> 6) & 1, 1, "cap uses the edge (flip) packing")
-	t.eq(BzMat.encode_diag(5, 0, 0), BzMat.encode_entry(5, 0, 1, 1, 2), "NW/left is identity 14")
+	t.eq(BzMat.encode_diag(5, 0, 0), BzMat.encode_entry(5, 0, 1, 0, 2), "NW is flip-inverted from identity")
 	t.eq(BzMat.encode_diag(5, 0, 1), BzMat.encode_entry(5, 0, 1, 1, 1), "NE is +90")
 	var corner: int = BzMat.autotile_neighbors(5, 0, 5, 5, 0)
 	t.eq((corner >> 12) & 0xF, 5, "corner keeps painted base")

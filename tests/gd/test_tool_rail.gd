@@ -13,27 +13,29 @@ func run(t) -> void:
 
 	for id in [
 		"Fly", "Raise", "Lower", "Flatten", "Smooth", "Ramp", "Noise",
-		"Paint", "Clone", "Place", "Select", "Qsel", "Rsel", "Wand",
+		"Paint", "Clone", "Qsel", "Rsel", "Wand",
 	]:
 		var b := _btn(rail, id)
 		t.ok(b != null, "rail has %s" % id)
 		t.ok(b.icon != null, "%s has an icon" % id)
 		t.eq(b.text, "", "%s is icon-only" % id)
 		t.eq(str(b.theme_type_variation), "ToolButton")
+	t.ok(_btn(rail, "Place") == null, "Place is not on the rail")
+	t.ok(_btn(rail, "Select") == null, "Select is not on the rail")
 
 	var tools: Array = []
 	rail.tool_selected.connect(func(n): tools.append(n))
 	_btn(rail, "Raise").pressed.emit()
-	_btn(rail, "Place").pressed.emit()
+	_btn(rail, "Clone").pressed.emit()
 	_btn(rail, "Noise").pressed.emit()
 	_btn(rail, "Qsel").pressed.emit()
 	_btn(rail, "Wand").pressed.emit()
-	t.eq(tools, ["raise", "place", "noise", "qsel", "wand"], "buttons emit lower-case names")
+	t.eq(tools, ["raise", "clone", "noise", "qsel", "wand"], "buttons emit lower-case names")
 
 	rail.set_tool("flatten")
 	t.ok(_btn(rail, "Flatten").button_pressed, "set_tool flatten presses Flat")
-	rail.set_tool("select")
-	t.ok(_btn(rail, "Select").button_pressed, "set_tool select")
+	rail.set_tool("qsel")
+	t.ok(_btn(rail, "Qsel").button_pressed, "set_tool qsel")
 	rail.set_tool("rsel")
 	t.ok(_btn(rail, "Rsel").button_pressed, "set_tool rsel")
 	rail.set_tool("clone")

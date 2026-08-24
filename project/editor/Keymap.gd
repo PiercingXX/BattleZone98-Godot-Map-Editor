@@ -292,7 +292,7 @@ by the mask.[/code]
 %s undo   %s redo   %s save   ` log   %s focus   %s this help
 Alt+1…5 recall camera bookmark     Ctrl+Alt+1…5 store
 Select + hold M and drag to measure
-Autosave every 30s by default while unsaved (Preferences… sets
+Autosave every 60s by default while unsaved (Preferences… sets
 15s / 30s / 60s / off; a crash does not lose the session;
 %s writes the map files)[/code]
 

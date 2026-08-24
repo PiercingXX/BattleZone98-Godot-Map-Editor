@@ -177,11 +177,14 @@ func _test_success(t, tmp: String, game: String) -> void:
 	t.eq(lgt[0], 56, "plane 0 fill")
 	t.eq(lgt[65536], 136, "flat north-light bake")
 
-	# Headline invariant: open→save with no edits is byte-identical.
+	# Height/materials/objects stay residue bytes. Save always ships `{stem}.act`
+	# and retargets `[Color] Palette` at it, so the .trn may be rewritten.
 	var out_dir: String = tmp.path_join("new_out")
 	var saved: Dictionary = BzSave.save_session(sess, out_dir)
 	t.eq(saved.get("ok"), true, "save after new")
-	t.eq(saved.get("regenerated"), [], "untouched new-map save does not re-encode")
+	for name in saved.get("regenerated", []):
+		var ext := str(name).get_extension().to_lower()
+		t.ok(ext == "trn" or ext == "act", "untouched new-map only rewrites fog palette files")
 	var da := DirAccess.open(src)
 	t.ok(da != null)
 	da.list_dir_begin()
@@ -189,13 +192,16 @@ func _test_success(t, tmp: String, game: String) -> void:
 	var mismatches: Array = []
 	while fn != "":
 		if not da.current_is_dir():
-			var a: String = src.path_join(fn)
-			var b: String = out_dir.path_join(fn)
-			if not FileAccess.file_exists(b) or FileAccess.get_file_as_bytes(a) != FileAccess.get_file_as_bytes(b):
-				mismatches.append(fn)
+			var ext := fn.get_extension().to_lower()
+			if ext != "trn" and ext != "act":
+				var a: String = src.path_join(fn)
+				var b: String = out_dir.path_join(fn)
+				if not FileAccess.file_exists(b) or FileAccess.get_file_as_bytes(a) != FileAccess.get_file_as_bytes(b):
+					mismatches.append(fn)
 		fn = da.get_next()
 	da.list_dir_end()
-	t.eq(mismatches, [], "every residue source file reappears byte-identical")
+	t.eq(mismatches, [], "non-palette residue files reappear byte-identical")
+	t.ok(FileAccess.file_exists(out_dir.path_join("xxedtest.act")), "new-map save ships {stem}.act")
 
 	# pack_kind base omits .odf
 	var sess_b: String = tmp.path_join("nbase")

@@ -163,6 +163,16 @@ func _view_menu(t) -> void:
 	var plants: CheckBox = panel.find_child("ViewPlants", true, false)
 	var geysers: CheckBox = panel.find_child("ViewGeysers", true, false)
 	t.ok(geysers != null and sky != null, "panel lists the filters")
+	var slope: CheckBox = panel.find_child("ViewSlope", true, false)
+	var grid: CheckBox = panel.find_child("ViewGrid", true, false)
+	var buildable: CheckBox = panel.find_child("ViewBuildable", true, false)
+	var ai_trav: CheckBox = panel.find_child("ViewAiTraversable", true, false)
+	t.ok(slope != null and grid != null, "View hosts slope/grid")
+	t.ok(buildable != null and ai_trav != null, "View hosts buildable / AI traversable")
+	t.eq(slope.text, "Slope Tint")
+	t.eq(grid.text, "Terrain Grid")
+	t.eq(buildable.text, "Buildable Area")
+	t.eq(ai_trav.text, "Ai Traversible")
 	t.ok(scrap.button_pressed, "scrap checked by default")
 	t.ok(plants.disabled, "plants disabled without overlay/regions")
 	t.eq(plants.tooltip_text, "no plant regions")
@@ -176,6 +186,20 @@ func _view_menu(t) -> void:
 	t.ok(not scrap.button_pressed)
 	sky.button_pressed = true
 	t.ok(Settings.view_sky, "View panel flips sky")
+	var was_slope := Settings.view_slope
+	slope.button_pressed = not was_slope
+	t.eq(Settings.view_slope, not was_slope, "View panel flips slope")
+	slope.button_pressed = was_slope
+	var was_grid := Settings.view_grid
+	grid.button_pressed = not was_grid
+	t.eq(Settings.view_grid, not was_grid, "View panel flips grid")
+	grid.button_pressed = was_grid
+	buildable.button_pressed = true
+	t.ok(Settings.view_buildable, "View panel flips buildable")
+	buildable.button_pressed = false
+	ai_trav.button_pressed = true
+	t.ok(Settings.view_ai_traversable, "View panel flips ai traversable")
+	ai_trav.button_pressed = false
 	panel.queue_free()
 	await t.tree.process_frame
 
@@ -200,6 +224,8 @@ func _snapshot() -> Dictionary:
 		"view_aipaths": Settings.view_aipaths,
 		"view_grid": Settings.view_grid,
 		"view_slope": Settings.view_slope,
+		"view_buildable": Settings.view_buildable,
+		"view_ai_traversable": Settings.view_ai_traversable,
 		"view_labels": Settings.view_labels,
 		"ghost": ObjectMarkers.ghost_other_variants,
 		"balance": BalanceOverlay.enabled,
@@ -237,6 +263,8 @@ func _restore(snap: Dictionary) -> void:
 	Settings.view_aipaths = bool(snap.get("view_aipaths", false))
 	Settings.view_grid = bool(snap.get("view_grid", false))
 	Settings.view_slope = bool(snap.get("view_slope", false))
+	Settings.view_buildable = bool(snap.get("view_buildable", false))
+	Settings.view_ai_traversable = bool(snap.get("view_ai_traversable", false))
 	Settings.view_labels = bool(snap.get("view_labels", false))
 	ObjectMarkers.ghost_other_variants = bool(snap.get("ghost", false))
 	BalanceOverlay.enabled = bool(snap.get("balance", false))
