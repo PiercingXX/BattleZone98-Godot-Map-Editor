@@ -621,6 +621,9 @@ func _show_label(inst: Node3D, rec: Dictionary) -> void:
 		tag = Label3D.new()
 		tag.name = LABEL_NAME
 		tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		# The viewport is mirrored (FlyCamera.VIEW_MIRROR) so the 3D view
+		# matches the game. Text is the one thing that must not come along.
+		tag.scale.x = -1.0
 		tag.no_depth_test = true
 		tag.font_size = 22
 		tag.pixel_size = 0.038
@@ -771,6 +774,9 @@ func _sync_variant_tag(inst: Node3D, rec: Dictionary, variant: String, ghosted: 
 		tag = Label3D.new()
 		tag.name = "VariantTag"
 		tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		# The viewport is mirrored (FlyCamera.VIEW_MIRROR) so the 3D view
+		# matches the game. Text is the one thing that must not come along.
+		tag.scale.x = -1.0
 		tag.no_depth_test = true
 		tag.font_size = 28
 		tag.pixel_size = 0.045

@@ -41,30 +41,32 @@ func run(t) -> void:
 	t.tree.root.add_child(cam)
 	await t.tree.process_frame
 	cam.global_position = pos
-	cam.rotation = rot
+	# Bookmarks store the un-mirrored orientation, so they go in and out
+	# through the aim API — `rotation` reads the mirrored basis.
+	cam.set_aim_rotation(rot)
 	cam.pivot = pivot
 	var captured := cam.capture_bookmark()
 	cam.global_position = Vector3.ZERO
-	cam.rotation = Vector3.ZERO
+	cam.set_aim_rotation(Vector3.ZERO)
 	cam.pivot = Vector3.ZERO
 	cam.apply_bookmark(captured)
 	t.near(cam.global_position.x, pos.x, 0.0001, "apply position")
-	t.near(cam.rotation.y, rot.y, 0.0001, "apply rotation")
+	t.near(cam.aim_rotation().y, rot.y, 0.0001, "apply rotation")
 	t.near(cam.pivot.z, pivot.z, 0.0001, "apply pivot")
-	# 2D map mode uses a mirrored (left-handed) basis; leaving it must
-	# restore a clean right-handed 3D pose, not a flipped view.
+	# Both views are mirrored (FlyCamera.VIEW_MIRROR): leaving 2D must restore
+	# the stored 3D aim, not drop or double the mirror.
 	cam.global_position = pos
-	cam.rotation = rot
+	cam.set_aim_rotation(rot)
 	cam.pivot = pivot
 	cam.set_map_mode(true)
 	t.near(cam.global_transform.basis.determinant(), -1.0, 0.001, "map basis is mirrored")
 	cam.set_map_mode(false)
 	t.near(
-		cam.global_transform.basis.determinant(), 1.0, 0.001,
-		"3D restore is right-handed again"
+		cam.global_transform.basis.determinant(), -1.0, 0.001,
+		"3D restore keeps the same mirror"
 	)
-	t.near(cam.rotation.x, rot.x, 0.0001, "3D restore pitch")
-	t.near(cam.rotation.y, rot.y, 0.0001, "3D restore yaw")
+	t.near(cam.aim_rotation().x, rot.x, 0.0001, "3D restore pitch")
+	t.near(cam.aim_rotation().y, rot.y, 0.0001, "3D restore yaw")
 	t.near(cam.global_position.y, pos.y, 0.0001, "3D restore height")
 	cam.queue_free()
 	await t.tree.process_frame

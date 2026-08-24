@@ -20,6 +20,21 @@ const HOVER_BACK_M := 40.0
 const WALK_CLEARANCE_M := 4.0
 ## Godot identity looks −Z (south). Yaw π faces +Z (north).
 const NORTH_YAW := PI
+
+## The game draws the world in a frame that is a reflection of Godot's: with
+## north (+z) up, east (+x) is on the RIGHT, and no right-handed basis gives a
+## camera looking down both of those at once. Map mode has always used a
+## mirrored basis for exactly that reason (`map_mode_basis`) — and map mode is
+## the view that matches the game. The perspective camera needs the same
+## mirror, or the 3D viewport shows the mirror image of what the game draws.
+##
+## Only the VIEW is mirrored. Positions, the heightfield, every BZN coordinate
+## and everything the UI reports stay true to the file. `aim_basis()` is the
+## un-mirrored orientation, and it is the one euler / yaw / pitch math works
+## in — `rotation` on a mirrored basis decomposes to nonsense.
+const VIEW_MIRROR := Basis(
+	Vector3(-1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0), Vector3(0.0, 0.0, 1.0)
+)
 const COMPASS_HUB_RATIO := 0.28
 ## Seconds from rest to 1.0× default speed (and back) at accel_mul 1.0.
 const ACCEL_TIME_S := 1.0
@@ -100,12 +115,7 @@ func handle_event(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
 		if looking:
-			rotate_y(look_yaw_delta(mm.relative.x, _look_sens))
-			rotation.x = clampf(
-				rotation.x + look_pitch_delta(mm.relative.y, Settings.invert_look, _look_sens),
-				-1.35,
-				1.35,
-			)
+			_apply_look(mm.relative)
 		elif orbiting:
 			_orbit(mm.relative)
 		elif pan_dragging:
@@ -122,14 +132,51 @@ func handle_event(event: InputEvent) -> void:
 			))
 		elif mods and mm.button_mask == 0 and mm.alt_pressed:
 			# Buttonless Alt+move pans the camera tripod-style.
-			rotate_y(look_yaw_delta(mm.relative.x, _look_sens))
-			rotation.x = clampf(
-				rotation.x + look_pitch_delta(mm.relative.y, Settings.invert_look, _look_sens),
-				-1.35,
-				1.35,
-			)
+			_apply_look(mm.relative)
 		elif mods and mm.button_mask == 0 and mm.shift_pressed:
 			_pan_ground(mm.relative)
+
+
+## The un-mirrored orientation: what the camera would be if the view were not
+## reflected. VIEW_MIRROR is its own inverse, so the same multiply goes both
+## ways.
+func aim_basis() -> Basis:
+	var b: Basis = global_transform.basis if is_inside_tree() else transform.basis
+	return b * VIEW_MIRROR
+
+
+func set_aim_basis(b: Basis) -> void:
+	var m := b * VIEW_MIRROR
+	if is_inside_tree():
+		global_transform.basis = m
+	else:
+		transform.basis = m
+
+
+func aim_rotation() -> Vector3:
+	return aim_basis().get_euler()
+
+
+func set_aim_rotation(r: Vector3) -> void:
+	set_aim_basis(Basis.from_euler(r))
+
+
+## `look_at` builds a right-handed basis; the view mirror goes back on after.
+func _aim_at(target: Vector3, up: Vector3 = Vector3.UP) -> void:
+	look_at(target, up)
+	set_aim_basis(global_transform.basis if is_inside_tree() else transform.basis)
+
+
+## Yaw + pitch from a mouse delta, in the un-mirrored frame so the euler stays
+## meaningful. Roll is pinned at zero, same as the old rotate_y + rotation.x.
+func _apply_look(rel: Vector2) -> void:
+	var e := aim_rotation()
+	e.y += look_yaw_delta(rel.x, _look_sens)
+	e.x = clampf(
+		e.x + look_pitch_delta(rel.y, Settings.invert_look, _look_sens), -1.35, 1.35
+	)
+	e.z = 0.0
+	set_aim_rotation(e)
 
 
 func is_modifier_camera_allowed() -> bool:
@@ -237,7 +284,9 @@ func _pan_ground(rel: Vector2) -> void:
 func _orbit(rel: Vector2) -> void:
 	var offset := global_position - pivot
 	var dist := maxf(offset.length(), 8.0)
-	var yaw := -rel.x * _look_sens
+	# Same sign as look_yaw_delta: the mirrored view reverses which way a
+	# world yaw appears to turn, so dragging right still swings right.
+	var yaw := rel.x * _look_sens
 	var pitch := -rel.y * _look_sens
 	offset = offset.rotated(Vector3.UP, yaw)
 	var right := Vector3.UP.cross(offset).normalized()
@@ -247,7 +296,7 @@ func _orbit(rel: Vector2) -> void:
 	if pitched.normalized().dot(Vector3.UP) > 0.95 or pitched.normalized().dot(Vector3.UP) < -0.95:
 		pitched = offset
 	global_position = pivot + pitched.normalized() * dist
-	look_at(pivot, Vector3.UP)
+	_aim_at(pivot)
 
 
 func _process(delta: float) -> void:
@@ -369,7 +418,7 @@ func frame_map(width_m: float, depth_m: float, height_m: float) -> void:
 		return
 	pivot = Vector3(width_m * 0.5, height_m, depth_m * 0.5)
 	global_position = Vector3(width_m * 0.5, height_m + maxf(120.0, depth_m * 0.22), depth_m * -0.02)
-	look_at(pivot, Vector3.UP)
+	_aim_at(pivot)
 	speed_changed.emit(base_speed)
 
 
@@ -390,7 +439,7 @@ func frame_map_ortho(width_m: float, depth_m: float) -> void:
 func top_down(width_m: float, depth_m: float) -> void:
 	pivot = Vector3(width_m * 0.5, 0.0, depth_m * 0.5)
 	global_position = Vector3(width_m * 0.5, maxf(width_m, depth_m) * 0.95, depth_m * 0.5)
-	look_at(pivot, Vector3.FORWARD)
+	_aim_at(pivot, Vector3.FORWARD)
 	speed_changed.emit(base_speed)
 
 
@@ -428,14 +477,17 @@ func hover_point(world: Vector3) -> void:
 		_apply_map_orientation()
 		return
 	global_position = hover_perspective_position(world)
-	look_at(world, Vector3.UP)
+	_aim_at(world)
 
 
 func snap_yaw_north() -> void:
 	if map_mode:
 		_apply_map_orientation()
 		return
-	rotation.y = NORTH_YAW
+	var e := aim_rotation()
+	e.y = NORTH_YAW
+	e.z = 0.0
+	set_aim_rotation(e)
 
 
 func zoom_to_cursor(wheel_sign: float) -> void:
@@ -492,7 +544,7 @@ func _ground_xz_at_screen(screen: Vector2) -> Vector2:
 
 func _pose_dict() -> Dictionary:
 	var pos := global_position if is_inside_tree() else position
-	var d := make_bookmark(pos, rotation, pivot)
+	var d := make_bookmark(pos, aim_rotation(), pivot)
 	d["map_mode"] = map_mode
 	d["size"] = size
 	d["fov"] = fov
@@ -513,10 +565,10 @@ func _restore_3d_pose() -> void:
 
 
 func _apply_pose_transform(d: Dictionary) -> void:
-	# Rebuild the basis from scratch: map mode uses a mirrored
-	# (left-handed) basis, and assigning `rotation` alone would keep that
-	# mirror in the recomposed transform, garbling the restored 3D view.
-	transform.basis = Basis.from_euler(bookmark_rotation(d))
+	# Bookmarks store the un-mirrored orientation, so the view mirror goes back
+	# on here. Assigning `rotation` instead would decompose a mirrored basis
+	# into nonsense euler and garble the restored view.
+	set_aim_rotation(bookmark_rotation(d))
 	var pos := bookmark_position(d)
 	if is_inside_tree():
 		global_position = pos
@@ -544,10 +596,12 @@ static func look_dir_from_basis_z(basis_z: Vector3) -> Vector3:
 
 
 static func rose_radians_from_look(look: Vector3) -> float:
-	## 0 when facing +z (north); Godot 2D-positive (clockwise) so N stays screen-up.
+	## 0 when facing +z (north); Godot 2D-positive (clockwise) so N stays
+	## screen-up. The mirrored view puts east on the right, so facing east
+	## leaves north on the RIGHT of the rose, not the left.
 	if look.x * look.x + look.z * look.z < 0.0000001:
 		return 0.0
-	return -atan2(look.x, look.z)
+	return atan2(look.x, look.z)
 
 
 static func compass_hit(local: Vector2, widget_size: Vector2, rose_radians: float) -> String:
@@ -594,7 +648,9 @@ static func ortho_frame_size(width_m: float, depth_m: float, aspect: float) -> f
 
 
 static func look_yaw_delta(rel_x: float, sens: float) -> float:
-	return -rel_x * sens
+	## Positive: the view is mirrored (VIEW_MIRROR), which reverses the
+	## apparent turn of a world yaw, so dragging right swings the view right.
+	return rel_x * sens
 
 
 static func look_pitch_delta(rel_y: float, invert: bool, sens: float) -> float:

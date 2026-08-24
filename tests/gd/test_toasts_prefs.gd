@@ -138,7 +138,9 @@ func _toast_queue(t) -> void:
 
 
 func _camera_helpers(t) -> void:
-	t.eq(FlyCamera.look_yaw_delta(10.0, 0.003), -0.03)
+	# Positive: the mirrored view (FlyCamera.VIEW_MIRROR) reverses which way a
+	# world yaw appears to turn, so dragging right still swings right.
+	t.eq(FlyCamera.look_yaw_delta(10.0, 0.003), 0.03)
 	t.eq(FlyCamera.look_pitch_delta(10.0, false, 0.003), -0.03)
 	t.eq(FlyCamera.look_pitch_delta(10.0, true, 0.003), 0.03)
 	t.eq(FlyCamera.speed_multiplier(false, false, 1.5), 1.5)

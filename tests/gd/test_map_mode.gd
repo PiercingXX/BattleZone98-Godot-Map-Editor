@@ -33,8 +33,10 @@ func _parse_goto(t) -> void:
 func _north_and_rose(t) -> void:
 	t.near(FlyCamera.north_yaw(), PI, 0.0001, "north yaw faces +z")
 	t.near(FlyCamera.rose_radians_from_look(Vector3(0.0, 0.0, 1.0)), 0.0, 0.0001, "facing north")
-	t.near(FlyCamera.rose_radians_from_look(Vector3(1.0, 0.0, 0.0)), -PI / 2.0, 0.0001, "facing east, N on the left")
-	t.near(FlyCamera.rose_radians_from_look(Vector3(-1.0, 0.0, 0.0)), PI / 2.0, 0.0001, "facing west, N on the right")
+	# The view is mirrored (FlyCamera.VIEW_MIRROR) so east is screen-right,
+	# which puts north on the RIGHT of the rose when facing east.
+	t.near(FlyCamera.rose_radians_from_look(Vector3(1.0, 0.0, 0.0)), PI / 2.0, 0.0001, "facing east, N on the right")
+	t.near(FlyCamera.rose_radians_from_look(Vector3(-1.0, 0.0, 0.0)), -PI / 2.0, 0.0001, "facing west, N on the left")
 	var south := FlyCamera.rose_radians_from_look(Vector3(0.0, 0.0, -1.0))
 	t.ok(absf(absf(south) - PI) < 0.0001, "facing south, N at the bottom")
 	t.near(FlyCamera.rose_radians_from_look(Vector3(0.0, -1.0, 0.0)), 0.0, 0.0001, "look-down is N-up")
@@ -89,7 +91,9 @@ func _camera_live(t) -> void:
 	t.tree.root.add_child(cam)
 	await t.tree.process_frame
 	cam.global_position = Vector3(12.0, 50.0, 24.0)
-	cam.rotation = Vector3(-0.35, 0.8, 0.0)
+	# Orientation goes through the aim API: `rotation` is the euler of the
+	# mirrored basis and does not decompose to anything meaningful.
+	cam.set_aim_rotation(Vector3(-0.35, 0.8, 0.0))
 	cam.pivot = Vector3(100.0, 10.0, 200.0)
 	cam.hover_point(Vector3(5.0, 2.0, 9.0))
 	t.near(cam.global_position.x, 5.0, 0.0001, "3D hover x")
@@ -97,7 +101,9 @@ func _camera_live(t) -> void:
 	t.near(cam.global_position.z, -31.0, 0.0001, "3D hover back")
 
 	cam.global_position = Vector3(12.0, 50.0, 24.0)
-	cam.rotation = Vector3(-0.35, 0.8, 0.0)
+	# Orientation goes through the aim API: `rotation` is the euler of the
+	# mirrored basis and does not decompose to anything meaningful.
+	cam.set_aim_rotation(Vector3(-0.35, 0.8, 0.0))
 	cam.pivot = Vector3(100.0, 10.0, 200.0)
 	cam.set_map_mode(true)
 	t.ok(cam.map_mode)
@@ -117,13 +123,21 @@ func _camera_live(t) -> void:
 	t.near(cam.global_position.x, 12.0, 0.001, "leaving 2D restores x")
 	t.near(cam.global_position.y, 50.0, 0.001, "leaving 2D restores y")
 	t.near(cam.global_position.z, 24.0, 0.001, "leaving 2D restores z")
-	t.near(cam.rotation.y, 0.8, 0.001, "leaving 2D restores yaw")
-	t.near(cam.rotation.x, -0.35, 0.001, "leaving 2D restores pitch")
+	t.near(cam.aim_rotation().y, 0.8, 0.001, "leaving 2D restores yaw")
+	t.near(cam.aim_rotation().x, -0.35, 0.001, "leaving 2D restores pitch")
+	t.near(
+		cam.global_transform.basis.determinant(), -1.0, 0.001,
+		"the 3D view stays mirrored, same as the map view"
+	)
 
-	cam.rotation = Vector3(-0.3, 0.5, 0.0)
+	cam.set_aim_rotation(Vector3(-0.3, 0.5, 0.0))
 	cam.snap_yaw_north()
-	t.near(cam.rotation.y, FlyCamera.north_yaw(), 0.0001, "snap yaw to north")
-	t.near(cam.rotation.x, -0.3, 0.0001, "snap keeps pitch")
+	# Euler decomposition can hand back either sign of a half turn.
+	t.ok(
+		absf(absf(cam.aim_rotation().y) - FlyCamera.north_yaw()) < 0.0001,
+		"snap yaw to north"
+	)
+	t.near(cam.aim_rotation().x, -0.3, 0.0001, "snap keeps pitch")
 
 	cam.queue_free()
 	await t.tree.process_frame

@@ -319,6 +319,9 @@ func _build_team_label(team: Dictionary, field: HeightField) -> void:
 	var tag := Label3D.new()
 	tag.name = "Team%d" % n
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	# The viewport is mirrored (FlyCamera.VIEW_MIRROR) so the 3D view
+	# matches the game. Text is the one thing that must not come along.
+	tag.scale.x = -1.0
 	tag.no_depth_test = true
 	tag.fixed_size = true
 	tag.font_size = 48
