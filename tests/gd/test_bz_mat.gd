@@ -82,19 +82,23 @@ func _test_encode_decode(t) -> void:
 
 
 func _test_march_square(t) -> void:
+	# Corner order is (-X,-Z) (+X,-Z) (+X,+Z) (-X,+Z); a cap's rot is the side
+	# its mat_b half faces (0=-Z 1=+X 2=+Z 3=-X) and a diagonal's rot puts
+	# mat_a in the lone corner. `mat_a` is always the lower material, so a lone
+	# corner of the HIGHER one has no tile and degrades to a cap on that side.
 	var cases := [
 		[[3, 3, 3, 3], 0x3300],
 		[[2, 1, 1, 1], 0x1200],
-		[[1, 2, 1, 1], 0x1230],
+		[[1, 2, 1, 1], 0x1210],
 		[[1, 1, 2, 1], 0x1220],
-		[[1, 1, 1, 2], 0x1210],
-		[[2, 2, 1, 1], 0x1240],
-		[[1, 2, 2, 1], 0x1270],
-		[[1, 1, 2, 2], 0x1260],
-		[[2, 1, 1, 2], 0x1250],
-		[[2, 1, 2, 1], 0x1280],
-		[[1, 2, 1, 2], 0x12C0],
-		[[1, 2, 2, 2], 0x2100],
+		[[1, 1, 1, 2], 0x1230],
+		[[2, 2, 1, 1], 0x1200],
+		[[1, 2, 2, 1], 0x1210],
+		[[1, 1, 2, 2], 0x1220],
+		[[2, 1, 1, 2], 0x1230],
+		[[2, 1, 2, 1], 0x1200],
+		[[1, 2, 1, 2], 0x1210],
+		[[1, 2, 2, 2], 0x1290],
 		[[2, 2, 2, 2], 0x2200],
 	]
 	for c in cases:
@@ -105,28 +109,38 @@ func _test_march_square(t) -> void:
 func _test_autotile_neighbors(t) -> void:
 	t.eq(BzMat.autotile_neighbors(5, 5, 5, 5, 5), BzMat.encode_entry(5, 5), "interior is solid")
 	t.eq(BzMat.autotile_neighbors(5, 0, 0, 0, 0), BzMat.encode_entry(5, 5), "island is solid")
+	# 5 painted, 0 outside to the -Z side. A cap keeps the painted fill in
+	# mat_a, and its rot is the side mat_b actually covers.
 	var edge: int = BzMat.autotile_neighbors(5, 0, 5, 5, 5)
-	t.eq((edge >> 12) & 0xF, 5, "edge keeps painted base")
-	t.eq((edge >> 8) & 0xF, 0, "edge transitions to the outsider")
+	t.eq((edge >> 12) & 0xF, 5, "cap keeps the painted fill in mat_a")
+	t.eq((edge >> 8) & 0xF, 0, "the outsider is mat_b")
 	t.eq((edge >> 7) & 1, 0, "straight run is a cap")
-	t.eq((edge >> 6) & 1, 1, "cap uses the edge (flip) packing")
-	t.eq(BzMat.encode_diag(5, 0, 0), BzMat.encode_entry(5, 0, 1, 0, 2), "NW is flip-inverted from identity")
-	t.eq(BzMat.encode_diag(5, 0, 1), BzMat.encode_entry(5, 0, 1, 1, 1), "NE is +90")
+	t.eq((edge >> 4) & 0x3, 0, "mat_b fills the -Z half")
+	t.eq(BzMat.fill_of_entry(edge), 5, "a cap's fill reads back out of mat_a")
+	t.eq(BzMat.encode_diag(0, 5, 0), BzMat.encode_entry(0, 5, 1, 0, 1), "(-X,-Z) corner is rot 1")
+	t.eq(BzMat.encode_diag(0, 5, 1), BzMat.encode_entry(0, 5, 1, 0, 2), "(+X,-Z) corner is rot 2")
+	t.eq(BzMat.encode_diag(0, 5, 2), BzMat.encode_entry(0, 5, 1, 0, 3), "(+X,+Z) corner is rot 3")
+	t.eq(BzMat.encode_diag(0, 5, 3), BzMat.encode_entry(0, 5, 1, 0, 0), "(-X,+Z) corner is rot 0")
+	# +X and +Z stay 5, so 0 nips the (-X,-Z) corner — and 0 is the lower
+	# material, which is the only one a diagonal can put in that corner.
 	var corner: int = BzMat.autotile_neighbors(5, 0, 5, 5, 0)
-	t.eq((corner >> 12) & 0xF, 5, "corner keeps painted base")
-	t.eq((corner >> 8) & 0xF, 0, "corner transitions to the outsider")
+	t.eq((corner >> 12) & 0xF, 0, "the lone corner material is mat_a")
+	t.eq((corner >> 8) & 0xF, 5, "the field is mat_b")
 	t.eq((corner >> 7) & 1, 1, "outer corner is a diagonal")
-	t.eq(corner, BzMat.encode_diag(5, 0, 0), "E+S same → left-facing / NW identity")
+	t.eq(corner, BzMat.encode_diag(0, 5, 0), "E+S same → the (-X,-Z) corner")
+	t.eq(BzMat.fill_of_entry(corner), 5, "a diagonal's fill is the mat_b field")
+	# The mirror image — 5 alone in a corner of 0 — is the one shape no atlas
+	# ships a tile for, so it degrades to a cap on that corner's side.
 	var inner: int = BzMat.autotile_neighbors(0, 5, 0, 0, 5)
 	t.eq((inner >> 12) & 0xF, 0, "inner corner stays the background")
 	t.eq((inner >> 8) & 0xF, 5, "inner corner meets the painted pair")
-	t.eq((inner >> 7) & 1, 1, "inner corner is a diagonal")
-	t.eq(inner, BzMat.encode_diag(0, 5, 0), "inner uses the same left-facing rotation")
-	# One-vertex march without promotion is a cap; autotile_quad upgrades it.
-	var raw: int = BzMat._march_square(PackedInt32Array([2, 1, 1, 1]))
-	t.eq((raw >> 7) & 1, 0, "march 1-vertex is a cap")
-	var promoted: int = BzMat.autotile_quad(PackedInt32Array([2, 1, 1, 1]))
-	t.eq((promoted >> 7) & 1, 1, "autotile_quad promotes the corner")
+	t.eq((inner >> 7) & 1, 0, "no diagonal has the higher material in its corner")
+	t.eq(inner, BzMat.encode_entry(0, 5, 0, 0, 0), "capped toward -Z instead")
+	t.eq(BzMat.fill_of_entry(inner), 0, "the background is still the fill")
+	# One vertex of the LOWER material is the diagonal's own shape.
+	var raw: int = BzMat._march_square(PackedInt32Array([1, 2, 2, 2]))
+	t.eq((raw >> 7) & 1, 1, "march 1-vertex of the lower material is a diagonal")
+	t.eq(BzMat.autotile_quad(PackedInt32Array([1, 2, 2, 2])), raw, "autotile_quad agrees")
 
 
 func _test_factor_pair(t) -> void:
@@ -150,11 +164,11 @@ func _test_parse_one_zone(t, tmp: String) -> void:
 	var g: BzMat.MaterialGrid = result.get("grid") as BzMat.MaterialGrid
 	t.eq(g.grid_x, 64)
 	t.eq(g.grid_z, 64)
-	# Disk X runs east→west, so disk tx lands at world 63 - tx (F2 §3.1).
-	t.eq(g.data[63], 0x23A1, "disk (0,0) is world (63,0)")
-	t.eq(g.data[63 * 64 + 0], 0x4400, "disk (63,63) is world (0,63)")
-	t.eq(g.data[10 * 64 + 43], 0x5172, "disk (20,10) is world (43,10)")
-	t.eq(g.data[0], 0, "world (0,0) is untouched")
+	# Plain zone interleave: disk tile (tx,tz) is world (tx,tz), no mirror.
+	t.eq(g.data[0], 0x23A1, "disk (0,0) is world (0,0)")
+	t.eq(g.data[63 * 64 + 63], 0x4400, "disk (63,63) is world (63,63)")
+	t.eq(g.data[10 * 64 + 20], 0x5172, "disk (20,10) is world (20,10)")
+	t.eq(g.data[63], 0, "world (63,0) is untouched")
 
 
 func _test_parse_two_zone(t, tmp: String) -> void:
@@ -168,12 +182,12 @@ func _test_parse_two_zone(t, tmp: String) -> void:
 	var g: BzMat.MaterialGrid = result.get("grid") as BzMat.MaterialGrid
 	t.eq(g.grid_x, 128)
 	t.eq(g.grid_z, 128)
-	# The X mirror is global across zones: disk tx → world 127 - tx.
-	t.eq(g.data[127], 0x1111, "disk (0,0) is world (127,0)")
-	t.eq(g.data[10 * 128 + 57], 0xABCD, "disk (70,10) is world (57,10)")
-	t.eq(g.data[70 * 128 + 117], 0x2222, "disk (10,70) is world (117,70)")
-	t.eq(g.data[70 * 128 + 57], 0x3333, "disk (70,70) is world (57,70)")
-	t.eq(g.data[10 * 128 + 58], 0, "neighbour untouched")
+	# Zone interleave is the only reshuffle; disk (tx,tz) is world (tx,tz).
+	t.eq(g.data[0], 0x1111, "disk (0,0) is world (0,0)")
+	t.eq(g.data[10 * 128 + 70], 0xABCD, "disk (70,10) is world (70,10)")
+	t.eq(g.data[70 * 128 + 10], 0x2222, "disk (10,70) is world (10,70)")
+	t.eq(g.data[70 * 128 + 70], 0x3333, "disk (70,70) is world (70,70)")
+	t.eq(g.data[10 * 128 + 71], 0, "neighbour untouched")
 	t.eq(buf.decode_u16(1350 * 2), 0, "row-major slot for (70,10) is empty")
 	t.eq(buf.decode_u16(4742 * 2), 0xABCD, "zone-major slot holds (70,10)")
 
@@ -206,8 +220,8 @@ func _test_write_then_parse(t, tmp: String) -> void:
 	var path: String = tmp.path_join("authored.mat")
 	t.ok(bool(g.write(path).get("ok")))
 	var raw: PackedByteArray = FileAccess.get_file_as_bytes(path)
-	t.eq(raw.decode_u16(_disk_index(57, 10, 2, 64) * 2), 0xABCD,
-		"world (70,10) writes to disk (57,10)")
+	t.eq(raw.decode_u16(_disk_index(70, 10, 2, 64) * 2), 0xABCD,
+		"world (70,10) writes to disk (70,10)")
 	var rd: Dictionary = BzMat.read_mat(path)
 	var back: BzMat.MaterialGrid = rd.get("grid") as BzMat.MaterialGrid
 	t.eq(back.grid_x, 128)
@@ -251,15 +265,15 @@ func _test_auto_paint(t) -> void:
 	t.ok(grid is BzMat.MaterialGrid, "auto_paint returns MaterialGrid")
 	t.eq(grid.grid_x, 64)
 	t.eq(grid.grid_z, 64)
-	t.eq(grid.data[0], 0x1270, "tile (0,0) right-half transition")
+	t.eq(grid.data[0], 0x1210, "tile (0,0) caps mat 2 onto its +X half")
 	t.eq(grid.data[1], 0x2200, "tile (1,0) solid mat 2")
-	t.eq(grid.data[64], 0x1270, "tile (0,1)")
+	t.eq(grid.data[64], 0x1210, "tile (0,1)")
 	var dec: PackedInt32Array = grid.decode()
 	t.eq(dec[0], 1)
 	t.eq(dec[1], 2)
 	t.eq(dec[2], 0)
-	t.eq(dec[3], 1)
-	t.eq(dec[4], 3)
+	t.eq(dec[3], 0)
+	t.eq(dec[4], 1)
 
 
 func _test_errors(t, tmp: String) -> void:

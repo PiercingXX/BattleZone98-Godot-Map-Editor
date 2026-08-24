@@ -155,25 +155,19 @@ void fragment() {
 			if (rect.z <= 0.0) {
 				rect = mat_uvs[mi];  // no such tile shipped — solid fallback
 			} else {
-				// Orientation → rotation quarter-turns + mirror (F2 §2).
-				// Identity (orient 14 on diagonals) is the atlas D tile as
-				// shipped: the corner faces left. 13/12/15 are +90/180/−90.
-				int c = orient;
-				int rot;
-				bool mirror;
-				if (c < 8) {
-					mirror = c < 4;
-					rot = mirror ? (1 - c) & 3 : (7 - c) & 3;
-				} else {
-					mirror = c < 12;
-					rot = mirror ? (9 - c) & 3 : (14 - c) & 3;
-				}
+				// Orientation → quarter-turns, measured 2026-08-24 from 57 stock
+				// maps and the shipped atlas art (see BzMat's header table).
+				// The art as shipped is: cap = transition on the +Z edge,
+				// diagonal = base in the (-X,-Z) corner. `rot` turns clockwise in
+				// grid space, so the sampling coordinate turns the other way, and
+				// the identity tile is rot 2 for caps / rot 1 for diagonals.
+				// The flip bit picks a mirrored cut of the same art, not a
+				// different topology, so it does not enter here.
+				int rf = orient & 3;
+				int rot = kind == 1 ? (2 - rf) & 3 : (1 - rf) & 3;
 				vec2 p = local - 0.5;
 				for (int r = 0; r < rot; r++) {
 					p = vec2(-p.y, p.x);
-				}
-				if (mirror) {
-					p.x = -p.x;
 				}
 				local = p + 0.5;
 			}

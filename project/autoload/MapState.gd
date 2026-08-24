@@ -1225,7 +1225,9 @@ func rematch_materials_rect(x0: int, z0: int, w: int, d: int) -> void:
 	fill.resize(gx * gz)
 	var nfill := mini(fill.size(), materials.size())
 	for i in nfill:
-		fill[i] = (materials[i] >> 12) & 0xF
+		# Not `mat_a`: a diagonal names its lone corner there, and the cell's
+		# own material is the three-corner field in `mat_b` (BzMat header).
+		fill[i] = BzMat.fill_of_entry(materials[i])
 	var xa := clampi(x0, 0, gx - 1)
 	var za := clampi(z0, 0, gz - 1)
 	var xb := clampi(x0 + w - 1, 0, gx - 1)
@@ -1343,7 +1345,7 @@ func material_at(x_m: float, z_m: float) -> int:
 		return 0
 	var tx := clampi(int(floor(x_m / 20.0)), 0, mat_grid_x - 1)
 	var tz := clampi(int(floor(z_m / 20.0)), 0, mat_grid_z - 1)
-	return (materials[tz * mat_grid_x + tx] >> 12) & 0xF
+	return BzMat.fill_of_entry(materials[tz * mat_grid_x + tx])
 
 
 func _load_materials() -> void:

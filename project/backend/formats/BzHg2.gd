@@ -5,18 +5,21 @@ class_name BzHg2
 ## On-disk samples are zone-major (F1 §4). In-memory `HeightMap.data` is world
 ## row-major, index `z * grid_x + x`, same as the Python 2-D array `[z, x]`.
 ##
-## X mirror (F1 §4.1, settled 2026-08-22 against the game): the engine walks a
-## zone's sample row from +X toward −X, so sample 0 of the first zone is the
-## map's EAST edge. Read as plain zone-major the whole map comes out mirrored
-## left-to-right — sculpt a ridge on the west side and the game puts it on the
-## east. `read` and `write` therefore mirror the X index and `data` is true
-## world space. `.mat` carries the same mirror (BzMat), which is why the two
-## grids stayed consistent with each other while both disagreed with the game.
+## Axis order (settled 2026-08-24 against 57 stock maps): disk sample 0 of the
+## first zone is world x=0, z=0, and the sample index walks +X then +Z inside a
+## zone. There is no mirror. Read and write are plain zone interleave.
 ##
-## The mirror is applied on BOTH sides on purpose. Mirroring only on write
-## would flip a map every time it was opened and saved, and would break the
-## byte-identical open→save round trip; applied to both, the pair is its own
-## inverse and the round trip is untouched.
+## The earlier "disk X runs east->west" note was wrong. It was inferred from an
+## in-game paint test whose real fault was the .mat tile-orientation table
+## (BzMat / terrain.gdshader), which drew half of every map's cap and corner
+## tiles turned 180 degrees. Mirroring X moved the whole heightfield out from
+## under the BZN object positions and the minimap instead.
+##
+## Proof, if it is ever doubted again: BZN `pos` y is the height the object was
+## placed at, so |y - sample_m(x, z)| is near zero on the right axis order.
+## Over 57 stock maps / 1674 objects, plain zone-major gives a median error of
+## 0.54 m and X-mirrored gives 7.28 m; per map, 51 of 55 discriminating maps
+## pick plain, none pick mirrored.
 ##
 ## Python-vs-spec (F1) discrepancies — Python wins:
 ## - Header bytes 8–11 are two uint16s `unknownA`/`unknownB`, not F1's uint32
@@ -135,10 +138,9 @@ class HeightMap:
 				for sub_z in zone_size:
 					var world_z: int = zy * zone_size + sub_z
 					var row: int = world_z * gx
+					var col: int = zx * zone_size
 					for sub_x in zone_size:
-						# Mirror X (see the note at the top): disk sample 0 of
-						# the first zone is the map's east edge.
-						words[row + gx - 1 - (zx * zone_size + sub_x)] = buf.decode_u16(off)
+						words[row + col + sub_x] = buf.decode_u16(off)
 						off += 2
 		return BzHg2._ok_heightmap(
 			HeightMap.new(
@@ -164,12 +166,9 @@ class HeightMap:
 				for sub_z in zone_size:
 					var world_z: int = zy * zone_size + sub_z
 					var row: int = world_z * gx
+					var col: int = zx * zone_size
 					for sub_x in zone_size:
-						# Inverse of the read mirror; the pair keeps
-						# open→save byte-identical.
-						out.encode_u16(
-							off, data[row + gx - 1 - (zx * zone_size + sub_x)] & 0xFFFF
-						)
+						out.encode_u16(off, data[row + col + sub_x] & 0xFFFF)
 						off += 2
 		var file := FileAccess.open(path, FileAccess.WRITE)
 		if file == null:

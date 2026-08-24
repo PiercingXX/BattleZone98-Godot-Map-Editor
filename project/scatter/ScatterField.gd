@@ -86,13 +86,14 @@ class Terrain:
 		return rad_to_deg(acos(clampf(n.y, -1.0, 1.0)))
 
 	## Material slot of the 20 m tile under a world point, or -1 when the map
-	## has no material grid (C4: slot is the high nibble of the tile word).
+	## has no material grid (C4). Usually the high nibble, but a diagonal puts
+	## its lone corner there and fills the tile with `mat_b`.
 	func slot_at(x_m: float, z_m: float) -> int:
 		if mat_grid_x < 1 or materials.is_empty():
 			return -1
 		var tx := clampi(int(floor(x_m / MAT_TILE_M)), 0, mat_grid_x - 1)
 		var tz := clampi(int(floor(z_m / MAT_TILE_M)), 0, mat_grid_z - 1)
-		return (materials[tz * mat_grid_x + tx] >> 12) & 0xF
+		return BzMat.fill_of_entry(materials[tz * mat_grid_x + tx])
 
 
 func resize(grid_x: int, grid_z: int) -> void:

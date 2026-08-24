@@ -10,21 +10,30 @@ class_name BzMat
 ## - Tile-word bit layout is the WorldBuilder-inferred pack used by
 ##   `encode_entry` / `decode` (matA:4, matB:4, cap:1, flip:1, rot:2,
 ##   unused:2, variant:2). F2 §2 specifies orientation:4, variant:4, base:4,
-##   transition:4 and a diagonal-mirror remap; this module does not implement
-##   that remap. Read/write is verbatim uint16 either way — the layout only
-##   matters for auto-paint.
+##   transition:4 and a diagonal-mirror remap. Read/write is verbatim uint16
+##   either way — the layout only matters for auto-paint and for the viewport,
+##   which both follow the measured table below.
 ##
-## X mirror (F2 §3.1, settled 2026-08-22 by the §8 test-3 in-game comparison):
-## the engine walks a zone's tile row from +X toward −X, so a `.mat` read as
-## plain zone-major comes out mirrored left-to-right against its own `.hg2`.
-## Painting an arrow pointing west in the editor produced one pointing east in
-## game. `read` and `write` therefore mirror the X index, and `data` is true
-## world space — same orientation as `BzHg2.HeightMap.data`. Mirroring both
-## directions keeps the open→save round trip byte-identical.
+## Axis order (settled 2026-08-24): plain zone interleave, no mirror — disk
+## tile 0 of the first zone is world x=0, z=0. See the BzHg2 header for the
+## measurement that settled it; `.mat` follows its `.hg2` exactly.
 ##
-## The mirror belongs to the zone-interleaved game layout only. A `.mat` whose
-## dimensions are not a multiple of `ZONE_TILES` is not a shape the engine
-## loads; that fallback stays a flat row-major dump, unmirrored.
+## Tile orientation (settled 2026-08-24 against 57 stock maps, 155k transition
+## tiles, cross-checked against the Mars / Elysium / Io atlas art). `rot` turns
+## clockwise in grid space and the `flip` bit does not change the topology at
+## all — it only picks a mirrored cut of the same art:
+##
+##   cap  (bit 7 clear): `mat_b` fills the half toward rot 0=-Z 1=+X 2=+Z 3=-X,
+##                       `mat_a` fills the other half.
+##   diag (bit 7 set):   `mat_a` is the ONE corner, `mat_b` fills the other
+##                       three; the corner is rot 0=(-X,+Z) 1=(-X,-Z)
+##                       2=(+X,-Z) 3=(+X,+Z).
+
+
+## Corner index: 0=(-X,-Z) 1=(+X,-Z) 2=(+X,+Z) 3=(-X,+Z). Side index:
+## 0=-Z 1=+X 2=+Z 3=-X. A cap's `rot` IS its side; a diagonal's `rot` is
+## DIAG_ROT of the corner its `mat_a` occupies.
+const DIAG_ROT: Array[int] = [1, 2, 3, 0]
 
 const TILE_CELLS: int = 4
 const ZONE_TILES: int = 64
@@ -129,10 +138,9 @@ class MaterialGrid:
 				for sub_z in ZONE_TILES:
 					var world_z: int = zzi * ZONE_TILES + sub_z
 					var row: int = world_z * cols
+					var col: int = zxi * ZONE_TILES
 					for sub_x in ZONE_TILES:
-						# Mirror X: disk tile 0 of the first zone is the map's
-						# east edge (see the X-mirror note at the top).
-						words[row + cols - 1 - (zxi * ZONE_TILES + sub_x)] = raw[src]
+						words[row + col + sub_x] = raw[src]
 						src += 1
 		return {"ok": true, "grid": MaterialGrid.new(words, rows, cols)}
 
@@ -153,13 +161,9 @@ class MaterialGrid:
 					for sub_z in ZONE_TILES:
 						var world_z: int = zzi * ZONE_TILES + sub_z
 						var row: int = world_z * cols
+						var col: int = zxi * ZONE_TILES
 						for sub_x in ZONE_TILES:
-							# Inverse of the read mirror; the pair keeps
-							# open→save byte-identical.
-							out.encode_u16(
-								off,
-								data[row + cols - 1 - (zxi * ZONE_TILES + sub_x)] & 0xFFFF
-							)
+							out.encode_u16(off, data[row + col + sub_x] & 0xFFFF)
 							off += 2
 		var file := FileAccess.open(path, FileAccess.WRITE)
 		if file == null:
@@ -211,6 +215,15 @@ static func decode_entry(word: int) -> Dictionary:
 	}
 
 
+## The material the cell is filled with, as the editor's paint model means it.
+## A solid or a cap keeps it in `mat_a`; a diagonal's `mat_a` is the lone
+## corner, so its fill is the three-corner field in `mat_b`.
+static func fill_of_entry(word: int) -> int:
+	if ((word >> 7) & 1) != 0 and ((word >> 12) & MATERIAL_MASK) != ((word >> 8) & MATERIAL_MASK):
+		return (word >> 8) & MATERIAL_MASK
+	return (word >> 12) & MATERIAL_MASK
+
+
 static func kind_of_entry(word: int) -> String:
 	var d: Dictionary = decode_entry(word)
 	if int(d["mat_a"]) == int(d["mat_b"]):
@@ -221,6 +234,13 @@ static func kind_of_entry(word: int) -> String:
 
 
 static func _march_square(colors: PackedInt32Array) -> int:
+	## Four corner materials → one tile word. `colors` is corner-ordered:
+	## (-X,-Z), (+X,-Z), (+X,+Z), (-X,+Z).
+	##
+	## Every transition tile any world ships is base<trans (64 of 64 across the
+	## nine stock atlases), so the lower material is always `mat_a`. That is
+	## also the only material a diagonal can put in its lone corner, which is
+	## what decides the shapes below.
 	var uniq: Array[int] = []
 	for c in colors:
 		if not uniq.has(int(c)):
@@ -230,100 +250,46 @@ static func _march_square(colors: PackedInt32Array) -> int:
 	if uniq.size() == 1:
 		return encode_entry(base, base)
 	var nxt: int = uniq[uniq.size() - 1]
-	var mask: int = 0
-	if colors[0] == nxt:
-		mask |= 8
-	if colors[1] == nxt:
-		mask |= 4
-	if colors[2] == nxt:
-		mask |= 2
-	if colors[3] == nxt:
-		mask |= 1
-	var cap: int = 0
-	var flip: int = 0
-	var rot: int = 0
-	if mask == 15:
-		var tmp: int = base
-		base = nxt
-		nxt = tmp
-	elif mask == 8:
-		cap = 0
-		flip = 0
-		rot = 0
-	elif mask == 4:
-		cap = 0
-		flip = 0
-		rot = 3
-	elif mask == 2:
-		cap = 0
-		flip = 0
-		rot = 2
-	elif mask == 1:
-		cap = 0
-		flip = 0
-		rot = 1
-	elif mask == 12:
-		cap = 0
-		flip = 1
-		rot = 0
-	elif mask == 6:
-		cap = 0
-		flip = 1
-		rot = 3
-	elif mask == 3:
-		cap = 0
-		flip = 1
-		rot = 2
-	elif mask == 9:
-		cap = 0
-		flip = 1
-		rot = 1
-	elif mask == 10:
-		cap = 1
-		flip = 0
-		rot = 0
-	elif mask == 5:
-		cap = 1
-		flip = 1
-		rot = 0
-	elif mask == 7 or mask == 11 or mask == 13 or mask == 14:
-		var swap_b: int = base
-		base = nxt
-		nxt = swap_b
-		var inv: int = (~mask) & 15
-		if inv == 8:
-			cap = 0
-			flip = 0
-			rot = 0
-		elif inv == 4:
-			cap = 0
-			flip = 0
-			rot = 3
-		elif inv == 2:
-			cap = 0
-			flip = 0
-			rot = 2
-		elif inv == 1:
-			cap = 0
-			flip = 0
-			rot = 1
-	return encode_entry(base, nxt, cap, flip, rot)
+	var hi: Array[int] = []
+	var lo: Array[int] = []
+	for i in 4:
+		if int(colors[i]) == nxt:
+			hi.append(i)
+		else:
+			lo.append(i)
+	if hi.size() == 4:
+		return encode_entry(nxt, nxt)
+	if lo.size() == 1:
+		# One corner of the lower material in a field of the higher — the
+		# diagonal tile's own shape.
+		return encode_diag(base, nxt, lo[0])
+	if hi.size() == 1:
+		# The mirror image of that has no tile in any shipped atlas. Cap the
+		# edge the lone corner sits on instead of naming a tile that is not
+		# there; corner `c` touches sides `c` and `(c + 3) & 3`.
+		return encode_entry(base, nxt, 0, 0, hi[0])
+	# Two corners. Adjacent is a straight edge and caps exactly; the two
+	# diagonal pairs are a saddle no single tile can show, so cap one edge.
+	var side: int = _side_of_corner_pair(hi[0], hi[1])
+	return encode_entry(base, nxt, 0, 0, side)
 
 
-## F2 §5 painter: a 2×2 of vertex colours → tile word, with 1-vertex corners
-## promoted to diagonals (cap bit). Edges stay caps (flip bit). Height-based
-## auto_paint keeps `_march_square` unchanged.
+static func _side_of_corner_pair(a: int, b: int) -> int:
+	## The side whose two corners are {a, b}; a diagonal pair has no side, so
+	## it falls back to the lower corner's own side.
+	for side in 4:
+		var c0: int = side
+		var c1: int = (side + 1) & 3
+		if (a == c0 and b == c1) or (a == c1 and b == c0):
+			return side
+	return mini(a, b)
+
+
+## F2 §5 painter: a 2×2 of corner materials → tile word. `_march_square` now
+## picks the diagonal shape itself, so this is the plain call; it stays a named
+## entry point because auto-paint and the tests both reach for it.
 static func autotile_quad(colors: PackedInt32Array) -> int:
-	var word: int = _march_square(colors)
-	var mat_a: int = (word >> 12) & MATERIAL_MASK
-	var mat_b: int = (word >> 8) & MATERIAL_MASK
-	if mat_a == mat_b:
-		return word
-	var cap: int = (word >> 7) & 1
-	var flip: int = (word >> 6) & 1
-	if cap == 0 and flip == 0:
-		return word | (1 << 7)
-	return word
+	return _march_square(colors)
 
 
 ## Face-centred match (F2 §5): `self_m` vs four orthogonal neighbour fills.
@@ -352,80 +318,67 @@ static func autotile_neighbors(self_m: int, n: int, e: int, s: int, w: int) -> i
 		other = w
 	if k == 3:
 		if not ns:
-			return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 0))
+			return _autotile_cap(self_m, other, 0)
 		if not es:
-			return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 1))
+			return _autotile_cap(self_m, other, 1)
 		if not ss:
-			return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 2))
-		return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 3))
+			return _autotile_cap(self_m, other, 2)
+		return _autotile_cap(self_m, other, 3)
 	if k == 2:
 		if ns and ss:
-			return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 1 if not es else 3))
+			return _autotile_cap(self_m, other, 1 if not es else 3)
 		if es and ws:
-			return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 0 if not ns else 2))
+			return _autotile_cap(self_m, other, 0 if not ns else 2)
 		# Adjacent same-neighbours: this cell is an outer corner of `self_m`.
-		# The foreign vertex is opposite the two same sides (F2 §5.3).
-		# Atlas D tiles face left at identity; rotate onto NW/NE/SE/SW.
+		# The foreign corner is opposite the two same sides (F2 §5.3).
 		if es and ss:
-			return encode_diag(self_m, other, 0)
+			return _autotile_corner(self_m, other, 0)
 		if ss and ws:
-			return encode_diag(self_m, other, 1)
+			return _autotile_corner(self_m, other, 1)
 		if ws and ns:
-			return encode_diag(self_m, other, 2)
-		return encode_diag(self_m, other, 3)
+			return _autotile_corner(self_m, other, 2)
+		return _autotile_corner(self_m, other, 3)
 	if ns:
-		return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 2))
+		return _autotile_cap(self_m, other, 2)
 	if es:
-		return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 3))
+		return _autotile_cap(self_m, other, 3)
 	if ss:
-		return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 0))
-	return _autotile_owned(self_m, other, _autotile_cap(self_m, other, 1))
-
-
-static func _autotile_owned(self_m: int, other: int, word: int) -> int:
-	var cap: int = (word >> 7) & 1
-	var flip: int = (word >> 6) & 1
-	var rot: int = (word >> 4) & 0x3
-	var variant: int = word & 0x3
-	return encode_entry(self_m, other, cap, flip, rot, variant)
+		return _autotile_cap(self_m, other, 0)
+	return _autotile_cap(self_m, other, 1)
 
 
 static func _autotile_cap(self_m: int, other: int, side: int) -> int:
-	var c := PackedInt32Array([self_m, self_m, self_m, self_m])
-	match side:
-		0:
-			c[0] = other
-			c[1] = other
-		1:
-			c[1] = other
-			c[2] = other
-		2:
-			c[2] = other
-			c[3] = other
-		_:
-			c[0] = other
-			c[3] = other
-	var word: int = autotile_quad(c)
-	# rot+2 turns the cap graphic around (N↔S, E↔W) without dropping the flip bit.
-	var cap: int = (word >> 7) & 1
-	var flip: int = (word >> 6) & 1
-	var rot: int = ((word >> 4) + 2) & 0x3
-	var variant: int = word & 0x3
-	return encode_entry(
-		(word >> 12) & MATERIAL_MASK,
-		(word >> 8) & MATERIAL_MASK,
-		cap, flip, rot, variant
-	)
+	## `other` fills the half toward `side` (0=-Z 1=+X 2=+Z 3=-X) and `self_m`
+	## fills the rest — which is exactly what a cap's rot means, so the side IS
+	## the rot.
+	##
+	## `mat_a` stays the painted cell's own fill even when that makes the word
+	## base>trans, which no atlas ships a tile for. Keeping the fill in `mat_a`
+	## is what lets a re-match read a cell's material back out of its own word;
+	## the caller (MapState.rematch_materials_rect) already drops a transition
+	## the world has no tile for back to a solid.
+	return encode_entry(self_m, other, 0, 0, side & 3)
 
 
-## Atlas `*D*` tiles face left. `corner`: 0=NW, 1=NE, 2=SE, 3=SW.
-## NE/SE stay on the unmirrored quartet (orient 13, 12). NW/SW toggle flip so
-## those corners are mirrored from identity / 15.
-static func encode_diag(self_m: int, other: int, corner: int, variant: int = 0) -> int:
-	var packed_rot: PackedInt32Array = PackedInt32Array([2, 1, 0, 3])
-	var i: int = clampi(corner, 0, 3)
-	var flip: int = 0 if i == 0 or i == 3 else 1
-	return encode_entry(self_m, other, 1, flip, packed_rot[i], variant)
+static func _autotile_corner(self_m: int, other: int, corner: int) -> int:
+	## `other` takes the single corner `corner`; `self_m` fills the other three.
+	## A diagonal names its lone corner in `mat_a`, so unlike a cap this word
+	## carries the cell's fill in `mat_b` — `kind_of_entry` is what tells the
+	## two apart.
+	if other < self_m:
+		return encode_diag(other, self_m, corner)
+	# A lone corner of the HIGHER material is the one shape no shipped atlas
+	# has a tile for. Cap one of that corner's two edges instead.
+	return _autotile_cap(self_m, other, corner)
+
+
+## `corner_m` fills the single corner `corner` (0=(-X,-Z) 1=(+X,-Z) 2=(+X,+Z)
+## 3=(-X,+Z)) and `field_m` fills the other three — the diagonal tile's own
+## shape, measured from 4712 stock corner tiles whose four diagonal neighbours
+## are all solid. `corner_m` must be the lower material: no atlas ships a
+## base>trans tile.
+static func encode_diag(corner_m: int, field_m: int, corner: int, variant: int = 0) -> int:
+	return encode_entry(corner_m, field_m, 1, 0, DIAG_ROT[clampi(corner, 0, 3)], variant)
 
 
 static func auto_paint(heightmap: Variant, rules: Array) -> Variant:
