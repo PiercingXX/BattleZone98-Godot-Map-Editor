@@ -68,35 +68,27 @@ func run(t) -> void:
 	MapState.rematch_materials_rect(1, 1, 5, 5)
 	var gx := 8
 	t.eq(MapState.materials[3 * gx + 3], BzMat.encode_entry(5, 5), "3×3 interior stays solid")
-	# A 3x3 of 5 on a field of 0. 5 is the higher material, so the blend eats
-	# INWARD from the patch's own outer ring and the 0 around it stays solid.
-	# mat_b is the cell's own fill; a cap's rot is the half it keeps (0=-Z
-	# 1=+X 2=+Z 3=-X) and a diagonal's rot puts mat_a in the corner bleeding
-	# in (0=(-X,-Z) 1=(+X,-Z) 2=(+X,+Z) 3=(-X,+Z)).
+	# A 3x3 of 5 on a field of 0. A cap belongs to the LOWER cell, so the ring
+	# of 0 around the patch fringes 5 in from the side it lies on (rot 0=-Z
+	# 1=+X 2=+Z 3=-X); the patch's own straight edges stay solid, and only its
+	# convex corners take a diagonal, where 0 cuts the corner off (rot puts
+	# mat_a in corner 0=(-X,-Z) 1=(+X,-Z) 2=(+X,+Z) 3=(-X,+Z)).
 	var north: int = MapState.materials[2 * gx + 3]
-	t.eq((north >> 12) & 0xF, 0, "the neighbour bleeding in is mat_a")
-	t.eq((north >> 8) & 0xF, 5, "the painted fill is mat_b")
-	t.eq((north >> 7) & 1, 0, "straight edge is a cap")
-	t.eq((north >> 4) & 0x3, 2, "-Z edge keeps the +Z half")
-	t.eq(BzMat.fill_of_entry(north), 5, "a transition's fill is mat_b")
-	var west: int = MapState.materials[3 * gx + 2]
-	t.eq((west >> 7) & 1, 0, "west edge is a cap")
-	t.eq((west >> 4) & 0x3, 1, "-X edge keeps the +X half")
-	var south: int = MapState.materials[4 * gx + 3]
-	t.eq((south >> 7) & 1, 0, "south edge is a cap")
-	t.eq((south >> 4) & 0x3, 0, "+Z edge keeps the -Z half")
-	var east: int = MapState.materials[3 * gx + 4]
-	t.eq((east >> 7) & 1, 0, "east edge is a cap")
-	t.eq((east >> 4) & 0x3, 3, "+X edge keeps the -X half")
-	# Nothing is painted onto the 0 around the patch: one transition per
-	# boundary, owned by the higher material.
-	for ring in [1 * gx + 3, 2 * gx + 1, 5 * gx + 3, 3 * gx + 5]:
-		t.eq(MapState.materials[ring], 0, "the field around the patch stays clean")
+	t.eq(north, BzMat.encode_entry(5, 5), "a straight patch edge stays solid")
+	t.eq(BzMat.fill_of_entry(north), 5, "and still reads back as 5")
+	for pair in [[1 * gx + 3, 2], [2 * gx + 1, 1], [5 * gx + 3, 0], [3 * gx + 5, 3]]:
+		var ring: int = MapState.materials[int(pair[0])]
+		t.eq((ring >> 12) & 0xF, 0, "the ring cell keeps its own fill in mat_a")
+		t.eq((ring >> 8) & 0xF, 5, "and fringes the patch in as mat_b")
+		t.eq((ring >> 7) & 1, 0, "a straight run is a cap")
+		t.eq((ring >> 4) & 0x3, int(pair[1]), "rot points at the side the patch is on")
+		t.eq(BzMat.fill_of_entry(ring), 0, "a cap's fill is mat_a")
 	var nw: int = MapState.materials[2 * gx + 2]
-	t.eq((nw >> 12) & 0xF, 0, "the lone corner material is mat_a")
+	t.eq((nw >> 12) & 0xF, 0, "the corner cut off is mat_a")
 	t.eq((nw >> 8) & 0xF, 5)
 	t.eq((nw >> 7) & 1, 1, "NW outer corner is a diagonal")
 	t.eq((nw >> 4) & 0x3, 1, "0 holds the (-X,-Z) corner")
+	t.eq(BzMat.fill_of_entry(nw), 5, "a diagonal's fill is the mat_b field")
 	var ne: int = MapState.materials[2 * gx + 4]
 	t.eq((ne >> 7) & 1, 1, "NE outer corner is a diagonal")
 	t.eq((ne >> 4) & 0x3, 2, "0 holds the (+X,-Z) corner")
@@ -110,9 +102,8 @@ func run(t) -> void:
 	t.eq(BzMat.encode_diag(0, 5, 1), BzMat.encode_entry(0, 5, 1, 0, 2), "(+X,-Z) corner")
 	t.eq(BzMat.encode_diag(0, 5, 2), BzMat.encode_entry(0, 5, 1, 0, 3), "(+X,+Z) corner")
 	t.eq(BzMat.encode_diag(0, 5, 3), BzMat.encode_entry(0, 5, 1, 0, 0), "(-X,+Z) corner")
-	t.eq(BzMat.autotile_neighbors(5, 0, 5, 5, 5), BzMat.encode_entry(0, 5, 0, 0, 2), "-Z cap")
-	t.eq(BzMat.autotile_neighbors(5, 5, 5, 5, 0), BzMat.encode_entry(0, 5, 0, 0, 1), "-X cap")
-	t.eq(BzMat.fill_of_entry(nw), 5, "a diagonal's fill is the mat_b field")
+	t.eq(BzMat.autotile_neighbors(0, 0, 0, 5, 0), BzMat.encode_entry(0, 5, 0, 0, 2), "+Z cap")
+	t.eq(BzMat.autotile_neighbors(0, 0, 5, 0, 0), BzMat.encode_entry(0, 5, 0, 0, 1), "+X cap")
 	t.eq(MapState.materials[1 * gx + 1], 0, "kitty-corner background stays solid")
 	MapState.materials.fill(0)
 	for x in range(2, 5):
@@ -121,9 +112,10 @@ func run(t) -> void:
 		MapState.set_material(2, z, 5)
 	MapState.rematch_materials_rect(1, 1, 5, 5)
 	var bite: int = MapState.materials[3 * gx + 3]
-	# 5 alone in one corner of a field of 0: the higher material owns that
-	# boundary, and no atlas ships that shape anyway.
-	t.eq(bite, 0, "L-shape inner corner stays solid background")
+	# 5 reaches this 0 cell from two sides and no tile shows a high corner, so
+	# it fringes one of them.
+	t.eq((bite >> 7) & 1, 0, "L-shape inner corner is a cap, not a diagonal")
+	t.eq(bite, BzMat.encode_entry(0, 5, 0, 0, 0), "fringed from -Z")
 
 	var saved_world := MapState.world
 	var saved_worlds: Array = MapState.worlds.duplicate(true)
