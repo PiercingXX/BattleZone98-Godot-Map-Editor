@@ -29,29 +29,30 @@ class_name BzMat
 ##                       three; the corner is rot 0=(-X,+Z) 1=(-X,-Z)
 ##                       2=(+X,-Z) 3=(+X,+Z).
 ##
-## Which cell carries the transition (measured 2026-08-24 by tabulating every
-## stock cell against its neighbours). A boundary gets ONE transition tile, and
-## the two kinds sit on opposite sides of it:
+## Which cell carries the transition. In the stock corpus it is the LOWER cell
+## that takes a cap — tabulating every cell against its neighbours gives cap
+## 64% for a cell with one higher neighbour, and solid 86% for one with a
+## single lower neighbour — while a diagonal sits on the HIGHER cell at its
+## convex corner (69%), where the lower material cuts the corner off.
 ##
-##   a cell with one HIGHER neighbour      -> cap    64%, solid 36%
-##   a cell with one LOWER neighbour       -> solid  86%, diag 10%
-##   a cell with two adjacent LOWER ones   -> diag   69%, solid 30%
+## This module deliberately puts BOTH on the higher cell instead. The tile is
+## the same either way — a cap is roughly three quarters its `mat_a` with a
+## `mat_b` fringe — so the only thing the choice moves is which side of the
+## line it lands on. On the low side it lands on cells the user did not paint
+## and reads as debris around the stroke; on the high side it lands on the
+## stroke itself and reads as its soft edge. A painting tool wants the second.
+## Hand-authored stock maps are not a painting tool.
 ##
-## So a CAP belongs to the LOWER cell — mostly its own material, with the
-## higher one fringing in from the side rot names — and a DIAGONAL belongs to
-## the HIGHER cell at its convex corner, where the lower material cuts the
-## corner off. That is the only direction the atlas ships, every tile being
-## base<trans. `fill_of_entry` reads a cap's fill out of `mat_a` and a
-## diagonal's out of `mat_b` for that reason.
+## So: `mat_b` is the cell's own fill on every transition tile, `mat_a` is the
+## neighbour bleeding in, and a cell whose neighbour is higher stays solid and
+## lets that neighbour draw the boundary. `fill_of_entry` reads it back.
 ##
-## The ~30% that stay solid are not a further rule: only a sixth of them lack a
-## shipped tile for the pair, and the rest is hand-authoring. A consistent
-## editor is the better behaviour there.
+## Seams. A cap blends ONE edge and a diagonal two ADJACENT ones; that is the
+## whole vocabulary. A cell exposed on opposite sides, or on three, has no tile
+## and would seam, so the paint path erodes it instead of drawing one
+## (MapState.rematch_materials_rect).
 
 
-## Corner index: 0=(-X,-Z) 1=(+X,-Z) 2=(+X,+Z) 3=(-X,+Z). Side index:
-## 0=-Z 1=+X 2=+Z 3=-X. A cap's `rot` IS its side; a diagonal's `rot` is
-## DIAG_ROT of the corner its `mat_a` occupies.
 const DIAG_ROT: Array[int] = [1, 2, 3, 0]
 
 const TILE_CELLS: int = 4
@@ -234,15 +235,11 @@ static func decode_entry(word: int) -> Dictionary:
 	}
 
 
-## The material the cell is filled with. A cap belongs to the lower cell and
-## keeps its own fill in `mat_a`; a diagonal belongs to the higher cell at a
-## convex corner, so its fill is the three-corner field in `mat_b`.
+## The material the cell is filled with. A transition cell is always the higher
+## side of its boundary, so `mat_b` is its fill and `mat_a` is the neighbour
+## bleeding in. A solid names the same material in both nibbles.
 static func fill_of_entry(word: int) -> int:
-	var mat_a: int = (word >> 12) & MATERIAL_MASK
-	var mat_b: int = (word >> 8) & MATERIAL_MASK
-	if mat_a != mat_b and ((word >> 7) & 1) != 0:
-		return mat_b
-	return mat_a
+	return (word >> 8) & MATERIAL_MASK
 
 
 static func kind_of_entry(word: int) -> String:
@@ -371,25 +368,22 @@ static func autotile_neighbors(self_m: int, n: int, e: int, s: int, w: int) -> i
 static func _autotile_cap(self_m: int, other: int, side: int) -> int:
 	## `other` is the differing fill across `side` (0=-Z 1=+X 2=+Z 3=-X).
 	##
-	## A cap belongs to the LOWER cell: mostly its own material, with the
-	## higher one fringing in from `side`, which is exactly what rot names. So
-	## when `self_m` is the higher material the neighbour owns this boundary
-	## and this cell stays solid — see the table in the header.
-	if self_m >= other:
+	## The higher cell draws the boundary, so when `self_m` is the lower one
+	## this cell stays solid and its neighbour handles it — that is what keeps
+	## a stroke from scattering tiles over ground nobody painted.
+	if other >= self_m:
 		return encode_entry(self_m, self_m)
-	return encode_entry(self_m, other, 0, 0, side & 3)
+	# `mat_b` is this cell's own fill and keeps the half AWAY from `other`.
+	return encode_entry(other, self_m, 0, 0, (side + 2) & 3)
 
 
 static func _autotile_corner(self_m: int, other: int, corner: int) -> int:
-	## `other` meets this cell at `corner` only. A diagonal is the cap's
-	## opposite number: it belongs to the HIGHER cell, at its convex corner,
-	## with the lower material cutting that corner off.
-	if other < self_m:
-		return encode_diag(other, self_m, corner)
-	# This cell is the lower one, and the higher material reaches it from the
-	# two sides meeting at `corner`. No tile shows a high corner, so fringe one
-	# of those sides instead.
-	return _autotile_cap(self_m, other, corner)
+	## `other` meets this cell at `corner` only — this cell's convex corner,
+	## which the lower material cuts off. The diagonal's own shape, and the one
+	## direction the atlas ships.
+	if other >= self_m:
+		return encode_entry(self_m, self_m)
+	return encode_diag(other, self_m, corner)
 
 
 ## `corner_m` fills the single corner `corner` (0=(-X,-Z) 1=(+X,-Z) 2=(+X,+Z)

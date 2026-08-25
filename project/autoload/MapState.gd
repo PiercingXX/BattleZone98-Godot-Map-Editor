@@ -1216,6 +1216,12 @@ func material_word_at(x_m: float, z_m: float) -> int:
 	return materials[tz * mat_grid_x + tx] & 0xFFFF
 
 
+## Tile a finished region from its neighbours.
+##
+## Only ever called on a region that has stopped changing — a paint stroke on
+## release, or the explicit match-corners action — because a boundary can only
+## be tiled from curvature the tiler can see. Mid-stroke callers do not exist
+## by design; see SculptTool._settle_material_edges.
 func rematch_materials_rect(x0: int, z0: int, w: int, d: int) -> void:
 	if mat_grid_x < 1 or mat_grid_z < 1 or materials.is_empty():
 		return
@@ -1234,6 +1240,7 @@ func rematch_materials_rect(x0: int, z0: int, w: int, d: int) -> void:
 	var zb := clampi(z0 + d - 1, 0, gz - 1)
 	if xb < xa or zb < za:
 		return
+	_round_off_unblendable(fill, gx, gz, xa, za, xb, zb)
 	for z in range(za, zb + 1):
 		for x in range(xa, xb + 1):
 			var self_m: int = fill[z * gx + x]
@@ -1260,6 +1267,52 @@ func write_materials_rect(x0: int, z0: int, w: int, d: int, values: PackedInt32A
 			i += 1
 	upload_materials(x0, z0, w, d)
 	flush_materials()
+
+
+## Round off the fills a tile could only render with a hard edge.
+##
+## The higher cell of a boundary draws it (BzMat's header), and its whole
+## vocabulary is a cap — one edge — and a diagonal — two adjacent edges. A cell
+## exposed on OPPOSITE sides, or on three, has no tile that can show it and
+## would leave a visible seam, so it is dropped to the material around it
+## instead. One-cell spurs and one-cell-wide arms round off; the stroke loses a
+## little precision and never shows a hard edge, which is the trade a brush
+## wants over placing tiles by hand.
+##
+## Runs to a fixed point, capped — each pass only ever lowers a fill, so the
+## worst case is bounded by the rect, and the cap keeps a pathological grid
+## from stalling a brush stroke.
+func _round_off_unblendable(
+	fill: PackedByteArray, gx: int, gz: int, xa: int, za: int, xb: int, zb: int
+) -> void:
+	for _pass in 8:
+		var changed := false
+		for z in range(za, zb + 1):
+			for x in range(xa, xb + 1):
+				var i := z * gx + x
+				var m: int = fill[i]
+				var sides := 0
+				var nearest := 0
+				for side in 4:
+					var nx := x + (1 if side == 1 else (-1 if side == 3 else 0))
+					var nz := z + (1 if side == 2 else (-1 if side == 0 else 0))
+					# Off-grid counts as this cell, same as the autotile pass:
+					# a map border is not a boundary.
+					if nx < 0 or nz < 0 or nx >= gx or nz >= gz:
+						continue
+					var nm: int = fill[nz * gx + nx]
+					if nm < m:
+						sides |= 1 << side
+						nearest = maxi(nearest, nm)
+				var n := (sides & 1) + ((sides >> 1) & 1) + ((sides >> 2) & 1) + ((sides >> 3) & 1)
+				# 0b0101 is -Z and +Z, 0b1010 is -X and +X: opposite sides, which
+				# no single tile spans. Two ADJACENT sides are fine — that is the
+				# diagonal — so they are deliberately not caught here.
+				if n >= 3 or sides == 0b0101 or sides == 0b1010:
+					fill[i] = nearest
+					changed = true
+		if not changed:
+			return
 
 
 ## Omitting the rect means "somewhere in the grid", which costs a whole-grid

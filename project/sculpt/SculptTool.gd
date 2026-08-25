@@ -317,6 +317,7 @@ func end_paint():
 	_active = false
 	_dab_radius = 0.0
 	_dab_amt = -1.0
+	_settle_material_edges()
 	var regions := _mats.regions(MapState.materials)
 	_mats.begin(0, 0)
 	if regions.is_empty():
@@ -324,6 +325,33 @@ func end_paint():
 	var cmd = MaterialStrokeCommandScript.new()
 	cmd.setup_regions(regions)
 	return cmd
+
+
+## Tile the painted area, once, now that it is finished.
+##
+## This is the ONLY pass that reads neighbours during a paint stroke. While the
+## button is down the dabs lay solid fills — a paint-area mask in the target
+## material — and choose no caps or corners at all. That is deliberate: every
+## other auto-terrain system evaluates its whole region in one go, and a
+## boundary can only be tiled from curvature the tiler can actually see. A dab
+## sees one brush footprint of a shape that is still moving.
+##
+## `touch` first: this pass writes cells no dab reached, and the undo chunk has
+## to hold their pre-stroke value. Chunks already captured keep their first
+## copy, so re-touching is free — the whole stroke stays one undo step.
+func _settle_material_edges() -> void:
+	if not ToolState.paint_match_edges or ToolState.paint_kind != "solid":
+		return
+	if _stroke_x1 < _stroke_x0 or _stroke_z1 < _stroke_z0:
+		return
+	var x0 := maxi(0, _stroke_x0 - 1)
+	var z0 := maxi(0, _stroke_z0 - 1)
+	var x1 := mini(MapState.mat_grid_x - 1, _stroke_x1 + 1)
+	var z1 := mini(MapState.mat_grid_z - 1, _stroke_z1 + 1)
+	if x1 < x0 or z1 < z0:
+		return
+	_mats.touch(MapState.materials, x0, z0, x1, z1)
+	MapState.rematch_materials_rect(x0, z0, x1 - x0 + 1, z1 - z0 + 1)
 
 
 func end_mask_paint():
@@ -402,16 +430,12 @@ func _stamp_paint(cx_m: float, cz_m: float) -> void:
 				MapState.set_material(x, z, paint_material)
 			else:
 				MapState.set_material_word(x, z, ToolState.paint_word())
-	if ToolState.paint_match_edges and ToolState.paint_kind == "solid":
-		var mx0 := maxi(0, x0 - 1)
-		var mz0 := maxi(0, z0 - 1)
-		var mx1 := mini(MapState.mat_grid_x - 1, x1 + 1)
-		var mz1 := mini(MapState.mat_grid_z - 1, z1 + 1)
-		_expand(mx0, mz0, mx1, mz1)
-		# The autotile pass rewrites the stamp rect plus one tile of border;
-		# the interior is already held, so only the ring needs capturing.
-		_mats.touch_border(MapState.materials, x0, z0, x1, z1, 1)
-		MapState.rematch_materials_rect(mx0, mz0, mx1 - mx0 + 1, mz1 - mz0 + 1)
+	# With match-edges on, a dab lays down coverage and nothing else. It cannot
+	# see past its own footprint, so any cap or corner it chose would be a
+	# guess about a shape still being drawn — and the next dab would read that
+	# guess back as context. `end_paint` evaluates the finished area in one
+	# pass instead, which is the only way the boundary can be tiled from its
+	# actual curvature. The solid fills ARE the paint-area mask until then.
 	MapState.upload_materials()
 
 
