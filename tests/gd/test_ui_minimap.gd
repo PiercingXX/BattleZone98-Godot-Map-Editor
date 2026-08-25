@@ -127,7 +127,7 @@ func _degrade(t) -> void:
 	d.materials = PackedInt32Array()
 	d.materials.resize(d.mat_grid_x * d.mat_grid_z)
 	for i in d.materials.size():
-		d.materials[i] = (3 & 0xF) << 12
+		d.materials[i] = BzMat.encode_entry(3, 3)
 	t.ok(d.has_materials())
 	t.eq(d.material_base(0, 0), 3, "base nibble decodes to the painted slot")
 	var mat := MinimapRaster.new()

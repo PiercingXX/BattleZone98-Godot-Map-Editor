@@ -85,13 +85,13 @@ func _test_march_square(t) -> void:
 	# Corner order is (-X,-Z) (+X,-Z) (+X,+Z) (-X,+Z); a cap's rot is the side
 	# its mat_b half faces (0=-Z 1=+X 2=+Z 3=-X) and a diagonal's rot puts
 	# mat_a in the lone corner. `mat_a` is always the lower material, so a lone
-	# corner of the HIGHER one has no tile and degrades to a cap on that side.
+	# corner of the HIGHER one has no tile at all and the cell stays solid.
 	var cases := [
 		[[3, 3, 3, 3], 0x3300],
-		[[2, 1, 1, 1], 0x1200],
-		[[1, 2, 1, 1], 0x1210],
-		[[1, 1, 2, 1], 0x1220],
-		[[1, 1, 1, 2], 0x1230],
+		[[2, 1, 1, 1], 0x1100],
+		[[1, 2, 1, 1], 0x1100],
+		[[1, 1, 2, 1], 0x1100],
+		[[1, 1, 1, 2], 0x1100],
 		[[2, 2, 1, 1], 0x1200],
 		[[1, 2, 2, 1], 0x1210],
 		[[1, 1, 2, 2], 0x1220],
@@ -109,14 +109,21 @@ func _test_march_square(t) -> void:
 func _test_autotile_neighbors(t) -> void:
 	t.eq(BzMat.autotile_neighbors(5, 5, 5, 5, 5), BzMat.encode_entry(5, 5), "interior is solid")
 	t.eq(BzMat.autotile_neighbors(5, 0, 0, 0, 0), BzMat.encode_entry(5, 5), "island is solid")
-	# 5 painted, 0 outside to the -Z side. A cap keeps the painted fill in
-	# mat_a, and its rot is the side mat_b actually covers.
+	# 5 painted, 0 outside to the -Z side. 5 is the higher material, so this
+	# cell owns the boundary: mat_b is its own fill and keeps the +Z half,
+	# while 0 bleeds in from -Z.
 	var edge: int = BzMat.autotile_neighbors(5, 0, 5, 5, 5)
-	t.eq((edge >> 12) & 0xF, 5, "cap keeps the painted fill in mat_a")
-	t.eq((edge >> 8) & 0xF, 0, "the outsider is mat_b")
+	t.eq((edge >> 12) & 0xF, 0, "the neighbour bleeding in is mat_a")
+	t.eq((edge >> 8) & 0xF, 5, "the painted fill is mat_b")
 	t.eq((edge >> 7) & 1, 0, "straight run is a cap")
-	t.eq((edge >> 4) & 0x3, 0, "mat_b fills the -Z half")
-	t.eq(BzMat.fill_of_entry(edge), 5, "a cap's fill reads back out of mat_a")
+	t.eq((edge >> 4) & 0x3, 2, "mat_b keeps the half away from the neighbour")
+	t.eq(BzMat.fill_of_entry(edge), 5, "a transition's fill is mat_b")
+	# The 0 cell on the other side of that same boundary paints nothing: one
+	# transition per boundary, and the higher material owns it.
+	t.eq(
+		BzMat.autotile_neighbors(0, 0, 0, 5, 0), BzMat.encode_entry(0, 0),
+		"the lower material stays solid up to the edge"
+	)
 	t.eq(BzMat.encode_diag(0, 5, 0), BzMat.encode_entry(0, 5, 1, 0, 1), "(-X,-Z) corner is rot 1")
 	t.eq(BzMat.encode_diag(0, 5, 1), BzMat.encode_entry(0, 5, 1, 0, 2), "(+X,-Z) corner is rot 2")
 	t.eq(BzMat.encode_diag(0, 5, 2), BzMat.encode_entry(0, 5, 1, 0, 3), "(+X,+Z) corner is rot 3")
@@ -129,14 +136,10 @@ func _test_autotile_neighbors(t) -> void:
 	t.eq((corner >> 7) & 1, 1, "outer corner is a diagonal")
 	t.eq(corner, BzMat.encode_diag(0, 5, 0), "E+S same → the (-X,-Z) corner")
 	t.eq(BzMat.fill_of_entry(corner), 5, "a diagonal's fill is the mat_b field")
-	# The mirror image — 5 alone in a corner of 0 — is the one shape no atlas
-	# ships a tile for, so it degrades to a cap on that corner's side.
+	# The mirror image — 5 alone in a corner of 0 — is the shape no atlas ships
+	# a tile for, and it is the higher material's boundary to paint anyway.
 	var inner: int = BzMat.autotile_neighbors(0, 5, 0, 0, 5)
-	t.eq((inner >> 12) & 0xF, 0, "inner corner stays the background")
-	t.eq((inner >> 8) & 0xF, 5, "inner corner meets the painted pair")
-	t.eq((inner >> 7) & 1, 0, "no diagonal has the higher material in its corner")
-	t.eq(inner, BzMat.encode_entry(0, 5, 0, 0, 0), "capped toward -Z instead")
-	t.eq(BzMat.fill_of_entry(inner), 0, "the background is still the fill")
+	t.eq(inner, BzMat.encode_entry(0, 0), "the lower material stays solid")
 	# One vertex of the LOWER material is the diagonal's own shape.
 	var raw: int = BzMat._march_square(PackedInt32Array([1, 2, 2, 2]))
 	t.eq((raw >> 7) & 1, 1, "march 1-vertex of the lower material is a diagonal")

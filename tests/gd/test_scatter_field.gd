@@ -107,7 +107,9 @@ func _material_exclusion(t) -> void:
 	var terrain := ScatterField.Terrain.of(_field(64, 64, 1000))
 	var words := PackedInt32Array()
 	words.resize(16 * 16)
-	words.fill(3 << 12)
+	# A real solid names the material in BOTH nibbles; a bare high nibble is
+	# a malformed word, and a transition's fill is mat_b.
+	words.fill(BzMat.encode_entry(3, 3))
 	terrain.set_materials(words, 16, 16)
 	t.ok(sf.chunk_instances(0, 0, terrain).size() > 10, "slot 3 allowed by default")
 	sp.exclude_slots = PackedInt32Array([3])

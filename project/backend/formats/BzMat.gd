@@ -28,6 +28,19 @@ class_name BzMat
 ##   diag (bit 7 set):   `mat_a` is the ONE corner, `mat_b` fills the other
 ##                       three; the corner is rot 0=(-X,+Z) 1=(-X,-Z)
 ##                       2=(+X,-Z) 3=(+X,+Z).
+##
+## Which cell carries the transition (settled 2026-08-24 the same way). A
+## boundary gets exactly ONE transition tile, not one per side: of 96530 stock
+## cap tiles, the neighbour on the `mat_b` half is a solid `mat_b` 88% of the
+## time and the one on the `mat_a` half a solid `mat_a` 87%.
+##
+## That one cell belongs to the HIGHER material. Every shipped tile is
+## base<trans, so a diagonal can only ever show the LOW material nipping one
+## corner of a high field — which is the shape a high region's convex corner
+## needs, and a shape no low region could ever use. So the blend eats inward
+## from the high region's outermost cells and the low region stays solid right
+## up to the edge. `mat_b` is therefore the cell's own fill on every
+## transition tile, which is what `fill_of_entry` reads back.
 
 
 ## Corner index: 0=(-X,-Z) 1=(+X,-Z) 2=(+X,+Z) 3=(-X,+Z). Side index:
@@ -215,13 +228,11 @@ static func decode_entry(word: int) -> Dictionary:
 	}
 
 
-## The material the cell is filled with, as the editor's paint model means it.
-## A solid or a cap keeps it in `mat_a`; a diagonal's `mat_a` is the lone
-## corner, so its fill is the three-corner field in `mat_b`.
+## The material the cell is filled with. A transition cell always belongs to
+## the higher material (see the header), so `mat_b` is its fill and `mat_a` is
+## the neighbour bleeding in. A solid keeps the same value in both nibbles.
 static func fill_of_entry(word: int) -> int:
-	if ((word >> 7) & 1) != 0 and ((word >> 12) & MATERIAL_MASK) != ((word >> 8) & MATERIAL_MASK):
-		return (word >> 8) & MATERIAL_MASK
-	return (word >> 12) & MATERIAL_MASK
+	return (word >> 8) & MATERIAL_MASK
 
 
 static func kind_of_entry(word: int) -> String:
@@ -264,10 +275,10 @@ static func _march_square(colors: PackedInt32Array) -> int:
 		# diagonal tile's own shape.
 		return encode_diag(base, nxt, lo[0])
 	if hi.size() == 1:
-		# The mirror image of that has no tile in any shipped atlas. Cap the
-		# edge the lone corner sits on instead of naming a tile that is not
-		# there; corner `c` touches sides `c` and `(c + 3) & 3`.
-		return encode_entry(base, nxt, 0, 0, hi[0])
+		# The mirror image of that — one corner of the HIGHER material — has no
+		# tile in any shipped atlas, and a cap would spread it over a whole
+		# half. The cell is three-quarters `base`; leave it solid.
+		return encode_entry(base, base)
 	# Two corners. Adjacent is a straight edge and caps exactly; the two
 	# diagonal pairs are a saddle no single tile can show, so cap one edge.
 	var side: int = _side_of_corner_pair(hi[0], hi[1])
@@ -348,28 +359,26 @@ static func autotile_neighbors(self_m: int, n: int, e: int, s: int, w: int) -> i
 
 
 static func _autotile_cap(self_m: int, other: int, side: int) -> int:
-	## `other` fills the half toward `side` (0=-Z 1=+X 2=+Z 3=-X) and `self_m`
-	## fills the rest — which is exactly what a cap's rot means, so the side IS
-	## the rot.
+	## `other` is the differing fill across `side` (0=-Z 1=+X 2=+Z 3=-X).
 	##
-	## `mat_a` stays the painted cell's own fill even when that makes the word
-	## base>trans, which no atlas ships a tile for. Keeping the fill in `mat_a`
-	## is what lets a re-match read a cell's material back out of its own word;
-	## the caller (MapState.rematch_materials_rect) already drops a transition
-	## the world has no tile for back to a solid.
-	return encode_entry(self_m, other, 0, 0, side & 3)
+	## Only the higher material blends. When `self_m` is the lower one the
+	## neighbour owns this boundary and paints its own side of it, so this cell
+	## stays solid — putting a tile here too is what littered a painted patch
+	## with a ring of stray caps.
+	if other >= self_m:
+		return encode_entry(self_m, self_m)
+	# `mat_b` is this cell's own fill, and it keeps the half AWAY from the
+	# neighbour; `other` bleeds in from `side`.
+	return encode_entry(other, self_m, 0, 0, (side + 2) & 3)
 
 
 static func _autotile_corner(self_m: int, other: int, corner: int) -> int:
-	## `other` takes the single corner `corner`; `self_m` fills the other three.
-	## A diagonal names its lone corner in `mat_a`, so unlike a cap this word
-	## carries the cell's fill in `mat_b` — `kind_of_entry` is what tells the
-	## two apart.
-	if other < self_m:
-		return encode_diag(other, self_m, corner)
-	# A lone corner of the HIGHER material is the one shape no shipped atlas
-	# has a tile for. Cap one of that corner's two edges instead.
-	return _autotile_cap(self_m, other, corner)
+	## `other` meets this cell at `corner` only — the convex corner of a
+	## region. The diagonal tile is exactly this shape, and only in this
+	## direction: the lower material takes the corner of a higher field.
+	if other >= self_m:
+		return encode_entry(self_m, self_m)
+	return encode_diag(other, self_m, corner)
 
 
 ## `corner_m` fills the single corner `corner` (0=(-X,-Z) 1=(+X,-Z) 2=(+X,+Z)

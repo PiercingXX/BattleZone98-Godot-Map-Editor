@@ -68,25 +68,30 @@ func run(t) -> void:
 	MapState.rematch_materials_rect(1, 1, 5, 5)
 	var gx := 8
 	t.eq(MapState.materials[3 * gx + 3], BzMat.encode_entry(5, 5), "3×3 interior stays solid")
-	# A 3x3 of 5 on a field of 0. A cap keeps the painted fill in mat_a and its
-	# rot names the side mat_b covers (0=-Z 1=+X 2=+Z 3=-X); a diagonal names
-	# its lone corner in mat_a with rot for corner 0=(-X,-Z) 1=(+X,-Z)
-	# 2=(+X,+Z) 3=(-X,+Z), so its fill is the mat_b field.
+	# A 3x3 of 5 on a field of 0. 5 is the higher material, so the blend eats
+	# INWARD from the patch's own outer ring and the 0 around it stays solid.
+	# mat_b is the cell's own fill; a cap's rot is the half it keeps (0=-Z
+	# 1=+X 2=+Z 3=-X) and a diagonal's rot puts mat_a in the corner bleeding
+	# in (0=(-X,-Z) 1=(+X,-Z) 2=(+X,+Z) 3=(-X,+Z)).
 	var north: int = MapState.materials[2 * gx + 3]
-	t.eq((north >> 12) & 0xF, 5, "cap keeps the painted fill in mat_a")
-	t.eq((north >> 8) & 0xF, 0, "the outsider is mat_b")
+	t.eq((north >> 12) & 0xF, 0, "the neighbour bleeding in is mat_a")
+	t.eq((north >> 8) & 0xF, 5, "the painted fill is mat_b")
 	t.eq((north >> 7) & 1, 0, "straight edge is a cap")
-	t.eq((north >> 4) & 0x3, 0, "-Z edge: 0 fills the -Z half")
-	t.eq(BzMat.fill_of_entry(north), 5, "a cap's fill reads back out of mat_a")
+	t.eq((north >> 4) & 0x3, 2, "-Z edge keeps the +Z half")
+	t.eq(BzMat.fill_of_entry(north), 5, "a transition's fill is mat_b")
 	var west: int = MapState.materials[3 * gx + 2]
 	t.eq((west >> 7) & 1, 0, "west edge is a cap")
-	t.eq((west >> 4) & 0x3, 3, "-X edge: 0 fills the -X half")
+	t.eq((west >> 4) & 0x3, 1, "-X edge keeps the +X half")
 	var south: int = MapState.materials[4 * gx + 3]
 	t.eq((south >> 7) & 1, 0, "south edge is a cap")
-	t.eq((south >> 4) & 0x3, 2, "+Z edge: 0 fills the +Z half")
+	t.eq((south >> 4) & 0x3, 0, "+Z edge keeps the -Z half")
 	var east: int = MapState.materials[3 * gx + 4]
 	t.eq((east >> 7) & 1, 0, "east edge is a cap")
-	t.eq((east >> 4) & 0x3, 1, "+X edge: 0 fills the +X half")
+	t.eq((east >> 4) & 0x3, 3, "+X edge keeps the -X half")
+	# Nothing is painted onto the 0 around the patch: one transition per
+	# boundary, owned by the higher material.
+	for ring in [1 * gx + 3, 2 * gx + 1, 5 * gx + 3, 3 * gx + 5]:
+		t.eq(MapState.materials[ring], 0, "the field around the patch stays clean")
 	var nw: int = MapState.materials[2 * gx + 2]
 	t.eq((nw >> 12) & 0xF, 0, "the lone corner material is mat_a")
 	t.eq((nw >> 8) & 0xF, 5)
@@ -105,8 +110,8 @@ func run(t) -> void:
 	t.eq(BzMat.encode_diag(0, 5, 1), BzMat.encode_entry(0, 5, 1, 0, 2), "(+X,-Z) corner")
 	t.eq(BzMat.encode_diag(0, 5, 2), BzMat.encode_entry(0, 5, 1, 0, 3), "(+X,+Z) corner")
 	t.eq(BzMat.encode_diag(0, 5, 3), BzMat.encode_entry(0, 5, 1, 0, 0), "(-X,+Z) corner")
-	t.eq(BzMat.autotile_neighbors(5, 0, 5, 5, 5), BzMat.encode_entry(5, 0, 0, 0, 0), "-Z cap")
-	t.eq(BzMat.autotile_neighbors(5, 5, 5, 5, 0), BzMat.encode_entry(5, 0, 0, 0, 3), "-X cap")
+	t.eq(BzMat.autotile_neighbors(5, 0, 5, 5, 5), BzMat.encode_entry(0, 5, 0, 0, 2), "-Z cap")
+	t.eq(BzMat.autotile_neighbors(5, 5, 5, 5, 0), BzMat.encode_entry(0, 5, 0, 0, 1), "-X cap")
 	t.eq(BzMat.fill_of_entry(nw), 5, "a diagonal's fill is the mat_b field")
 	t.eq(MapState.materials[1 * gx + 1], 0, "kitty-corner background stays solid")
 	MapState.materials.fill(0)
@@ -116,12 +121,9 @@ func run(t) -> void:
 		MapState.set_material(2, z, 5)
 	MapState.rematch_materials_rect(1, 1, 5, 5)
 	var bite: int = MapState.materials[3 * gx + 3]
-	t.eq((bite >> 12) & 0xF, 0, "L-shape inner corner stays the background")
-	t.eq((bite >> 8) & 0xF, 5)
-	# 5 alone in one corner of a field of 0 is the one shape no atlas ships a
-	# tile for (every transition tile is base<trans), so it caps instead.
-	t.eq((bite >> 7) & 1, 0, "L-shape inner corner degrades to a cap")
-	t.eq((bite >> 4) & 0x3, 0, "capped toward the -Z side of that corner")
+	# 5 alone in one corner of a field of 0: the higher material owns that
+	# boundary, and no atlas ships that shape anyway.
+	t.eq(bite, 0, "L-shape inner corner stays solid background")
 
 	var saved_world := MapState.world
 	var saved_worlds: Array = MapState.worlds.duplicate(true)
