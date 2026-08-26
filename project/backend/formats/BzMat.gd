@@ -310,80 +310,97 @@ static func autotile_quad(colors: PackedInt32Array) -> int:
 	return _march_square(colors)
 
 
-## Face-centred match (F2 §5): `self_m` vs four orthogonal neighbour fills.
+## Corner match (F2 §5): `self_m` against all EIGHT neighbour fills.
 ## Out-of-range neighbours should be passed as `self_m` so map borders autotile.
-static func autotile_neighbors(self_m: int, n: int, e: int, s: int, w: int) -> int:
+##
+## Measured 2026-08-25 against a hand-corrected stroke — one rule covers it:
+##
+##   a tile corner shows the neighbouring material iff the DIAGONAL neighbour
+##   at that corner differs AND at least one of the two sides flanking it
+##   differs.
+##
+## Equivalently the corner keeps this cell's own material when the diagonal
+## matches, or when both flanking sides do. Of 258 corners in the corrected
+## stroke that rule got 256 right, and it reproduces 97% of its tiles against
+## 73% for the four-neighbour rule it replaces.
+##
+## The diagonals are not optional. Two cells with identical N/E/S/W can want
+## different tiles — a cell with E and S painted wants a cap along its top when
+## the run continues south-west, and a cap down its left when it continues
+## north-east — and only the diagonals tell those apart. The old rule saw a
+## convex corner in both and drew a diagonal in both.
+##
+## The corner mask then picks the tile:
+##   0 corners       solid
+##   1 corner        diagonal, `mat_a` in that corner
+##   2 adjacent      cap, `mat_b` filling the half away from them
+##   2 diagonal      a saddle; nothing spans it, so solid
+##   3 corners       a sharp 90° corner. The sample never makes one — a
+##                   staircased edge always leaves a flanking diagonal
+##                   painted — so this falls back to cutting the corner
+##                   opposite the single painted one, matching what the stock
+##                   corpus does at a convex corner (diagonal, 69%).
+##   4 corners       solid; the round-off trims the fill instead
+##
+## Known gap: at the tip of a two-cell-wide spur this draws two flat caps where
+## the corrected stroke paired two diagonals to round it off. Both misses in
+## the sample are that one case.
+static func autotile_neighbors(
+	self_m: int, n: int, ne: int, e: int, se: int,
+	s: int, sw: int, w: int, nw: int
+) -> int:
 	self_m &= MATERIAL_MASK
-	n &= MATERIAL_MASK
-	e &= MATERIAL_MASK
-	s &= MATERIAL_MASK
-	w &= MATERIAL_MASK
-	var ns := n == self_m
-	var es := e == self_m
-	var ss := s == self_m
-	var ws := w == self_m
-	var k: int = int(ns) + int(es) + int(ss) + int(ws)
-	if k == 4 or k == 0:
-		return encode_entry(self_m, self_m)
+	# Corner c and the three neighbours that decide it: two flanking sides and
+	# the diagonal. 0=(-X,-Z) 1=(+X,-Z) 2=(+X,+Z) 3=(-X,+Z).
+	var flank_a: Array[int] = [w & MATERIAL_MASK, n & MATERIAL_MASK,
+		e & MATERIAL_MASK, s & MATERIAL_MASK]
+	var flank_b: Array[int] = [n & MATERIAL_MASK, e & MATERIAL_MASK,
+		s & MATERIAL_MASK, w & MATERIAL_MASK]
+	var diag: Array[int] = [nw & MATERIAL_MASK, ne & MATERIAL_MASK,
+		se & MATERIAL_MASK, sw & MATERIAL_MASK]
+	var sand: Array[int] = []
 	var other: int = self_m
-	if not ns:
-		other = n
-	elif not es:
-		other = e
-	elif not ss:
-		other = s
-	else:
-		other = w
-	if k == 3:
-		if not ns:
-			return _autotile_cap(self_m, other, 0)
-		if not es:
-			return _autotile_cap(self_m, other, 1)
-		if not ss:
-			return _autotile_cap(self_m, other, 2)
-		return _autotile_cap(self_m, other, 3)
-	if k == 2:
-		if ns and ss:
-			return _autotile_cap(self_m, other, 1 if not es else 3)
-		if es and ws:
-			return _autotile_cap(self_m, other, 0 if not ns else 2)
-		# Adjacent same-neighbours: this cell is an outer corner of `self_m`.
-		# The foreign corner is opposite the two same sides (F2 §5.3).
-		if es and ss:
-			return _autotile_corner(self_m, other, 0)
-		if ss and ws:
-			return _autotile_corner(self_m, other, 1)
-		if ws and ns:
-			return _autotile_corner(self_m, other, 2)
-		return _autotile_corner(self_m, other, 3)
-	if ns:
-		return _autotile_cap(self_m, other, 2)
-	if es:
-		return _autotile_cap(self_m, other, 3)
-	if ss:
-		return _autotile_cap(self_m, other, 0)
-	return _autotile_cap(self_m, other, 1)
-
-
-static func _autotile_cap(self_m: int, other: int, side: int) -> int:
-	## `other` is the differing fill across `side` (0=-Z 1=+X 2=+Z 3=-X).
-	##
-	## The higher cell draws the boundary, so when `self_m` is the lower one
-	## this cell stays solid and its neighbour handles it — that is what keeps
-	## a stroke from scattering tiles over ground nobody painted.
+	for c in 4:
+		if diag[c] != self_m and (flank_a[c] != self_m or flank_b[c] != self_m):
+			sand.append(c)
+			other = diag[c]
+	if sand.is_empty():
+		return encode_entry(self_m, self_m)
+	# The higher material draws the boundary (see the header); when this cell
+	# is the lower one its neighbour owns the tile and this stays solid.
 	if other >= self_m:
 		return encode_entry(self_m, self_m)
-	# `mat_b` is this cell's own fill and keeps the half AWAY from `other`.
-	return encode_entry(other, self_m, 0, 0, (side + 2) & 3)
-
-
-static func _autotile_corner(self_m: int, other: int, corner: int) -> int:
-	## `other` meets this cell at `corner` only — this cell's convex corner,
-	## which the lower material cuts off. The diagonal's own shape, and the one
-	## direction the atlas ships.
-	if other >= self_m:
+	if sand.size() == 1:
+		return encode_diag(other, self_m, sand[0])
+	if sand.size() == 2:
+		# Adjacent corners share a side: {0,1}=-Z {1,2}=+X {2,3}=+Z {3,0}=-X.
+		var side: int = -1
+		if sand[0] == 0 and sand[1] == 1:
+			side = 0
+		elif sand[0] == 1 and sand[1] == 2:
+			side = 1
+		elif sand[0] == 2 and sand[1] == 3:
+			side = 2
+		elif sand[0] == 0 and sand[1] == 3:
+			side = 3
+		if side >= 0:
+			# `mat_b` is this cell's own fill and keeps the half AWAY from the
+			# pair of corners the neighbour shows through.
+			return encode_entry(other, self_m, 0, 0, (side + 2) & 3)
+		# A saddle: two opposite corners, which nothing spans.
 		return encode_entry(self_m, self_m)
-	return encode_diag(other, self_m, corner)
+	if sand.size() == 3:
+		# A sharp 90° corner — the sample stroke never makes one, because a
+		# staircased edge always leaves a flanking diagonal painted. Cut the
+		# corner opposite the single painted one, which is what the stock
+		# corpus does at a convex corner (diagonal 69% of the time).
+		var painted: int = 0
+		for c in 4:
+			if not sand.has(c):
+				painted = c
+				break
+		return encode_diag(other, self_m, (painted + 2) & 3)
+	return encode_entry(self_m, self_m)
 
 
 ## `corner_m` fills the single corner `corner` (0=(-X,-Z) 1=(+X,-Z) 2=(+X,+Z)

@@ -107,36 +107,47 @@ func _test_march_square(t) -> void:
 
 
 func _test_autotile_neighbors(t) -> void:
-	t.eq(BzMat.autotile_neighbors(5, 5, 5, 5, 5), BzMat.encode_entry(5, 5), "interior is solid")
-	t.eq(BzMat.autotile_neighbors(5, 0, 0, 0, 0), BzMat.encode_entry(5, 5), "island is solid")
-	# The higher cell of a boundary draws it, so the 5 patch carries its own
-	# edge and the 0 around it stays solid — a stroke never scatters tiles over
-	# ground nobody painted.
-	var edge: int = BzMat.autotile_neighbors(5, 0, 5, 5, 5)
-	t.eq((edge >> 12) & 0xF, 0, "the neighbour bleeding in is mat_a")
-	t.eq((edge >> 8) & 0xF, 5, "the painted fill is mat_b")
-	t.eq((edge >> 7) & 1, 0, "straight run is a cap")
-	t.eq((edge >> 4) & 0x3, 2, "mat_b keeps the half away from the neighbour")
-	t.eq(BzMat.fill_of_entry(edge), 5, "a transition's fill is mat_b")
+	# Arg order is self, N, NE, E, SE, S, SW, W, NW. A corner shows the
+	# neighbour iff its DIAGONAL differs and at least one flanking side does.
 	t.eq(
-		BzMat.autotile_neighbors(0, 0, 0, 5, 0), BzMat.encode_entry(0, 0),
-		"the lower cell stays solid and lets its neighbour draw the edge"
+		BzMat.autotile_neighbors(5, 5, 5, 5, 5, 5, 5, 5, 5),
+		BzMat.encode_entry(5, 5), "interior is solid"
 	)
-	t.eq(BzMat.encode_diag(0, 5, 0), BzMat.encode_entry(0, 5, 1, 0, 1), "(-X,-Z) corner is rot 1")
-	t.eq(BzMat.encode_diag(0, 5, 1), BzMat.encode_entry(0, 5, 1, 0, 2), "(+X,-Z) corner is rot 2")
-	t.eq(BzMat.encode_diag(0, 5, 2), BzMat.encode_entry(0, 5, 1, 0, 3), "(+X,+Z) corner is rot 3")
-	t.eq(BzMat.encode_diag(0, 5, 3), BzMat.encode_entry(0, 5, 1, 0, 0), "(-X,+Z) corner is rot 0")
-	# +X and +Z stay 5, so this is the patch's own convex corner and 0 cuts it.
-	var corner: int = BzMat.autotile_neighbors(5, 0, 5, 5, 0)
-	t.eq((corner >> 12) & 0xF, 0, "the corner cut off is mat_a")
-	t.eq((corner >> 8) & 0xF, 5, "the field is mat_b")
-	t.eq((corner >> 7) & 1, 1, "outer corner is a diagonal")
-	t.eq(corner, BzMat.encode_diag(0, 5, 0), "E+S same → the (-X,-Z) corner")
-	t.eq(BzMat.fill_of_entry(corner), 5, "a diagonal's fill is the mat_b field")
-	# The mirror image is the lower cell's business, and it has none.
 	t.eq(
-		BzMat.autotile_neighbors(0, 5, 0, 0, 5), BzMat.encode_entry(0, 0),
-		"a 0 cell reached by 5 from two sides still stays solid"
+		BzMat.autotile_neighbors(5, 0, 0, 0, 0, 0, 0, 0, 0),
+		BzMat.encode_entry(5, 5), "an island has no tile that fits, so it stays solid"
+	)
+	# A straight run along the -Z edge: N, NE and NW are all 0, so both top
+	# corners go sand and the pair caps toward +Z.
+	var edge: int = BzMat.autotile_neighbors(5, 0, 0, 5, 5, 5, 5, 5, 0)
+	t.eq((edge >> 12) & 0xF, 0, "the neighbour showing through is mat_a")
+	t.eq((edge >> 8) & 0xF, 5, "the painted fill is mat_b")
+	t.eq((edge >> 7) & 1, 0, "a straight run is a cap")
+	t.eq((edge >> 4) & 0x3, 2, "mat_b keeps the half away from the sand corners")
+	t.eq(BzMat.fill_of_entry(edge), 5, "a transition's fill is mat_b")
+	# Same four orthogonal neighbours, different diagonals, different tile —
+	# this is the case the old four-neighbour rule could not express. Here the
+	# run continues north-east, so the clean edge is the -X side.
+	var side: int = BzMat.autotile_neighbors(5, 0, 5, 5, 5, 5, 0, 0, 0)
+	t.eq((side >> 7) & 1, 0, "still a cap")
+	t.eq((side >> 4) & 0x3, 1, "but capped toward +X, not +Z")
+	# Exactly one corner cut off: the diagonal's own shape. Needs BOTH the
+	# diagonal and a flanking side to differ — a lone differing diagonal is a
+	# neighbouring blob's tip, not a bite out of this cell.
+	var corner: int = BzMat.autotile_neighbors(5, 5, 5, 5, 5, 5, 5, 0, 0)
+	t.eq((corner >> 7) & 1, 1, "one sand corner is a diagonal")
+	t.eq(corner, BzMat.encode_diag(0, 5, 0), "0 cuts the (-X,-Z) corner")
+	t.eq(BzMat.fill_of_entry(corner), 5, "a diagonal's fill is the mat_b field")
+	# A corner whose diagonal matches stays put even with a side differing.
+	t.eq(
+		BzMat.autotile_neighbors(5, 0, 5, 5, 5, 5, 5, 5, 5),
+		BzMat.encode_entry(5, 5),
+		"a lone differing side with matching diagonals leaves every corner alone"
+	)
+	# The lower cell of a boundary never draws it.
+	t.eq(
+		BzMat.autotile_neighbors(0, 5, 5, 5, 5, 0, 0, 0, 0),
+		BzMat.encode_entry(0, 0), "the lower material stays solid"
 	)
 	# One vertex of the LOWER material is the diagonal's own shape.
 	var raw: int = BzMat._march_square(PackedInt32Array([1, 2, 2, 2]))

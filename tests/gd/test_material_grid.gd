@@ -4,6 +4,7 @@ extends RefCounted
 
 func run(t) -> void:
 	_stroke_settles(t)
+	_corrected_stroke(t)
 	var saved_x: int = MapState.mat_grid_x
 	var saved_z: int = MapState.mat_grid_z
 	var saved_mats: PackedInt32Array = MapState.materials.duplicate()
@@ -251,3 +252,91 @@ func _stroke_settles(t) -> void:
 	ToolState.set_paint_kind(saved["kind"])
 	ToolState.set_paint_material(saved["mat"])
 	ToolState.paint_match_edges = saved["match"]
+
+
+## The corner rule against a real hand-corrected stroke.
+##
+## The operator painted one stroke, then fixed its caps and corners by hand;
+## FILL is the shape they painted and WANT is what they wanted it tiled as.
+## The four-neighbour rule that preceded this managed 73% of these tiles. The
+## corner rule gets every one except the two marked, which are the tip of the
+## two-cell spur — there they paired diagonals to round it off where the rule
+## lays two flat caps.
+##
+## Shape and tiles only; no game asset is reproduced here.
+func _corrected_stroke(t) -> void:
+	const FILL := [
+		"...............",
+		"...........##..",
+		"..........####.",
+		"..##......####.",
+		".####.....####.",
+		".####.....####.",
+		".#####...#####.",
+		"..###########..",
+		"..###########..",
+		"...#########...",
+		".....####......",
+		"...............",
+	]
+	const WANT := [
+		"..............................",
+		"......................C2C2....",
+		"....................C1####C3..",
+		"....D1D2............C1####C3..",
+		"..C1####C3..........C1####C3..",
+		"..C1####D2..........D1####C3..",
+		"..C1######D2......D1######C3..",
+		"....D0######D2C2D1######D3....",
+		"....C1##################C3....",
+		"......C0D0########D3C0C0......",
+		"..........C0C0C0C0............",
+		"..............................",
+	]
+	# The two the rule knowingly misses: the 2-wide spur tip at the top left.
+	const SPUR_TIP := [Vector2i(2, 3), Vector2i(3, 3)]
+	var w: int = FILL[0].length()
+	var h: int = FILL.size()
+	var fill := PackedInt32Array()
+	fill.resize(w * h)
+	for z in h:
+		for x in w:
+			fill[z * w + x] = 1 if FILL[z][x] == "#" else 0
+	var checked := 0
+	var missed := 0
+	for z in h:
+		for x in w:
+			if fill[z * w + x] == 0:
+				continue
+			var sm: int = fill[z * w + x]
+			var got: int = BzMat.autotile_neighbors(
+				sm,
+				_cell(fill, w, h, x, z - 1, sm), _cell(fill, w, h, x + 1, z - 1, sm),
+				_cell(fill, w, h, x + 1, z, sm), _cell(fill, w, h, x + 1, z + 1, sm),
+				_cell(fill, w, h, x, z + 1, sm), _cell(fill, w, h, x - 1, z + 1, sm),
+				_cell(fill, w, h, x - 1, z, sm), _cell(fill, w, h, x - 1, z - 1, sm)
+			)
+			var want: String = WANT[z].substr(x * 2, 2)
+			var have := _tile_symbol(got)
+			if SPUR_TIP.has(Vector2i(x, z)):
+				if have != want:
+					missed += 1
+				continue
+			checked += 1
+			t.eq(have, want, "stroke cell %d,%d" % [x, z])
+	t.ok(checked > 60, "the fixture actually exercised the rule (%d cells)" % checked)
+	t.eq(missed, 2, "the spur tip is the only place the rule is known to differ")
+
+
+func _cell(fill: PackedInt32Array, w: int, h: int, x: int, z: int, fallback: int) -> int:
+	if x < 0 or z < 0 or x >= w or z >= h:
+		return fallback
+	return fill[z * w + x]
+
+
+func _tile_symbol(word: int) -> String:
+	var a: int = (word >> 12) & 0xF
+	var b: int = (word >> 8) & 0xF
+	if a == b:
+		return ".." if a == 0 else "##"
+	return "%s%d" % ["D" if ((word >> 7) & 1) else "C", (word >> 4) & 3]

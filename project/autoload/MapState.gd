@@ -1244,11 +1244,24 @@ func rematch_materials_rect(x0: int, z0: int, w: int, d: int) -> void:
 	for z in range(za, zb + 1):
 		for x in range(xa, xb + 1):
 			var self_m: int = fill[z * gx + x]
-			var nn: int = fill[(z - 1) * gx + x] if z > 0 else self_m
-			var ee: int = fill[z * gx + x + 1] if x + 1 < gx else self_m
-			var ss: int = fill[(z + 1) * gx + x] if z + 1 < gz else self_m
-			var ww: int = fill[z * gx + x - 1] if x > 0 else self_m
-			var word: int = BzMat.autotile_neighbors(self_m, nn, ee, ss, ww)
+			# All eight: the corner rule needs the diagonals, and two cells
+			# with the same N/E/S/W can want different tiles. Off-grid reads
+			# back as this cell, so a map border is not a boundary.
+			var west: bool = x > 0
+			var east: bool = x + 1 < gx
+			var north: bool = z > 0
+			var south: bool = z + 1 < gz
+			var nn: int = fill[(z - 1) * gx + x] if north else self_m
+			var ee: int = fill[z * gx + x + 1] if east else self_m
+			var ss: int = fill[(z + 1) * gx + x] if south else self_m
+			var ww: int = fill[z * gx + x - 1] if west else self_m
+			var nne: int = fill[(z - 1) * gx + x + 1] if north and east else self_m
+			var sse: int = fill[(z + 1) * gx + x + 1] if south and east else self_m
+			var ssw: int = fill[(z + 1) * gx + x - 1] if south and west else self_m
+			var nnw: int = fill[(z - 1) * gx + x - 1] if north and west else self_m
+			var word: int = BzMat.autotile_neighbors(
+				self_m, nn, nne, ee, sse, ss, ssw, ww, nnw
+			)
 			var kind := BzMat.kind_of_entry(word)
 			if kind != "solid" and not MaterialPalette.has_transition(
 				(word >> 12) & 0xF, (word >> 8) & 0xF, kind
